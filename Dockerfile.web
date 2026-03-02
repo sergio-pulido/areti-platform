@@ -1,0 +1,21 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/web/package.json ./apps/web/package.json
+COPY packages/db/package.json ./packages/db/package.json
+
+RUN npm install
+
+COPY . .
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+RUN npm run build --workspace @ataraxia/web
+
+EXPOSE 3000
+
+CMD ["npm", "run", "start:web"]

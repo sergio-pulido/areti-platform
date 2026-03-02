@@ -1,0 +1,30 @@
+{
+  "name": "@ataraxia/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test:integration": "vitest run"
+  },
+  "dependencies": {
+    "@ataraxia/db": "0.1.0",
+    "@simplewebauthn/server": "^13.2.3",
+    "argon2": "^0.44.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20",
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.6",
+    "typescript": "^5",
+    "vitest": "^2.1.9"
+  }
+}

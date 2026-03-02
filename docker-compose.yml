@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      API_PORT: 4000
+      CORS_ORIGINS: http://localhost:3000,http://web:3000
+      ATARAXIA_DB_PATH: /app/data/ataraxia.docker.db
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./data:/app/data
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    depends_on:
+      - api
+    environment:
+      API_BASE_URL: http://api:4000
+      NEXT_PUBLIC_API_BASE_URL: http://api:4000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data

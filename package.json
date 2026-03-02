@@ -1,31 +1,27 @@
 {
-  "name": "stoicism",
+  "name": "ataraxia-monorepo",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "argon2": "^0.44.0",
-    "better-sqlite3": "^12.6.2",
-    "lucide-react": "^0.575.0",
-    "next": "16.1.6",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "zod": "^4.3.6"
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev --workspace @ataraxia/api\" \"npm run dev --workspace @ataraxia/web\"",
+    "dev:api": "npm run dev --workspace @ataraxia/api",
+    "dev:web": "npm run dev --workspace @ataraxia/web",
+    "build": "npm run build --workspace @ataraxia/web && npm run typecheck --workspace @ataraxia/api && npm run typecheck --workspace @ataraxia/db",
+    "lint": "npm run lint --workspace @ataraxia/web && npm run typecheck --workspace @ataraxia/api && npm run typecheck --workspace @ataraxia/db",
+    "db:generate": "npm run db:generate --workspace @ataraxia/db",
+    "db:migrate": "npm run db:migrate --workspace @ataraxia/db",
+    "test:integration": "npm run test:integration --workspace @ataraxia/api",
+    "test:e2e": "playwright test",
+    "test": "npm run test:integration && npm run test:e2e",
+    "start:api": "npm run start --workspace @ataraxia/api",
+    "start:web": "npm run start --workspace @ataraxia/web"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "@playwright/test": "^1.55.0",
+    "concurrently": "^9.2.1"
   }
 }
