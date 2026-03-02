@@ -1,26 +1,62 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-body);
+  --font-title: var(--font-title);
+
+  --color-night-950: #14110f;
+  --color-night-900: #201a16;
+  --color-night-800: #32281f;
+  --color-night-700: #4a3b2d;
+  --color-night-600: #69523d;
+  --color-night-500: #8c7052;
+  --color-night-400: #b3906c;
+  --color-night-300: #cfb595;
+  --color-night-200: #e8d5bd;
+  --color-night-100: #f6ead8;
+
+  --color-sand-100: #f8eddc;
+  --color-sand-50: #fffbf4;
+
+  --color-sage-500: #6a8a63;
+  --color-sage-400: #87a97f;
+  --color-sage-300: #a6c8a0;
+  --color-sage-200: #d2e6cf;
+  --color-sage-100: #eef7ec;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  color-scheme: dark;
+}
+
+* {
+  border-color: color-mix(in srgb, var(--color-night-700) 60%, transparent);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 10%, #1f2a22 0%, #14110f 48%),
+    linear-gradient(140deg, #14110f 0%, #1d1713 55%, #13100e 100%);
+  color: var(--color-sand-100);
+  font-family: var(--font-body), sans-serif;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-sage-400) 35%, transparent);
+  color: var(--color-sand-50);
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility animate-fade-in-up {
+  animation: fade-in-up 0.45s ease-out both;
 }
