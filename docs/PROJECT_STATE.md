@@ -5,6 +5,7 @@
 - Frontend authentication now uses access + refresh session tokens stored in HTTP-only cookies.
 - Backend provides refresh-token rotation, optional MFA challenge flow, WebAuthn passkey registration/login, and admin audit logging.
 - Content remains fully API-driven with admin CMS CRUD + publish controls.
+- Dashboard UX interaction audit completed: previously dead CTAs/cards were wired to real destinations or actions.
 - Integration tests, e2e tests, migration tooling, and Docker Compose startup are in place.
 
 ## Delivered Scope
@@ -31,6 +32,7 @@
   - settings controls for MFA/passkey toggles
   - chat route proxies through backend chat API
   - CMS shows recent admin audit logs
+  - dashboard topnav quick actions, practices/community CTAs, and chat prompt cards are now fully interactive
 - QA and tooling:
   - API integration tests (`vitest + supertest`)
   - frontend e2e test (`playwright`)

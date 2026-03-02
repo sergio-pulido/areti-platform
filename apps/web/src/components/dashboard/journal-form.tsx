@@ -5,6 +5,12 @@ import { useFormStatus } from "react-dom";
 import { createJournalEntry } from "@/actions/journal";
 import { initialJournalActionState } from "@/actions/journal-state";
 
+type JournalFormProps = {
+  defaultTitle?: string;
+  defaultMood?: string;
+  defaultBody?: string;
+};
+
 function SubmitButton() {
   const { pending } = useFormStatus();
 
@@ -19,7 +25,11 @@ function SubmitButton() {
   );
 }
 
-export function JournalForm() {
+export function JournalForm({
+  defaultTitle,
+  defaultMood = "Grounded",
+  defaultBody,
+}: JournalFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const [state, formAction] = useActionState(createJournalEntry, initialJournalActionState);
 
@@ -42,6 +52,7 @@ export function JournalForm() {
           name="title"
           required
           maxLength={80}
+          defaultValue={defaultTitle}
           placeholder="What challenged me today?"
           className="w-full rounded-xl border border-night-700 bg-night-950 px-4 py-2.5 text-sm text-sand-100 placeholder:text-night-300 focus:border-sage-300 focus:outline-none"
         />
@@ -54,7 +65,7 @@ export function JournalForm() {
         <select
           id="mood"
           name="mood"
-          defaultValue="Grounded"
+          defaultValue={defaultMood}
           className="w-full rounded-xl border border-night-700 bg-night-950 px-4 py-2.5 text-sm text-sand-100 focus:border-sage-300 focus:outline-none"
         >
           <option>Grounded</option>
@@ -75,6 +86,7 @@ export function JournalForm() {
           required
           rows={6}
           maxLength={3000}
+          defaultValue={defaultBody}
           placeholder="Write your thoughts, what was under your control, and one action for tomorrow."
           className="w-full rounded-xl border border-night-700 bg-night-950 px-4 py-3 text-sm text-sand-100 placeholder:text-night-300 focus:border-sage-300 focus:outline-none"
         />

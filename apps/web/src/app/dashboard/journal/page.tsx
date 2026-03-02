@@ -4,9 +4,23 @@ import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { apiJournalList } from "@/lib/backend-api";
 import { requireSession } from "@/lib/auth/session";
 
-export default async function JournalPage() {
+type JournalPageProps = {
+  searchParams: Promise<{
+    title?: string;
+    mood?: string;
+    body?: string;
+  }>;
+};
+
+const allowedMoods = new Set(["Grounded", "Grateful", "Restless", "Anxious", "Focused"]);
+
+export default async function JournalPage({ searchParams }: JournalPageProps) {
+  const params = await searchParams;
   const session = await requireSession();
   const entries = await apiJournalList(session.accessToken, 12);
+  const defaultTitle = params.title?.trim().slice(0, 80) || undefined;
+  const defaultBody = params.body?.trim().slice(0, 3000) || undefined;
+  const defaultMood = allowedMoods.has(params.mood ?? "") ? params.mood : undefined;
 
   return (
     <div>
@@ -17,7 +31,11 @@ export default async function JournalPage() {
       />
 
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <JournalForm />
+        <JournalForm
+          defaultTitle={defaultTitle}
+          defaultBody={defaultBody}
+          defaultMood={defaultMood}
+        />
 
         <SurfaceCard title="Recent Entries" subtitle="Newest reflections first">
           <div className="space-y-3">

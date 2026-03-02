@@ -1,8 +1,22 @@
+import Link from "next/link";
 import { ChatSimulator } from "@/components/dashboard/chat-simulator";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 
-export default function ChatPage() {
+const promptIdeas = [
+  "I feel anxious before big meetings. What should I practice this week?",
+  "How do I balance ambition with inner peace?",
+  "What would a Stoic-Epicurean daily routine look like for me?",
+];
+
+type ChatPageProps = {
+  searchParams: Promise<{ prompt?: string }>;
+};
+
+export default async function ChatPage({ searchParams }: ChatPageProps) {
+  const params = await searchParams;
+  const initialPrompt = params.prompt?.trim().slice(0, 600) || undefined;
+
   return (
     <div>
       <PageHeader
@@ -12,19 +26,20 @@ export default function ChatPage() {
       />
 
       <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <ChatSimulator />
+        <ChatSimulator initialPrompt={initialPrompt} />
 
         <SurfaceCard title="Prompt ideas" subtitle="Try these first">
           <ul className="space-y-3 text-sm text-night-200">
-            <li className="rounded-2xl border border-night-800 bg-night-950/70 p-3">
-              I feel anxious before big meetings. What should I practice this week?
-            </li>
-            <li className="rounded-2xl border border-night-800 bg-night-950/70 p-3">
-              How do I balance ambition with inner peace?
-            </li>
-            <li className="rounded-2xl border border-night-800 bg-night-950/70 p-3">
-              What would a Stoic-Epicurean daily routine look like for me?
-            </li>
+            {promptIdeas.map((prompt) => (
+              <li key={prompt}>
+                <Link
+                  href={`/dashboard/chat?prompt=${encodeURIComponent(prompt)}`}
+                  className="block rounded-2xl border border-night-800 bg-night-950/70 p-3 hover:border-sage-300/40"
+                >
+                  {prompt}
+                </Link>
+              </li>
+            ))}
           </ul>
         </SurfaceCard>
       </div>

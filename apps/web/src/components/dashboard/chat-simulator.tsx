@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 type Message = {
   role: "user" | "assistant";
@@ -15,15 +15,17 @@ const INITIAL_MESSAGES: Message[] = [
   },
 ];
 
-export function ChatSimulator() {
+type ChatSimulatorProps = {
+  initialPrompt?: string;
+};
+
+export function ChatSimulator({ initialPrompt }: ChatSimulatorProps) {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
+  const lastAutoPromptRef = useRef<string | null>(null);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const prompt = input.trim();
+  async function sendPrompt(prompt: string): Promise<void> {
     if (!prompt) {
       return;
     }
@@ -59,6 +61,20 @@ export function ChatSimulator() {
     } finally {
       setPending(false);
     }
+  }
+
+  useEffect(() => {
+    if (!initialPrompt || initialPrompt === lastAutoPromptRef.current) {
+      return;
+    }
+
+    lastAutoPromptRef.current = initialPrompt;
+    void sendPrompt(initialPrompt);
+  }, [initialPrompt]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await sendPrompt(input.trim());
   }
 
   return (

@@ -65,3 +65,9 @@
 - **Decision:** Implement full WebAuthn challenge/verification endpoints for passkey registration and passkey sign-in using `@simplewebauthn`, plus browser UX wiring.
 - **Why:** Enables practical passwordless authentication and aligns security posture with modern auth expectations.
 - **Tradeoff:** Added complexity in challenge lifecycle, browser compatibility constraints, and passkey credential state management.
+
+## 2026-03-02 - Eliminate dead CTA patterns in dashboard UX
+- **Context:** Several dashboard controls looked clickable but had no action (dead buttons/static prompt cards), creating misleading UX.
+- **Decision:** Convert dead controls to real interactions by wiring them to routes, quick-action menus, and query-driven prefill flows.
+- **Why:** Prevents false affordances, improves navigation clarity, and ensures every visible CTA has a concrete user outcome.
+- **Tradeoff:** More route coupling through query params, which requires basic sanitization and maintenance of accepted prefill values.

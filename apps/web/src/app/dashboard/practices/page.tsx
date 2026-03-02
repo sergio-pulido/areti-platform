@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { fetchPracticeRoutines } from "@/lib/content-api";
@@ -17,12 +18,12 @@ export default async function PracticesPage() {
         {routines.map((routine) => (
           <SurfaceCard key={routine.slug} title={routine.title} subtitle={routine.cadence}>
             <p className="text-sm text-night-200">{routine.description}</p>
-            <button
-              type="button"
-              className="mt-4 rounded-xl border border-sage-300/40 bg-sage-500/10 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20"
+            <Link
+              href={`/dashboard/journal?title=${encodeURIComponent(`Practice: ${routine.title}`)}&mood=Focused`}
+              className="mt-4 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/10 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20"
             >
               Start practice
-            </button>
+            </Link>
           </SurfaceCard>
         ))}
         {routines.length === 0 ? (

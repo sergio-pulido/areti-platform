@@ -23,8 +23,16 @@ export function DashboardTopnav({ user }: DashboardTopnavProps) {
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 lg:hidden">
-            <Menu size={18} className="text-sand-100" />
-            <p className="font-title text-xl text-sand-100">Ataraxia</p>
+            <Link
+              href="/dashboard"
+              aria-label="Go to dashboard home"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-night-700 bg-night-900/80 text-sand-100 hover:border-night-600"
+            >
+              <Menu size={18} />
+            </Link>
+            <Link href="/dashboard" className="font-title text-xl text-sand-100">
+              Ataraxia
+            </Link>
           </div>
 
           <div className="hidden flex-1 lg:block">
@@ -40,27 +48,44 @@ export function DashboardTopnav({ user }: DashboardTopnavProps) {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <Link
+              href="/dashboard/journal"
               className="inline-flex items-center gap-2 rounded-xl border border-night-700 bg-night-900/80 px-3 py-2 text-xs text-sand-200 hover:border-night-600"
             >
               <Plus size={14} />
               New Entry
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-night-700 bg-night-900/80 text-sand-200 hover:border-night-600"
-              aria-label="Notifications"
-            >
-              <Bell size={15} />
-            </button>
-            <button
-              type="button"
+            </Link>
+
+            <details className="relative">
+              <summary
+                className="inline-flex h-9 w-9 list-none cursor-pointer items-center justify-center rounded-xl border border-night-700 bg-night-900/80 text-sand-200 hover:border-night-600"
+                aria-label="Notifications"
+              >
+                <Bell size={15} />
+              </summary>
+              <div className="absolute right-0 mt-2 w-64 rounded-xl border border-night-700 bg-night-900/95 p-2 shadow-2xl">
+                <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Quick Actions</p>
+                <div className="mt-1 flex flex-col text-sm">
+                  <Link href="/dashboard/journal" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                    Capture a reflection
+                  </Link>
+                  <Link href="/dashboard/practices" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                    Start a practice
+                  </Link>
+                  <Link href="/dashboard/community" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                    Check community circles
+                  </Link>
+                </div>
+              </div>
+            </details>
+
+            <Link
+              href="/dashboard/chat"
               className="hidden items-center gap-2 rounded-xl border border-sage-400/40 bg-sage-500/15 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20 sm:inline-flex"
             >
               <Sparkles size={14} />
               AI Assist
-            </button>
+            </Link>
 
             <details className="relative">
               <summary className="list-none cursor-pointer">
