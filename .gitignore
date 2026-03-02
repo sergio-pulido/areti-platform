@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/apps/*/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -51,3 +52,6 @@ next-env.d.ts
 /apps/web/data/*.db
 /apps/web/data/*.db-shm
 /apps/web/data/*.db-wal
+/apps/api/data/*.db
+/apps/api/data/*.db-shm
+/apps/api/data/*.db-wal
