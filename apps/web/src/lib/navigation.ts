@@ -170,7 +170,6 @@ export const dashboardNavSections: NavSection[] = [
       "/account/privacy",
       "/account/terms",
       "/account/cookies",
-      "/dashboard/settings",
       "/legal/privacy",
       "/legal/terms",
       "/legal/cookies",
