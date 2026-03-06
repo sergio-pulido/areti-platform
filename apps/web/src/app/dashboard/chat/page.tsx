@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { ChatSimulator } from "@/components/dashboard/chat-simulator";
+import { InteractiveCardLink } from "@/components/dashboard/interactive-card-link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 
@@ -32,12 +32,12 @@ export default async function ChatPage({ searchParams }: ChatPageProps) {
           <ul className="space-y-3 text-sm text-night-200">
             {promptIdeas.map((prompt) => (
               <li key={prompt}>
-                <Link
+                <InteractiveCardLink
                   href={`/dashboard/chat?prompt=${encodeURIComponent(prompt)}`}
-                  className="block rounded-2xl border border-night-800 bg-night-950/70 p-3 hover:border-sage-300/40"
+                  ariaLabel={`Use prompt idea: ${prompt}`}
                 >
                   {prompt}
-                </Link>
+                </InteractiveCardLink>
               </li>
             ))}
           </ul>

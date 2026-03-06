@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { Bell, Menu, Plus, Search, Sparkles } from "lucide-react";
+import { Bell, Menu, Plus, Search, Sparkles, Zap } from "lucide-react";
 import { logoutAction } from "@/actions/auth";
 import type { CurrentUser } from "@/lib/auth/session";
-import { dashboardNavItems } from "@/lib/navigation";
+import { canAccessCreator, getTopbarSectionsForRole } from "@/lib/navigation";
 
 type DashboardTopnavProps = {
   user: CurrentUser;
@@ -18,6 +18,9 @@ function initials(name: string): string {
 }
 
 export function DashboardTopnav({ user }: DashboardTopnavProps) {
+  const topbarSections = getTopbarSectionsForRole(user.role);
+  const showCreator = canAccessCreator(user.role);
+
   return (
     <header className="sticky top-0 z-20 border-b border-night-800/80 bg-night-950/90 px-4 py-4 backdrop-blur lg:px-8">
       <div className="flex flex-col gap-4">
@@ -37,8 +40,12 @@ export function DashboardTopnav({ user }: DashboardTopnavProps) {
 
           <div className="hidden flex-1 lg:block">
             <form className="relative max-w-md" action="/dashboard/library" method="get">
+              <label htmlFor="dashboard-search" className="sr-only">
+                Search lessons, quotes, and practices
+              </label>
               <Search className="pointer-events-none absolute left-3 top-3 text-night-200" size={16} />
               <input
+                id="dashboard-search"
                 type="search"
                 name="q"
                 placeholder="Search lessons, quotes, practices..."
@@ -60,8 +67,42 @@ export function DashboardTopnav({ user }: DashboardTopnavProps) {
               <summary
                 className="inline-flex h-9 w-9 list-none cursor-pointer items-center justify-center rounded-xl border border-night-700 bg-night-900/80 text-sand-200 hover:border-night-600"
                 aria-label="Notifications"
+                aria-haspopup="menu"
               >
                 <Bell size={15} />
+              </summary>
+              <div className="absolute right-0 mt-2 w-64 rounded-xl border border-night-700 bg-night-900/95 p-2 shadow-2xl">
+                <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Notifications</p>
+                <div className="mt-1 flex flex-col text-sm">
+                  <Link
+                    href="/dashboard/journal?title=Daily%20Reflection&mood=Grounded"
+                    className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
+                  >
+                    Reflection reminder
+                  </Link>
+                  <Link
+                    href="/dashboard/practices"
+                    className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
+                  >
+                    Continue your practice streak
+                  </Link>
+                  <Link
+                    href="/community"
+                    className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
+                  >
+                    New circle activity
+                  </Link>
+                </div>
+              </div>
+            </details>
+
+            <details className="relative">
+              <summary
+                className="inline-flex h-9 w-9 list-none cursor-pointer items-center justify-center rounded-xl border border-night-700 bg-night-900/80 text-sand-200 hover:border-night-600"
+                aria-label="Quick actions"
+                aria-haspopup="menu"
+              >
+                <Zap size={15} />
               </summary>
               <div className="absolute right-0 mt-2 w-64 rounded-xl border border-night-700 bg-night-900/95 p-2 shadow-2xl">
                 <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Quick Actions</p>
@@ -72,7 +113,7 @@ export function DashboardTopnav({ user }: DashboardTopnavProps) {
                   <Link href="/dashboard/practices" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                     Start a practice
                   </Link>
-                  <Link href="/dashboard/community" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                  <Link href="/community" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                     Check community circles
                   </Link>
                 </div>
@@ -88,7 +129,7 @@ export function DashboardTopnav({ user }: DashboardTopnavProps) {
             </Link>
 
             <details className="relative">
-              <summary className="list-none cursor-pointer">
+              <summary className="list-none cursor-pointer" aria-label="Open user menu" aria-haspopup="menu">
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-sage-300/50 bg-sage-500/15 text-xs font-semibold text-sage-100">
                   {initials(user.name)}
                 </span>
@@ -100,16 +141,36 @@ export function DashboardTopnav({ user }: DashboardTopnavProps) {
                 </div>
                 <div className="my-1 border-t border-night-700" />
                 <div className="flex flex-col text-sm">
-                  <Link href="/dashboard/account" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                  <Link
+                    href="/account"
+                    aria-label="Open account section"
+                    className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
+                  >
                     Account
                   </Link>
-                  <Link href="/dashboard/settings" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                  <Link
+                    href="/community"
+                    aria-label="Open community section"
+                    className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
+                  >
+                    Community
+                  </Link>
+                  {showCreator ? (
+                    <Link
+                      href="/creator"
+                      aria-label="Open creator section"
+                      className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
+                    >
+                      Creator Studio
+                    </Link>
+                  ) : null}
+                  <Link href="/account/settings" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                     Security Settings
                   </Link>
-                  <Link href="/legal/privacy" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                  <Link href="/account/privacy" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                     Privacy Policy
                   </Link>
-                  <Link href="/legal/terms" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                  <Link href="/account/terms" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                     Terms
                   </Link>
                 </div>
@@ -127,16 +188,30 @@ export function DashboardTopnav({ user }: DashboardTopnavProps) {
           </div>
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
-          {dashboardNavItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="whitespace-nowrap rounded-xl border border-night-700 bg-night-900/70 px-3 py-1.5 text-xs text-sand-200"
-            >
-              {item.label}
-            </Link>
-          ))}
+        <div className="space-y-2">
+          <p className="px-1 text-[10px] uppercase tracking-[0.25em] text-night-300">Sections</p>
+          <div className="hidden gap-2 overflow-x-auto pb-1 lg:flex">
+            {topbarSections.map((section) => (
+              <Link
+                key={section.id}
+                href={section.href}
+                className="whitespace-nowrap rounded-xl border border-night-700 bg-night-900/70 px-3 py-1.5 text-xs text-sand-200 hover:border-night-600"
+              >
+                {section.label}
+              </Link>
+            ))}
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
+            {topbarSections.map((section) => (
+              <Link
+                key={section.id}
+                href={section.href}
+                className="whitespace-nowrap rounded-xl border border-night-700 bg-night-900/70 px-3 py-1.5 text-xs text-sand-200"
+              >
+                {section.label}
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
     </header>

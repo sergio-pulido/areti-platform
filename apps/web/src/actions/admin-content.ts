@@ -62,10 +62,17 @@ async function requireAdminToken(): Promise<string> {
 
 function revalidateCms(): void {
   revalidatePath("/dashboard/cms");
+  revalidatePath("/creator/cms");
+  revalidatePath("/creator");
   revalidatePath("/");
   revalidatePath("/dashboard/library");
   revalidatePath("/dashboard/practices");
   revalidatePath("/dashboard/community");
+  revalidatePath("/community");
+  revalidatePath("/community/challenges");
+  revalidatePath("/community/resources");
+  revalidatePath("/community/experts");
+  revalidatePath("/community/events");
 }
 
 export async function createLessonAdminAction(formData: FormData): Promise<void> {

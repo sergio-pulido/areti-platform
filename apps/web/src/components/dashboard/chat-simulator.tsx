@@ -100,7 +100,11 @@ export function ChatSimulator({ initialPrompt }: ChatSimulatorProps) {
       </div>
 
       <form onSubmit={handleSubmit} className="mt-4 flex gap-3">
+        <label htmlFor="chat-prompt" className="sr-only">
+          Chat prompt
+        </label>
         <input
+          id="chat-prompt"
           type="text"
           value={input}
           onChange={(event) => setInput(event.target.value)}

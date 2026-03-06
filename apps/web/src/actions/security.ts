@@ -25,6 +25,7 @@ export async function setMfaEnabledAction(formData: FormData): Promise<void> {
   await apiSetMfa(session.accessToken, enabled);
 
   revalidatePath("/dashboard/settings");
+  revalidatePath("/account/settings");
 }
 
 export async function setPasskeyEnabledAction(formData: FormData): Promise<void> {
@@ -34,4 +35,5 @@ export async function setPasskeyEnabledAction(formData: FormData): Promise<void>
   await apiSetPasskeys(session.accessToken, enabled);
 
   revalidatePath("/dashboard/settings");
+  revalidatePath("/account/settings");
 }

@@ -35,10 +35,10 @@ export default async function AccountPage() {
 
         <SurfaceCard title="Session actions" subtitle="Account and legal controls">
           <div className="space-y-2 text-sm">
-            <Link href="/dashboard/settings" className="block rounded-xl border border-night-700 px-3 py-2 text-sand-100 hover:border-night-600">
+            <Link href="/account/settings" className="block rounded-xl border border-night-700 px-3 py-2 text-sand-100 hover:border-night-600">
               Open security settings
             </Link>
-            <Link href="/legal/privacy" className="block rounded-xl border border-night-700 px-3 py-2 text-sand-100 hover:border-night-600">
+            <Link href="/account/privacy" className="block rounded-xl border border-night-700 px-3 py-2 text-sand-100 hover:border-night-600">
               Privacy policy
             </Link>
             <form action={logoutAction}>

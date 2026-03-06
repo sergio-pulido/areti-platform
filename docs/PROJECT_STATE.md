@@ -6,6 +6,10 @@
 - Backend provides refresh-token rotation, optional MFA challenge flow, WebAuthn passkey registration/login, and admin audit logging.
 - Content remains fully API-driven with admin CMS CRUD + publish controls.
 - Dashboard UX interaction audit completed: previously dead CTAs/cards were wired to real destinations or actions.
+- Reusable interactive card component and focus-visible accessibility baseline are in place for keyboard navigation consistency.
+- Dashboard information architecture is now domain-based (Personal, Community, Creator, Account) with Settings moved under Account and contextual sidebars per active section.
+- Canonical section routes are now available at `/community/*`, `/creator/*`, and `/account/*`, with section entry from topbar and account/community/creator access from the user dropdown.
+- Creator section visibility is now role-gated (admin-only) in topbar, sidebar context resolution, and user dropdown links.
 - Integration tests, e2e tests, migration tooling, and Docker Compose startup are in place.
 
 ## Delivered Scope
@@ -33,9 +37,10 @@
   - chat route proxies through backend chat API
   - CMS shows recent admin audit logs
   - dashboard topnav quick actions, practices/community CTAs, and chat prompt cards are now fully interactive
+  - contextual sidenav per active domain with topbar-driven section entry and new Community/Creator sub-areas
 - QA and tooling:
   - API integration tests (`vitest + supertest`)
-  - frontend e2e test (`playwright`)
+  - frontend e2e tests (`playwright`) now include dashboard CTA navigation and section-specific sidebar isolation checks
   - Dockerfiles + `docker-compose.yml`
 
 ## Tech Stack

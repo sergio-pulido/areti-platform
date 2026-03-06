@@ -14,7 +14,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const json = await request.json();
+  const rawBody = await request.text();
+
+  if (!rawBody) {
+    return NextResponse.json({ error: "Invalid prompt" }, { status: 400 });
+  }
+
+  let json: unknown;
+  try {
+    json = JSON.parse(rawBody) as unknown;
+  } catch {
+    return NextResponse.json({ error: "Invalid prompt" }, { status: 400 });
+  }
+
   const parsed = requestSchema.safeParse(json);
 
   if (!parsed.success) {

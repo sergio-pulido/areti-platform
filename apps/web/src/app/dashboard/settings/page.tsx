@@ -103,15 +103,15 @@ export default async function SettingsPage() {
 
         <SurfaceCard title="Compliance" subtitle="Transparent legal pages">
           <div className="space-y-2 text-sm">
-            <Link href="/legal/privacy" className="flex items-center gap-2 text-sand-100 hover:text-sage-100">
+            <Link href="/account/privacy" className="flex items-center gap-2 text-sand-100 hover:text-sage-100">
               <Lock size={14} />
               Privacy Policy
             </Link>
-            <Link href="/legal/terms" className="flex items-center gap-2 text-sand-100 hover:text-sage-100">
+            <Link href="/account/terms" className="flex items-center gap-2 text-sand-100 hover:text-sage-100">
               <Lock size={14} />
               Terms of Service
             </Link>
-            <Link href="/legal/cookies" className="flex items-center gap-2 text-sand-100 hover:text-sage-100">
+            <Link href="/account/cookies" className="flex items-center gap-2 text-sand-100 hover:text-sage-100">
               <Lock size={14} />
               Cookie Policy
             </Link>

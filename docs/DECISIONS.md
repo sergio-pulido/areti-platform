@@ -71,3 +71,27 @@
 - **Decision:** Convert dead controls to real interactions by wiring them to routes, quick-action menus, and query-driven prefill flows.
 - **Why:** Prevents false affordances, improves navigation clarity, and ensures every visible CTA has a concrete user outcome.
 - **Tradeoff:** More route coupling through query params, which requires basic sanitization and maintenance of accepted prefill values.
+
+## 2026-03-02 - Standardize interactive card + CTA regression checks
+- **Context:** Clickable UI patterns were implemented ad-hoc, and CTA regressions could return without automated coverage.
+- **Decision:** Add a shared `InteractiveCardLink` component, baseline keyboard focus-visible styles, and Playwright coverage for key dashboard CTA flows.
+- **Why:** Improves UX consistency, accessibility, and prevents future dead CTA regressions through automated checks.
+- **Tradeoff:** Slightly larger UI abstraction surface and longer e2e runtime for local/CI pipelines.
+
+## 2026-03-02 - Shift dashboard nav to domain-based IA with contextual sidebars
+- **Context:** Flat navigation mixed personal tools with account/security and creator operations, causing unclear mental models.
+- **Decision:** Introduce sectioned navigation domains (Personal, Community, Creator, Account), move Settings into Account, add dedicated sub-pages for Community and Creator areas, and render only the active section's sidebar tabs.
+- **Why:** Aligns navigation with user intent and ownership boundaries (self-work vs community vs publishing vs account), while removing cross-section tab noise.
+- **Tradeoff:** More routes and navigation metadata to maintain as features evolve.
+
+## 2026-03-02 - Canonical section URLs + topbar section entry
+- **Context:** Section discovery and switching needed to happen from topbar/user menu instead of sidebar-level global switching.
+- **Decision:** Add canonical section route families (`/community/*`, `/creator/*`, `/account/*`), keep `/dashboard/*` as personal workspace, and expose section entry via topbar plus user dropdown for Account/Community/Creator.
+- **Why:** Matches expected mental model: topbar controls section context, sidebar shows only local tabs for the active section.
+- **Tradeoff:** Temporary route duplication (`/dashboard/*` and canonical aliases) is maintained during the build phase.
+
+## 2026-03-02 - Enforce creator role gating in section navigation
+- **Context:** Creator functionality should not appear as available to all authenticated users.
+- **Decision:** Gate Creator section entry and links by role (admin-only), and enforce route-level access control on `/creator/*`.
+- **Why:** Aligns UI affordances with authorization boundaries and prevents misleading entry points.
+- **Tradeoff:** Test flows must handle role-dependent navigation visibility.

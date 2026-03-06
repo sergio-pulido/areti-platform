@@ -46,6 +46,11 @@ body {
   color: var(--color-sand-50);
 }
 
+:where(a, button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-sage-300) 82%, white 18%);
+  outline-offset: 2px;
+}
+
 @keyframes fade-in-up {
   from {
     opacity: 0;
