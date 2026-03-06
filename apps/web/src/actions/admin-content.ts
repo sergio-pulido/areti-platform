@@ -104,7 +104,6 @@ function revalidateCms(): void {
   revalidatePath("/");
   revalidatePath("/dashboard/library");
   revalidatePath("/dashboard/practices");
-  revalidatePath("/dashboard/community");
   revalidatePath("/community");
   revalidatePath("/community/challenges");
   revalidatePath("/community/resources");

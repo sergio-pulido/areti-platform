@@ -91,7 +91,7 @@ export const dashboardNavSections: NavSection[] = [
     label: "Community",
     href: "/community",
     description: "Collaborative growth and groups",
-    matchPrefixes: ["/community", "/dashboard/community"],
+    matchPrefixes: ["/community"],
     items: [
       {
         href: "/community",
@@ -170,7 +170,6 @@ export const dashboardNavSections: NavSection[] = [
       "/account/privacy",
       "/account/terms",
       "/account/cookies",
-      "/dashboard/account",
       "/dashboard/settings",
       "/legal/privacy",
       "/legal/terms",
