@@ -2,14 +2,21 @@ import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { and, asc, count, desc, eq, gt, like, lt, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, isNull, like, lt, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import {
   adminAuditLogs,
+  chatMessages,
+  chatThreads,
+  communityChallenges,
   communityCircles,
+  communityEvents,
+  communityExperts,
+  communityResources,
   contentHighlights,
   contentPillars,
+  creatorVideos,
   journalEntries,
   libraryLessons,
   mfaChallenges,
@@ -17,12 +24,20 @@ import {
   practiceRoutines,
   refreshSessions,
   sessions,
+  userDevices,
+  userNotifications,
+  userTotpSecrets,
   users,
   type ContentStatus,
   type UserRole,
 } from "./schema.js";
 import {
+  COMMUNITY_CHALLENGES_SEED,
+  COMMUNITY_EVENTS_SEED,
+  COMMUNITY_EXPERTS_SEED,
+  COMMUNITY_RESOURCES_SEED,
   COMMUNITY_SEED,
+  CREATOR_VIDEOS_SEED,
   HIGHLIGHT_SEED,
   LIBRARY_SEED,
   PILLAR_SEED,
@@ -45,10 +60,57 @@ export type PasskeyCredentialRecord = {
   id: string;
   userId: string;
   credentialId: string;
+  nickname: string | null;
   publicKey: string;
   counter: number;
   transports: string[];
+  lastUsedAt: string | null;
   createdAt: string;
+  updatedAt: string;
+};
+
+export type NotificationRecord = {
+  id: string;
+  userId: string;
+  title: string;
+  body: string;
+  href: string;
+  readAt: string | null;
+  createdAt: string;
+};
+
+export type ChatThreadRecord = {
+  id: string;
+  userId: string;
+  title: string;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ChatMessageRecord = {
+  id: string;
+  threadId: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+};
+
+export type UserDeviceRecord = {
+  id: string;
+  userId: string;
+  label: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  lastSeenAt: string;
+  revokedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RefreshSessionContext = {
+  user: CurrentUser;
+  deviceId: string | null;
 };
 
 const globalForDb = globalThis as unknown as {
@@ -77,6 +139,46 @@ function parseTransports(transports: string | null): string[] {
   }
 
   return [];
+}
+
+function seedWelcomeNotifications(userId: string): void {
+  const timestamp = nowIso();
+
+  const welcomeNotifications = [
+    {
+      id: cryptoRandomId(),
+      userId,
+      title: "Welcome to Ataraxia",
+      body: "Start with one short reflection to ground your practice.",
+      href: "/dashboard/journal?title=First%20Reflection&mood=Grounded",
+      readAt: null,
+      createdAt: timestamp,
+    },
+    {
+      id: cryptoRandomId(),
+      userId,
+      title: "Explore the Library",
+      body: "Pick one lesson and apply it within 24 hours.",
+      href: "/dashboard/library",
+      readAt: null,
+      createdAt: timestamp,
+    },
+    {
+      id: cryptoRandomId(),
+      userId,
+      title: "Meet the Community",
+      body: "Join a circle and introduce your current practice focus.",
+      href: "/community",
+      readAt: null,
+      createdAt: timestamp,
+    },
+  ];
+
+  db.insert(userNotifications).values(welcomeNotifications).run();
+}
+
+function cryptoRandomId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 function findRepoRoot(startDir: string): string {
@@ -155,17 +257,27 @@ if (!globalForDb.sqlite) {
 const db = drizzle(sqlite, {
   schema: {
     users,
+    userDevices,
     sessions,
     refreshSessions,
     mfaChallenges,
+    userTotpSecrets,
     passkeyCredentials,
     adminAuditLogs,
+    userNotifications,
+    chatThreads,
+    chatMessages,
     journalEntries,
     contentPillars,
     contentHighlights,
     libraryLessons,
     practiceRoutines,
     communityCircles,
+    communityChallenges,
+    communityResources,
+    communityExperts,
+    communityEvents,
+    creatorVideos,
   },
 });
 
@@ -255,6 +367,76 @@ function seedIfEmpty(): void {
       )
       .run();
   }
+
+  const challengeCount = db.select({ count: count() }).from(communityChallenges).get();
+  if ((challengeCount?.count ?? 0) === 0) {
+    db.insert(communityChallenges)
+      .values(
+        COMMUNITY_CHALLENGES_SEED.map((item) => ({
+          ...item,
+          status: "PUBLISHED" as ContentStatus,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })),
+      )
+      .run();
+  }
+
+  const resourceCount = db.select({ count: count() }).from(communityResources).get();
+  if ((resourceCount?.count ?? 0) === 0) {
+    db.insert(communityResources)
+      .values(
+        COMMUNITY_RESOURCES_SEED.map((item) => ({
+          ...item,
+          status: "PUBLISHED" as ContentStatus,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })),
+      )
+      .run();
+  }
+
+  const expertsCount = db.select({ count: count() }).from(communityExperts).get();
+  if ((expertsCount?.count ?? 0) === 0) {
+    db.insert(communityExperts)
+      .values(
+        COMMUNITY_EXPERTS_SEED.map((item) => ({
+          ...item,
+          status: "PUBLISHED" as ContentStatus,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })),
+      )
+      .run();
+  }
+
+  const eventsCount = db.select({ count: count() }).from(communityEvents).get();
+  if ((eventsCount?.count ?? 0) === 0) {
+    db.insert(communityEvents)
+      .values(
+        COMMUNITY_EVENTS_SEED.map((item) => ({
+          ...item,
+          status: "PUBLISHED" as ContentStatus,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })),
+      )
+      .run();
+  }
+
+  const videosCount = db.select({ count: count() }).from(creatorVideos).get();
+  if ((videosCount?.count ?? 0) === 0) {
+    db.insert(creatorVideos)
+      .values(
+        CREATOR_VIDEOS_SEED.map((item) => ({
+          ...item,
+          status: "PUBLISHED" as ContentStatus,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })),
+      )
+      .run();
+  }
 }
 
 if (!globalForDb.seeded) {
@@ -310,6 +492,8 @@ export function createUser(input: {
     })
     .run();
 
+  seedWelcomeNotifications(input.id);
+
   return getUserById(input.id);
 }
 
@@ -317,6 +501,7 @@ export function createSession(input: {
   id: string;
   tokenHash: string;
   userId: string;
+  deviceId?: string | null;
   expiresAt: string;
 }): void {
   db.insert(sessions)
@@ -324,6 +509,7 @@ export function createSession(input: {
       id: input.id,
       tokenHash: input.tokenHash,
       userId: input.userId,
+      deviceId: input.deviceId ?? null,
       expiresAt: input.expiresAt,
       createdAt: nowIso(),
     })
@@ -371,6 +557,7 @@ export function createRefreshSession(input: {
   id: string;
   tokenHash: string;
   userId: string;
+  deviceId?: string | null;
   expiresAt: string;
 }): void {
   db.insert(refreshSessions)
@@ -378,6 +565,7 @@ export function createRefreshSession(input: {
       id: input.id,
       tokenHash: input.tokenHash,
       userId: input.userId,
+      deviceId: input.deviceId ?? null,
       expiresAt: input.expiresAt,
       createdAt: nowIso(),
       rotatedAt: null,
@@ -396,13 +584,14 @@ export function deleteExpiredRefreshSessionsByUser(userId: string): void {
     .run();
 }
 
-export function getRefreshSessionUserByTokenHash(tokenHash: string): CurrentUser | null {
+export function getRefreshSessionContextByTokenHash(tokenHash: string): RefreshSessionContext | null {
   const joined = db
     .select({
       userId: users.id,
       userName: users.name,
       userEmail: users.email,
       userRole: users.role,
+      deviceId: refreshSessions.deviceId,
     })
     .from(refreshSessions)
     .innerJoin(users, eq(refreshSessions.userId, users.id))
@@ -415,11 +604,19 @@ export function getRefreshSessionUserByTokenHash(tokenHash: string): CurrentUser
   }
 
   return {
-    id: joined.userId,
-    name: joined.userName,
-    email: joined.userEmail,
-    role: joined.userRole,
+    user: {
+      id: joined.userId,
+      name: joined.userName,
+      email: joined.userEmail,
+      role: joined.userRole,
+    },
+    deviceId: joined.deviceId,
   };
+}
+
+export function getRefreshSessionUserByTokenHash(tokenHash: string): CurrentUser | null {
+  const context = getRefreshSessionContextByTokenHash(tokenHash);
+  return context?.user ?? null;
 }
 
 export function rotateRefreshSessionByTokenHash(
@@ -428,6 +625,7 @@ export function rotateRefreshSessionByTokenHash(
     id: string;
     tokenHash: string;
     userId: string;
+    deviceId?: string | null;
     expiresAt: string;
   },
 ): boolean {
@@ -457,6 +655,7 @@ export function rotateRefreshSessionByTokenHash(
         id: replacement.id,
         tokenHash: replacement.tokenHash,
         userId: replacement.userId,
+        deviceId: replacement.deviceId ?? null,
         expiresAt: replacement.expiresAt,
         createdAt: nowIso(),
         rotatedAt: null,
@@ -520,10 +719,13 @@ export function listPasskeyCredentialsByUserId(userId: string): PasskeyCredentia
     id: row.id,
     userId: row.userId,
     credentialId: row.credentialId,
+    nickname: row.nickname,
     publicKey: row.publicKey,
     counter: row.counter,
     transports: parseTransports(row.transports),
+    lastUsedAt: row.lastUsedAt,
     createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   }));
 }
 
@@ -545,10 +747,13 @@ export function getPasskeyCredentialByCredentialId(
     id: row.id,
     userId: row.userId,
     credentialId: row.credentialId,
+    nickname: row.nickname,
     publicKey: row.publicKey,
     counter: row.counter,
     transports: parseTransports(row.transports),
+    lastUsedAt: row.lastUsedAt,
     createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -558,17 +763,23 @@ export function createPasskeyCredential(input: {
   credentialId: string;
   publicKey: string;
   counter: number;
+  nickname?: string | null;
   transports?: string[];
 }): void {
+  const timestamp = nowIso();
+
   db.insert(passkeyCredentials)
     .values({
       id: input.id,
       userId: input.userId,
       credentialId: input.credentialId,
+      nickname: input.nickname ?? null,
       publicKey: input.publicKey,
       counter: input.counter,
       transports: JSON.stringify(input.transports ?? []),
-      createdAt: nowIso(),
+      lastUsedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
     })
     .run();
 }
@@ -577,13 +788,16 @@ export function updatePasskeyCredential(input: {
   credentialId: string;
   publicKey: string;
   counter: number;
+  nickname?: string | null;
   transports?: string[];
 }): void {
   db.update(passkeyCredentials)
     .set({
       publicKey: input.publicKey,
       counter: input.counter,
+      nickname: input.nickname ?? null,
       transports: JSON.stringify(input.transports ?? []),
+      updatedAt: nowIso(),
     })
     .where(eq(passkeyCredentials.credentialId, input.credentialId))
     .run();
@@ -596,9 +810,127 @@ export function updatePasskeyCredentialCounter(
   db.update(passkeyCredentials)
     .set({
       counter,
+      lastUsedAt: nowIso(),
+      updatedAt: nowIso(),
     })
     .where(eq(passkeyCredentials.credentialId, credentialId))
     .run();
+}
+
+export function renamePasskeyCredentialById(
+  userId: string,
+  passkeyId: string,
+  nickname: string,
+): boolean {
+  const existing = db
+    .select({ id: passkeyCredentials.id })
+    .from(passkeyCredentials)
+    .where(and(eq(passkeyCredentials.id, passkeyId), eq(passkeyCredentials.userId, userId)))
+    .limit(1)
+    .get();
+
+  if (!existing) {
+    return false;
+  }
+
+  db.update(passkeyCredentials)
+    .set({
+      nickname,
+      updatedAt: nowIso(),
+    })
+    .where(eq(passkeyCredentials.id, passkeyId))
+    .run();
+
+  return true;
+}
+
+export function deletePasskeyCredentialById(userId: string, passkeyId: string): boolean {
+  const existing = db
+    .select({ id: passkeyCredentials.id })
+    .from(passkeyCredentials)
+    .where(and(eq(passkeyCredentials.id, passkeyId), eq(passkeyCredentials.userId, userId)))
+    .limit(1)
+    .get();
+
+  if (!existing) {
+    return false;
+  }
+
+  db.delete(passkeyCredentials).where(eq(passkeyCredentials.id, passkeyId)).run();
+  return true;
+}
+
+export function upsertUserTotpSecret(input: {
+  id: string;
+  userId: string;
+  secret: string;
+  verifiedAt?: string | null;
+}): void {
+  const existing = db
+    .select({ id: userTotpSecrets.id })
+    .from(userTotpSecrets)
+    .where(eq(userTotpSecrets.userId, input.userId))
+    .limit(1)
+    .get();
+
+  if (existing) {
+    db.update(userTotpSecrets)
+      .set({
+        secret: input.secret,
+        verifiedAt: input.verifiedAt ?? null,
+        updatedAt: nowIso(),
+      })
+      .where(eq(userTotpSecrets.userId, input.userId))
+      .run();
+    return;
+  }
+
+  const timestamp = nowIso();
+  db.insert(userTotpSecrets)
+    .values({
+      id: input.id,
+      userId: input.userId,
+      secret: input.secret,
+      verifiedAt: input.verifiedAt ?? null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+}
+
+export function getUserTotpSecret(userId: string): {
+  id: string;
+  userId: string;
+  secret: string;
+  verifiedAt: string | null;
+} | null {
+  const existing = db
+    .select({
+      id: userTotpSecrets.id,
+      userId: userTotpSecrets.userId,
+      secret: userTotpSecrets.secret,
+      verifiedAt: userTotpSecrets.verifiedAt,
+    })
+    .from(userTotpSecrets)
+    .where(eq(userTotpSecrets.userId, userId))
+    .limit(1)
+    .get();
+
+  return existing ?? null;
+}
+
+export function markUserTotpVerified(userId: string): void {
+  db.update(userTotpSecrets)
+    .set({
+      verifiedAt: nowIso(),
+      updatedAt: nowIso(),
+    })
+    .where(eq(userTotpSecrets.userId, userId))
+    .run();
+}
+
+export function deleteUserTotpSecret(userId: string): void {
+  db.delete(userTotpSecrets).where(eq(userTotpSecrets.userId, userId)).run();
 }
 
 export function createMfaChallenge(input: {
@@ -665,6 +997,18 @@ export function createJournalEntry(input: {
       mood: input.mood,
       createdAt: timestamp,
       updatedAt: timestamp,
+    })
+    .run();
+
+  db.insert(userNotifications)
+    .values({
+      id: cryptoRandomId(),
+      userId: input.userId,
+      title: "Reflection saved",
+      body: `Your entry "${input.title}" was stored successfully.`,
+      href: "/dashboard/journal",
+      readAt: null,
+      createdAt: timestamp,
     })
     .run();
 }
@@ -755,6 +1099,51 @@ export function getCommunityCircles() {
     .all();
 }
 
+export function getCommunityChallenges() {
+  return db
+    .select()
+    .from(communityChallenges)
+    .where(eq(communityChallenges.status, "PUBLISHED"))
+    .orderBy(asc(communityChallenges.id))
+    .all();
+}
+
+export function getCommunityResources() {
+  return db
+    .select()
+    .from(communityResources)
+    .where(eq(communityResources.status, "PUBLISHED"))
+    .orderBy(asc(communityResources.id))
+    .all();
+}
+
+export function getCommunityExperts() {
+  return db
+    .select()
+    .from(communityExperts)
+    .where(eq(communityExperts.status, "PUBLISHED"))
+    .orderBy(asc(communityExperts.id))
+    .all();
+}
+
+export function getCommunityEvents() {
+  return db
+    .select()
+    .from(communityEvents)
+    .where(eq(communityEvents.status, "PUBLISHED"))
+    .orderBy(asc(communityEvents.id))
+    .all();
+}
+
+export function getCreatorVideos() {
+  return db
+    .select()
+    .from(creatorVideos)
+    .where(eq(creatorVideos.status, "PUBLISHED"))
+    .orderBy(desc(creatorVideos.id))
+    .all();
+}
+
 export function listAllContentAdmin() {
   return {
     pillars: db.select().from(contentPillars).orderBy(asc(contentPillars.id)).all(),
@@ -762,6 +1151,11 @@ export function listAllContentAdmin() {
     lessons: db.select().from(libraryLessons).orderBy(desc(libraryLessons.id)).all(),
     practices: db.select().from(practiceRoutines).orderBy(asc(practiceRoutines.id)).all(),
     community: db.select().from(communityCircles).orderBy(asc(communityCircles.id)).all(),
+    challenges: db.select().from(communityChallenges).orderBy(asc(communityChallenges.id)).all(),
+    resources: db.select().from(communityResources).orderBy(asc(communityResources.id)).all(),
+    experts: db.select().from(communityExperts).orderBy(asc(communityExperts.id)).all(),
+    events: db.select().from(communityEvents).orderBy(asc(communityEvents.id)).all(),
+    videos: db.select().from(creatorVideos).orderBy(desc(creatorVideos.id)).all(),
   };
 }
 
@@ -1054,6 +1448,627 @@ export function setHighlightStatus(id: number, status: ContentStatus) {
     })
     .where(eq(contentHighlights.id, id))
     .run();
+}
+
+export function createCommunityChallenge(input: {
+  slug: string;
+  title: string;
+  duration: string;
+  summary: string;
+  status: ContentStatus;
+}) {
+  const timestamp = nowIso();
+
+  db.insert(communityChallenges)
+    .values({
+      slug: input.slug,
+      title: input.title,
+      duration: input.duration,
+      summary: input.summary,
+      status: input.status,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+}
+
+export function updateCommunityChallenge(
+  id: number,
+  input: {
+    slug: string;
+    title: string;
+    duration: string;
+    summary: string;
+    status: ContentStatus;
+  },
+) {
+  db.update(communityChallenges)
+    .set({
+      slug: input.slug,
+      title: input.title,
+      duration: input.duration,
+      summary: input.summary,
+      status: input.status,
+      updatedAt: nowIso(),
+    })
+    .where(eq(communityChallenges.id, id))
+    .run();
+}
+
+export function deleteCommunityChallenge(id: number) {
+  db.delete(communityChallenges).where(eq(communityChallenges.id, id)).run();
+}
+
+export function setCommunityChallengeStatus(id: number, status: ContentStatus) {
+  db.update(communityChallenges)
+    .set({
+      status,
+      updatedAt: nowIso(),
+    })
+    .where(eq(communityChallenges.id, id))
+    .run();
+}
+
+export function createCommunityResource(input: {
+  slug: string;
+  title: string;
+  description: string;
+  href: string;
+  cta: string;
+  status: ContentStatus;
+}) {
+  const timestamp = nowIso();
+
+  db.insert(communityResources)
+    .values({
+      slug: input.slug,
+      title: input.title,
+      description: input.description,
+      href: input.href,
+      cta: input.cta,
+      status: input.status,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+}
+
+export function updateCommunityResource(
+  id: number,
+  input: {
+    slug: string;
+    title: string;
+    description: string;
+    href: string;
+    cta: string;
+    status: ContentStatus;
+  },
+) {
+  db.update(communityResources)
+    .set({
+      slug: input.slug,
+      title: input.title,
+      description: input.description,
+      href: input.href,
+      cta: input.cta,
+      status: input.status,
+      updatedAt: nowIso(),
+    })
+    .where(eq(communityResources.id, id))
+    .run();
+}
+
+export function deleteCommunityResource(id: number) {
+  db.delete(communityResources).where(eq(communityResources.id, id)).run();
+}
+
+export function setCommunityResourceStatus(id: number, status: ContentStatus) {
+  db.update(communityResources)
+    .set({
+      status,
+      updatedAt: nowIso(),
+    })
+    .where(eq(communityResources.id, id))
+    .run();
+}
+
+export function createCommunityExpert(input: {
+  slug: string;
+  name: string;
+  focus: string;
+  status: ContentStatus;
+}) {
+  const timestamp = nowIso();
+
+  db.insert(communityExperts)
+    .values({
+      slug: input.slug,
+      name: input.name,
+      focus: input.focus,
+      status: input.status,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+}
+
+export function updateCommunityExpert(
+  id: number,
+  input: {
+    slug: string;
+    name: string;
+    focus: string;
+    status: ContentStatus;
+  },
+) {
+  db.update(communityExperts)
+    .set({
+      slug: input.slug,
+      name: input.name,
+      focus: input.focus,
+      status: input.status,
+      updatedAt: nowIso(),
+    })
+    .where(eq(communityExperts.id, id))
+    .run();
+}
+
+export function deleteCommunityExpert(id: number) {
+  db.delete(communityExperts).where(eq(communityExperts.id, id)).run();
+}
+
+export function setCommunityExpertStatus(id: number, status: ContentStatus) {
+  db.update(communityExperts)
+    .set({
+      status,
+      updatedAt: nowIso(),
+    })
+    .where(eq(communityExperts.id, id))
+    .run();
+}
+
+export function createCommunityEvent(input: {
+  slug: string;
+  title: string;
+  schedule: string;
+  summary: string;
+  status: ContentStatus;
+}) {
+  const timestamp = nowIso();
+
+  db.insert(communityEvents)
+    .values({
+      slug: input.slug,
+      title: input.title,
+      schedule: input.schedule,
+      summary: input.summary,
+      status: input.status,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+}
+
+export function updateCommunityEvent(
+  id: number,
+  input: {
+    slug: string;
+    title: string;
+    schedule: string;
+    summary: string;
+    status: ContentStatus;
+  },
+) {
+  db.update(communityEvents)
+    .set({
+      slug: input.slug,
+      title: input.title,
+      schedule: input.schedule,
+      summary: input.summary,
+      status: input.status,
+      updatedAt: nowIso(),
+    })
+    .where(eq(communityEvents.id, id))
+    .run();
+}
+
+export function deleteCommunityEvent(id: number) {
+  db.delete(communityEvents).where(eq(communityEvents.id, id)).run();
+}
+
+export function setCommunityEventStatus(id: number, status: ContentStatus) {
+  db.update(communityEvents)
+    .set({
+      status,
+      updatedAt: nowIso(),
+    })
+    .where(eq(communityEvents.id, id))
+    .run();
+}
+
+export function createCreatorVideo(input: {
+  slug: string;
+  title: string;
+  format: string;
+  summary: string;
+  videoUrl: string;
+  status: ContentStatus;
+}) {
+  const timestamp = nowIso();
+
+  db.insert(creatorVideos)
+    .values({
+      slug: input.slug,
+      title: input.title,
+      format: input.format,
+      summary: input.summary,
+      videoUrl: input.videoUrl,
+      status: input.status,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+}
+
+export function updateCreatorVideo(
+  id: number,
+  input: {
+    slug: string;
+    title: string;
+    format: string;
+    summary: string;
+    videoUrl: string;
+    status: ContentStatus;
+  },
+) {
+  db.update(creatorVideos)
+    .set({
+      slug: input.slug,
+      title: input.title,
+      format: input.format,
+      summary: input.summary,
+      videoUrl: input.videoUrl,
+      status: input.status,
+      updatedAt: nowIso(),
+    })
+    .where(eq(creatorVideos.id, id))
+    .run();
+}
+
+export function deleteCreatorVideo(id: number) {
+  db.delete(creatorVideos).where(eq(creatorVideos.id, id)).run();
+}
+
+export function setCreatorVideoStatus(id: number, status: ContentStatus) {
+  db.update(creatorVideos)
+    .set({
+      status,
+      updatedAt: nowIso(),
+    })
+    .where(eq(creatorVideos.id, id))
+    .run();
+}
+
+export function createNotification(input: {
+  id: string;
+  userId: string;
+  title: string;
+  body: string;
+  href: string;
+}): void {
+  db.insert(userNotifications)
+    .values({
+      id: input.id,
+      userId: input.userId,
+      title: input.title,
+      body: input.body,
+      href: input.href,
+      readAt: null,
+      createdAt: nowIso(),
+    })
+    .run();
+}
+
+export function listNotificationsByUser(userId: string, limit: number): {
+  items: NotificationRecord[];
+  unreadCount: number;
+} {
+  const items = db
+    .select()
+    .from(userNotifications)
+    .where(eq(userNotifications.userId, userId))
+    .orderBy(desc(userNotifications.createdAt))
+    .limit(limit)
+    .all();
+
+  const unread = db
+    .select({ count: count() })
+    .from(userNotifications)
+    .where(and(eq(userNotifications.userId, userId), isNull(userNotifications.readAt)))
+    .get();
+
+  return {
+    items,
+    unreadCount: unread?.count ?? 0,
+  };
+}
+
+export function markNotificationRead(userId: string, notificationId: string): boolean {
+  const existing = db
+    .select({ id: userNotifications.id, readAt: userNotifications.readAt })
+    .from(userNotifications)
+    .where(and(eq(userNotifications.userId, userId), eq(userNotifications.id, notificationId)))
+    .limit(1)
+    .get();
+
+  if (!existing) {
+    return false;
+  }
+
+  if (!existing.readAt) {
+    db.update(userNotifications)
+      .set({ readAt: nowIso() })
+      .where(eq(userNotifications.id, notificationId))
+      .run();
+  }
+
+  return true;
+}
+
+export function markAllNotificationsRead(userId: string): number {
+  const updated = db
+    .update(userNotifications)
+    .set({ readAt: nowIso() })
+    .where(and(eq(userNotifications.userId, userId), isNull(userNotifications.readAt)))
+    .run();
+
+  return updated.changes ?? 0;
+}
+
+export function getSessionDeviceByTokenHash(tokenHash: string): {
+  sessionId: string;
+  deviceId: string | null;
+} | null {
+  const row = db
+    .select({
+      sessionId: sessions.id,
+      deviceId: sessions.deviceId,
+    })
+    .from(sessions)
+    .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, nowIso())))
+    .limit(1)
+    .get();
+
+  return row ?? null;
+}
+
+export function upsertUserDevice(input: {
+  id: string;
+  userId: string;
+  fingerprint: string;
+  label: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}): string {
+  const existing = db
+    .select({ id: userDevices.id })
+    .from(userDevices)
+    .where(
+      and(
+        eq(userDevices.userId, input.userId),
+        eq(userDevices.fingerprint, input.fingerprint),
+        isNull(userDevices.revokedAt),
+      ),
+    )
+    .limit(1)
+    .get();
+
+  if (existing) {
+    db.update(userDevices)
+      .set({
+        label: input.label,
+        ipAddress: input.ipAddress ?? null,
+        userAgent: input.userAgent ?? null,
+        lastSeenAt: nowIso(),
+        updatedAt: nowIso(),
+      })
+      .where(eq(userDevices.id, existing.id))
+      .run();
+    return existing.id;
+  }
+
+  const timestamp = nowIso();
+  db.insert(userDevices)
+    .values({
+      id: input.id,
+      userId: input.userId,
+      fingerprint: input.fingerprint,
+      label: input.label,
+      ipAddress: input.ipAddress ?? null,
+      userAgent: input.userAgent ?? null,
+      revokedAt: null,
+      lastSeenAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+
+  return input.id;
+}
+
+export function listUserDevicesByUserId(userId: string): UserDeviceRecord[] {
+  return db
+    .select({
+      id: userDevices.id,
+      userId: userDevices.userId,
+      label: userDevices.label,
+      ipAddress: userDevices.ipAddress,
+      userAgent: userDevices.userAgent,
+      lastSeenAt: userDevices.lastSeenAt,
+      revokedAt: userDevices.revokedAt,
+      createdAt: userDevices.createdAt,
+      updatedAt: userDevices.updatedAt,
+    })
+    .from(userDevices)
+    .where(eq(userDevices.userId, userId))
+    .orderBy(desc(userDevices.lastSeenAt))
+    .all();
+}
+
+export function revokeUserDevice(userId: string, deviceId: string): boolean {
+  const existing = db
+    .select({ id: userDevices.id, revokedAt: userDevices.revokedAt })
+    .from(userDevices)
+    .where(and(eq(userDevices.userId, userId), eq(userDevices.id, deviceId)))
+    .limit(1)
+    .get();
+
+  if (!existing) {
+    return false;
+  }
+
+  const timestamp = nowIso();
+  db.transaction(() => {
+    db.update(userDevices)
+      .set({
+        revokedAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .where(eq(userDevices.id, deviceId))
+      .run();
+
+    db.delete(sessions).where(eq(sessions.deviceId, deviceId)).run();
+    db.delete(refreshSessions).where(eq(refreshSessions.deviceId, deviceId)).run();
+  });
+
+  return true;
+}
+
+export function listChatThreadsByUser(userId: string): ChatThreadRecord[] {
+  return db
+    .select()
+    .from(chatThreads)
+    .where(and(eq(chatThreads.userId, userId), eq(chatThreads.archived, false)))
+    .orderBy(desc(chatThreads.updatedAt))
+    .all();
+}
+
+export function getChatThreadByIdForUser(
+  userId: string,
+  threadId: string,
+): ChatThreadRecord | null {
+  const existing = db
+    .select()
+    .from(chatThreads)
+    .where(and(eq(chatThreads.userId, userId), eq(chatThreads.id, threadId)))
+    .limit(1)
+    .get();
+
+  return existing ?? null;
+}
+
+export function createChatThread(input: {
+  id: string;
+  userId: string;
+  title: string;
+}): ChatThreadRecord {
+  const timestamp = nowIso();
+
+  db.insert(chatThreads)
+    .values({
+      id: input.id,
+      userId: input.userId,
+      title: input.title,
+      archived: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+
+  return {
+    id: input.id,
+    userId: input.userId,
+    title: input.title,
+    archived: false,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+export function updateChatThread(
+  userId: string,
+  threadId: string,
+  input: { title?: string; archived?: boolean },
+): boolean {
+  const existing = getChatThreadByIdForUser(userId, threadId);
+  if (!existing) {
+    return false;
+  }
+
+  db.update(chatThreads)
+    .set({
+      title: input.title ?? existing.title,
+      archived: input.archived ?? existing.archived,
+      updatedAt: nowIso(),
+    })
+    .where(eq(chatThreads.id, threadId))
+    .run();
+
+  return true;
+}
+
+export function deleteChatThread(userId: string, threadId: string): boolean {
+  const existing = getChatThreadByIdForUser(userId, threadId);
+  if (!existing) {
+    return false;
+  }
+
+  db.delete(chatThreads).where(eq(chatThreads.id, threadId)).run();
+  return true;
+}
+
+export function listChatMessagesForThread(
+  userId: string,
+  threadId: string,
+): ChatMessageRecord[] | null {
+  const thread = getChatThreadByIdForUser(userId, threadId);
+
+  if (!thread) {
+    return null;
+  }
+
+  return db
+    .select()
+    .from(chatMessages)
+    .where(eq(chatMessages.threadId, threadId))
+    .orderBy(asc(chatMessages.createdAt))
+    .all();
+}
+
+export function createChatMessage(input: {
+  id: string;
+  threadId: string;
+  role: "user" | "assistant";
+  content: string;
+}): void {
+  db.transaction(() => {
+    db.insert(chatMessages)
+      .values({
+        id: input.id,
+        threadId: input.threadId,
+        role: input.role,
+        content: input.content,
+        createdAt: nowIso(),
+      })
+      .run();
+
+    db.update(chatThreads)
+      .set({
+        updatedAt: nowIso(),
+      })
+      .where(eq(chatThreads.id, input.threadId))
+      .run();
+  });
 }
 
 export function createAdminAuditLog(input: {

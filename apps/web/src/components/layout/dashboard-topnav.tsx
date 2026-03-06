@@ -1,11 +1,17 @@
 import Link from "next/link";
 import { Bell, Menu, Plus, Search, Sparkles, Zap } from "lucide-react";
 import { logoutAction } from "@/actions/auth";
+import {
+  markNotificationReadAction,
+  readAllNotificationsAction,
+} from "@/actions/notifications";
 import type { CurrentUser } from "@/lib/auth/session";
+import { apiNotifications } from "@/lib/backend-api";
 import { canAccessCreator, getTopbarSectionsForRole } from "@/lib/navigation";
 
 type DashboardTopnavProps = {
   user: CurrentUser;
+  accessToken: string;
 };
 
 function initials(name: string): string {
@@ -17,9 +23,20 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-export function DashboardTopnav({ user }: DashboardTopnavProps) {
+export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProps) {
   const topbarSections = getTopbarSectionsForRole(user.role);
   const showCreator = canAccessCreator(user.role);
+
+  let notifications: Awaited<ReturnType<typeof apiNotifications>> = {
+    items: [],
+    unreadCount: 0,
+  };
+
+  try {
+    notifications = await apiNotifications(accessToken, 20);
+  } catch {
+    notifications = { items: [], unreadCount: 0 };
+  }
 
   return (
     <header className="sticky top-0 z-20 border-b border-night-800/80 bg-night-950/90 px-4 py-4 backdrop-blur lg:px-8">
@@ -69,29 +86,58 @@ export function DashboardTopnav({ user }: DashboardTopnavProps) {
                 aria-label="Notifications"
                 aria-haspopup="menu"
               >
-                <Bell size={15} />
+                <span className="relative inline-flex">
+                  <Bell size={15} />
+                  {notifications.unreadCount > 0 ? (
+                    <span className="absolute -right-1.5 -top-1.5 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-sage-400 px-1 text-[10px] font-semibold text-night-950">
+                      {notifications.unreadCount > 9 ? "9+" : notifications.unreadCount}
+                    </span>
+                  ) : null}
+                </span>
               </summary>
-              <div className="absolute right-0 mt-2 w-64 rounded-xl border border-night-700 bg-night-900/95 p-2 shadow-2xl">
-                <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Notifications</p>
-                <div className="mt-1 flex flex-col text-sm">
-                  <Link
-                    href="/dashboard/journal?title=Daily%20Reflection&mood=Grounded"
-                    className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
-                  >
-                    Reflection reminder
-                  </Link>
-                  <Link
-                    href="/dashboard/practices"
-                    className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
-                  >
-                    Continue your practice streak
-                  </Link>
-                  <Link
-                    href="/community"
-                    className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
-                  >
-                    New circle activity
-                  </Link>
+              <div className="absolute right-0 mt-2 w-80 rounded-xl border border-night-700 bg-night-900/95 p-2 shadow-2xl">
+                <div className="flex items-center justify-between px-2 py-1">
+                  <p className="text-xs uppercase tracking-[0.2em] text-night-300">Notifications</p>
+                  <form action={readAllNotificationsAction}>
+                    <button
+                      type="submit"
+                      className="rounded-md border border-night-700 px-2 py-1 text-[10px] text-sand-200 hover:border-night-500"
+                    >
+                      Read all
+                    </button>
+                  </form>
+                </div>
+                <div className="mt-1 flex max-h-80 flex-col gap-1 overflow-y-auto text-sm">
+                  {notifications.items.length === 0 ? (
+                    <p className="rounded-lg px-2 py-3 text-xs text-night-300">
+                      No notifications yet.
+                    </p>
+                  ) : (
+                    notifications.items.map((notification) => (
+                      <div
+                        key={notification.id}
+                        className={`rounded-lg px-2 py-2 hover:bg-night-800 ${
+                          notification.readAt ? "text-night-200" : "text-sand-100"
+                        }`}
+                      >
+                        <a href={notification.href} className="block">
+                          <p className="text-xs font-semibold">{notification.title}</p>
+                          <p className="mt-1 text-xs">{notification.body}</p>
+                        </a>
+                        {!notification.readAt ? (
+                          <form action={markNotificationReadAction} className="mt-2">
+                            <input type="hidden" name="id" value={notification.id} />
+                            <button
+                              type="submit"
+                              className="rounded-md border border-night-700 px-1.5 py-1 text-[10px] text-night-200 hover:border-night-500"
+                            >
+                              Mark read
+                            </button>
+                          </form>
+                        ) : null}
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </details>
@@ -113,8 +159,8 @@ export function DashboardTopnav({ user }: DashboardTopnavProps) {
                   <Link href="/dashboard/practices" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                     Start a practice
                   </Link>
-                  <Link href="/community" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
-                    Check community circles
+                  <Link href="/community/challenges" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                    Join a challenge
                   </Link>
                 </div>
               </div>

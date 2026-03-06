@@ -2,26 +2,46 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  apiAdminCreateChallenge,
   apiAdminCreateCommunity,
+  apiAdminCreateEvent,
+  apiAdminCreateExpert,
   apiAdminCreateHighlight,
   apiAdminCreateLesson,
   apiAdminCreatePillar,
   apiAdminCreatePractice,
+  apiAdminCreateResource,
+  apiAdminCreateVideo,
+  apiAdminDeleteChallenge,
   apiAdminDeleteCommunity,
+  apiAdminDeleteEvent,
+  apiAdminDeleteExpert,
   apiAdminDeleteHighlight,
   apiAdminDeleteLesson,
   apiAdminDeletePillar,
   apiAdminDeletePractice,
+  apiAdminDeleteResource,
+  apiAdminDeleteVideo,
+  apiAdminSetChallengeStatus,
   apiAdminSetCommunityStatus,
+  apiAdminSetEventStatus,
+  apiAdminSetExpertStatus,
   apiAdminSetHighlightStatus,
   apiAdminSetLessonStatus,
   apiAdminSetPillarStatus,
   apiAdminSetPracticeStatus,
+  apiAdminSetResourceStatus,
+  apiAdminSetVideoStatus,
+  apiAdminUpdateChallenge,
   apiAdminUpdateCommunity,
+  apiAdminUpdateEvent,
+  apiAdminUpdateExpert,
   apiAdminUpdateHighlight,
   apiAdminUpdateLesson,
   apiAdminUpdatePillar,
   apiAdminUpdatePractice,
+  apiAdminUpdateResource,
+  apiAdminUpdateVideo,
   type ContentStatus,
 } from "@/lib/backend-api";
 import { requireSession } from "@/lib/auth/session";
@@ -73,6 +93,9 @@ function revalidateCms(): void {
   revalidatePath("/community/resources");
   revalidatePath("/community/experts");
   revalidatePath("/community/events");
+  revalidatePath("/creator/videos");
+  revalidatePath("/creator/readings");
+  revalidatePath("/creator/exercises");
 }
 
 export async function createLessonAdminAction(formData: FormData): Promise<void> {
@@ -307,6 +330,248 @@ export async function updateHighlightAdminAction(formData: FormData): Promise<vo
   await apiAdminUpdateHighlight(token, getNumber(formData, "id"), {
     slug: getString(formData, "slug"),
     description: getString(formData, "description"),
+    status: getStatus(formData, "status"),
+  });
+
+  revalidateCms();
+}
+
+export async function createChallengeAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminCreateChallenge(token, {
+    slug: getString(formData, "slug"),
+    title: getString(formData, "title"),
+    duration: getString(formData, "duration"),
+    summary: getString(formData, "summary"),
+    status: getStatus(formData, "status"),
+  });
+
+  revalidateCms();
+}
+
+export async function setChallengeStatusAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminSetChallengeStatus(
+    token,
+    getNumber(formData, "id"),
+    getStatus(formData, "status"),
+  );
+
+  revalidateCms();
+}
+
+export async function deleteChallengeAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminDeleteChallenge(token, getNumber(formData, "id"));
+
+  revalidateCms();
+}
+
+export async function updateChallengeAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminUpdateChallenge(token, getNumber(formData, "id"), {
+    slug: getString(formData, "slug"),
+    title: getString(formData, "title"),
+    duration: getString(formData, "duration"),
+    summary: getString(formData, "summary"),
+    status: getStatus(formData, "status"),
+  });
+
+  revalidateCms();
+}
+
+export async function createResourceAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminCreateResource(token, {
+    slug: getString(formData, "slug"),
+    title: getString(formData, "title"),
+    description: getString(formData, "description"),
+    href: getString(formData, "href"),
+    cta: getString(formData, "cta"),
+    status: getStatus(formData, "status"),
+  });
+
+  revalidateCms();
+}
+
+export async function setResourceStatusAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminSetResourceStatus(
+    token,
+    getNumber(formData, "id"),
+    getStatus(formData, "status"),
+  );
+
+  revalidateCms();
+}
+
+export async function deleteResourceAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminDeleteResource(token, getNumber(formData, "id"));
+
+  revalidateCms();
+}
+
+export async function updateResourceAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminUpdateResource(token, getNumber(formData, "id"), {
+    slug: getString(formData, "slug"),
+    title: getString(formData, "title"),
+    description: getString(formData, "description"),
+    href: getString(formData, "href"),
+    cta: getString(formData, "cta"),
+    status: getStatus(formData, "status"),
+  });
+
+  revalidateCms();
+}
+
+export async function createExpertAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminCreateExpert(token, {
+    slug: getString(formData, "slug"),
+    name: getString(formData, "name"),
+    focus: getString(formData, "focus"),
+    status: getStatus(formData, "status"),
+  });
+
+  revalidateCms();
+}
+
+export async function setExpertStatusAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminSetExpertStatus(
+    token,
+    getNumber(formData, "id"),
+    getStatus(formData, "status"),
+  );
+
+  revalidateCms();
+}
+
+export async function deleteExpertAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminDeleteExpert(token, getNumber(formData, "id"));
+
+  revalidateCms();
+}
+
+export async function updateExpertAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminUpdateExpert(token, getNumber(formData, "id"), {
+    slug: getString(formData, "slug"),
+    name: getString(formData, "name"),
+    focus: getString(formData, "focus"),
+    status: getStatus(formData, "status"),
+  });
+
+  revalidateCms();
+}
+
+export async function createEventAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminCreateEvent(token, {
+    slug: getString(formData, "slug"),
+    title: getString(formData, "title"),
+    schedule: getString(formData, "schedule"),
+    summary: getString(formData, "summary"),
+    status: getStatus(formData, "status"),
+  });
+
+  revalidateCms();
+}
+
+export async function setEventStatusAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminSetEventStatus(
+    token,
+    getNumber(formData, "id"),
+    getStatus(formData, "status"),
+  );
+
+  revalidateCms();
+}
+
+export async function deleteEventAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminDeleteEvent(token, getNumber(formData, "id"));
+
+  revalidateCms();
+}
+
+export async function updateEventAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminUpdateEvent(token, getNumber(formData, "id"), {
+    slug: getString(formData, "slug"),
+    title: getString(formData, "title"),
+    schedule: getString(formData, "schedule"),
+    summary: getString(formData, "summary"),
+    status: getStatus(formData, "status"),
+  });
+
+  revalidateCms();
+}
+
+export async function createVideoAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminCreateVideo(token, {
+    slug: getString(formData, "slug"),
+    title: getString(formData, "title"),
+    format: getString(formData, "format"),
+    summary: getString(formData, "summary"),
+    videoUrl: getString(formData, "videoUrl"),
+    status: getStatus(formData, "status"),
+  });
+
+  revalidateCms();
+}
+
+export async function setVideoStatusAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminSetVideoStatus(
+    token,
+    getNumber(formData, "id"),
+    getStatus(formData, "status"),
+  );
+
+  revalidateCms();
+}
+
+export async function deleteVideoAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminDeleteVideo(token, getNumber(formData, "id"));
+
+  revalidateCms();
+}
+
+export async function updateVideoAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminUpdateVideo(token, getNumber(formData, "id"), {
+    slug: getString(formData, "slug"),
+    title: getString(formData, "title"),
+    format: getString(formData, "format"),
+    summary: getString(formData, "summary"),
+    videoUrl: getString(formData, "videoUrl"),
     status: getStatus(formData, "status"),
   });
 

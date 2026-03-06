@@ -1,29 +1,11 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
+import { fetchCommunityResources } from "@/lib/content-api";
 
-const resources = [
-  {
-    title: "Challenge Starter Kit",
-    description: "Templates and checklists to start a focused group challenge.",
-    href: "/dashboard/library?q=challenge",
-    cta: "Open in library",
-  },
-  {
-    title: "Facilitation Playbook",
-    description: "Run small-group discussions with clear outcomes and next actions.",
-    href: "/community",
-    cta: "View circles",
-  },
-  {
-    title: "Reflection Prompts Bank",
-    description: "Prompts for weekly retrospectives and progress reviews.",
-    href: "/dashboard/chat?prompt=Give%20me%2010%20high-quality%20reflection%20prompts%20for%20a%20community%20group.",
-    cta: "Generate prompts",
-  },
-];
+export default async function CommunityResourcesPage() {
+  const resources = await fetchCommunityResources();
 
-export default function CommunityResourcesPage() {
   return (
     <div>
       <PageHeader
@@ -34,7 +16,7 @@ export default function CommunityResourcesPage() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {resources.map((resource) => (
-          <SurfaceCard key={resource.title} title={resource.title}>
+          <SurfaceCard key={resource.slug} title={resource.title}>
             <p className="text-sm text-night-200">{resource.description}</p>
             <Link
               href={resource.href}
@@ -44,6 +26,11 @@ export default function CommunityResourcesPage() {
             </Link>
           </SurfaceCard>
         ))}
+        {resources.length === 0 ? (
+          <p className="rounded-2xl border border-night-800 bg-night-900/60 p-4 text-sm text-night-200">
+            No resources published yet. Add resources in Creator CMS.
+          </p>
+        ) : null}
       </div>
     </div>
   );

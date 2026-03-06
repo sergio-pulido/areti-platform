@@ -1,29 +1,11 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
+import { fetchCommunityChallenges } from "@/lib/content-api";
 
-const challenges = [
-  {
-    slug: "morning-clarity",
-    title: "Morning Clarity Sprint",
-    duration: "7 days",
-    summary: "Start each day with one intentional practice and one clear priority.",
-  },
-  {
-    slug: "friction-to-focus",
-    title: "Friction to Focus",
-    duration: "14 days",
-    summary: "Identify recurring distractions and convert them into focused rituals.",
-  },
-  {
-    slug: "calm-under-pressure",
-    title: "Calm Under Pressure",
-    duration: "10 days",
-    summary: "Train emotional steadiness in meetings, deadlines, and conflict moments.",
-  },
-];
+export default async function CommunityChallengesPage() {
+  const challenges = await fetchCommunityChallenges();
 
-export default function CommunityChallengesPage() {
   return (
     <div>
       <PageHeader
@@ -37,13 +19,18 @@ export default function CommunityChallengesPage() {
           <SurfaceCard key={challenge.slug} title={challenge.title} subtitle={challenge.duration}>
             <p className="text-sm text-night-200">{challenge.summary}</p>
             <Link
-              href={`/community?challenge=${challenge.slug}`}
+              href={`/dashboard/chat?prompt=${encodeURIComponent(`I want to join the ${challenge.title} challenge. Help me create a realistic plan and accountability message.`)}`}
               className="mt-4 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/10 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20"
             >
               Join challenge
             </Link>
           </SurfaceCard>
         ))}
+        {challenges.length === 0 ? (
+          <p className="rounded-2xl border border-night-800 bg-night-900/60 p-4 text-sm text-night-200">
+            No active challenges yet. Create one in Creator CMS.
+          </p>
+        ) : null}
       </div>
     </div>
   );

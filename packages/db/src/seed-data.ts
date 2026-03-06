@@ -129,3 +129,111 @@ export const COMMUNITY_SEED = [
     schedule: "Fridays 5:30 PM",
   },
 ] as const;
+
+export const COMMUNITY_CHALLENGES_SEED = [
+  {
+    slug: "morning-clarity",
+    title: "Morning Clarity Sprint",
+    duration: "7 days",
+    summary: "Start each day with one intentional practice and one clear priority.",
+  },
+  {
+    slug: "friction-to-focus",
+    title: "Friction to Focus",
+    duration: "14 days",
+    summary: "Transform recurring distractions into clear routines with accountability.",
+  },
+  {
+    slug: "calm-under-pressure",
+    title: "Calm Under Pressure",
+    duration: "10 days",
+    summary: "Practice emotional steadiness in deadlines, conflict, and uncertainty.",
+  },
+] as const;
+
+export const COMMUNITY_RESOURCES_SEED = [
+  {
+    slug: "challenge-starter-kit",
+    title: "Challenge Starter Kit",
+    description: "Templates and checklists to launch a focused group challenge.",
+    href: "/dashboard/library?q=challenge",
+    cta: "Open in library",
+  },
+  {
+    slug: "facilitation-playbook",
+    title: "Facilitation Playbook",
+    description: "Guide for running practical dialogues with clear outcomes.",
+    href: "/community",
+    cta: "View circles",
+  },
+  {
+    slug: "reflection-prompts-bank",
+    title: "Reflection Prompts Bank",
+    description: "Prompt collection for retrospectives, reviews, and planning.",
+    href: "/dashboard/chat?prompt=Give%20me%2010%20high-quality%20reflection%20prompts%20for%20a%20community%20group.",
+    cta: "Generate prompts",
+  },
+] as const;
+
+export const COMMUNITY_EXPERTS_SEED = [
+  {
+    slug: "livia-maren",
+    name: "Livia Maren",
+    focus: "Stoic leadership and decision quality under pressure.",
+  },
+  {
+    slug: "theo-ardan",
+    name: "Theo Ardan",
+    focus: "Epicurean wellbeing, sustainable pleasure, and life design.",
+  },
+  {
+    slug: "mika-sol",
+    name: "Mika Sol",
+    focus: "Taoist/Buddhist calm integrated with modern execution habits.",
+  },
+] as const;
+
+export const COMMUNITY_EVENTS_SEED = [
+  {
+    slug: "weekly-dialogue",
+    title: "Weekly Socratic Dialogue",
+    schedule: "Tuesdays · 19:00",
+    summary: "Discuss a difficult decision and stress-test reasoning with the group.",
+  },
+  {
+    slug: "focus-lab",
+    title: "Focus Lab",
+    schedule: "Thursdays · 18:00",
+    summary: "Live deep-work block followed by short reflective debrief.",
+  },
+  {
+    slug: "monthly-retrospective",
+    title: "Monthly Retrospective Circle",
+    schedule: "Last Friday · 20:00",
+    summary: "Review commitments, setbacks, and next practical adjustments.",
+  },
+] as const;
+
+export const CREATOR_VIDEOS_SEED = [
+  {
+    slug: "3-minute-insight",
+    title: "3-Minute Insight",
+    format: "Short",
+    summary: "Quick tactical concept for immediate application.",
+    videoUrl: "https://example.com/videos/3-minute-insight",
+  },
+  {
+    slug: "guided-practice",
+    title: "Guided Practice",
+    format: "Workshop",
+    summary: "Step-by-step routine walkthrough with facilitator prompts.",
+    videoUrl: "https://example.com/videos/guided-practice",
+  },
+  {
+    slug: "deep-dive-comparative",
+    title: "Comparative Deep Dive",
+    format: "Long-form",
+    summary: "Cross-tradition deep dive for advanced practitioners.",
+    videoUrl: "https://example.com/videos/comparative-deep-dive",
+  },
+] as const;

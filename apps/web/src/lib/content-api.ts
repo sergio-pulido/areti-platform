@@ -37,6 +37,47 @@ export type CommunityCircle = {
   schedule: string;
 };
 
+export type CommunityChallenge = {
+  id: number;
+  slug: string;
+  title: string;
+  duration: string;
+  summary: string;
+};
+
+export type CommunityResource = {
+  id: number;
+  slug: string;
+  title: string;
+  description: string;
+  href: string;
+  cta: string;
+};
+
+export type CommunityExpert = {
+  id: number;
+  slug: string;
+  name: string;
+  focus: string;
+};
+
+export type CommunityEvent = {
+  id: number;
+  slug: string;
+  title: string;
+  schedule: string;
+  summary: string;
+};
+
+export type CreatorVideo = {
+  id: number;
+  slug: string;
+  title: string;
+  format: string;
+  summary: string;
+  videoUrl: string;
+};
+
 export type LandingContent = {
   pillars: LandingPillar[];
   highlights: LandingHighlight[];
@@ -89,4 +130,24 @@ export async function fetchPracticeRoutines(): Promise<PracticeRoutine[]> {
 
 export async function fetchCommunityCircles(): Promise<CommunityCircle[]> {
   return (await getContent<CommunityCircle[]>("/api/v1/content/community")) ?? [];
+}
+
+export async function fetchCommunityChallenges(): Promise<CommunityChallenge[]> {
+  return (await getContent<CommunityChallenge[]>("/api/v1/content/challenges")) ?? [];
+}
+
+export async function fetchCommunityResources(): Promise<CommunityResource[]> {
+  return (await getContent<CommunityResource[]>("/api/v1/content/resources")) ?? [];
+}
+
+export async function fetchCommunityExperts(): Promise<CommunityExpert[]> {
+  return (await getContent<CommunityExpert[]>("/api/v1/content/experts")) ?? [];
+}
+
+export async function fetchCommunityEvents(): Promise<CommunityEvent[]> {
+  return (await getContent<CommunityEvent[]>("/api/v1/content/events")) ?? [];
+}
+
+export async function fetchCreatorVideos(): Promise<CreatorVideo[]> {
+  return (await getContent<CreatorVideo[]>("/api/v1/content/videos")) ?? [];
 }

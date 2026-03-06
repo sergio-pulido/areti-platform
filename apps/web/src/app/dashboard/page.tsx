@@ -3,14 +3,20 @@ import { ArrowUpRight, Bot, NotebookPen, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { requireSession } from "@/lib/auth/session";
-import { apiDashboardSummary } from "@/lib/backend-api";
+import { apiDashboardSummary, apiSecuritySettings } from "@/lib/backend-api";
 
 export default async function DashboardPage() {
   const session = await requireSession();
   const user = session.user;
-  const summary = await apiDashboardSummary(session.accessToken);
+  const [summary, security] = await Promise.all([
+    apiDashboardSummary(session.accessToken),
+    apiSecuritySettings(session.accessToken),
+  ]);
 
   const { entriesCount, latestEntries } = summary;
+
+  const focusIndex = Math.max(40, Math.min(96, 60 + entriesCount * 4));
+  const securityLabel = security.mfaEnabled || security.passkeyEnabled ? "Strong" : "Baseline";
 
   const stats = [
     {
@@ -25,13 +31,13 @@ export default async function DashboardPage() {
     },
     {
       label: "Focus Index",
-      value: "87%",
-      meta: "Based on weekly goals",
+      value: `${focusIndex}%`,
+      meta: "Derived from reflection consistency",
     },
     {
       label: "Security",
-      value: "Hardened",
-      meta: "Session + validation enabled",
+      value: securityLabel,
+      meta: "MFA/passkey configuration",
     },
   ];
 

@@ -10,12 +10,13 @@ const promptIdeas = [
 ];
 
 type ChatPageProps = {
-  searchParams: Promise<{ prompt?: string }>;
+  searchParams: Promise<{ prompt?: string; thread?: string }>;
 };
 
 export default async function ChatPage({ searchParams }: ChatPageProps) {
   const params = await searchParams;
   const initialPrompt = params.prompt?.trim().slice(0, 600) || undefined;
+  const initialThreadId = params.thread?.trim() || undefined;
 
   return (
     <div>
@@ -26,7 +27,7 @@ export default async function ChatPage({ searchParams }: ChatPageProps) {
       />
 
       <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <ChatSimulator initialPrompt={initialPrompt} />
+        <ChatSimulator initialPrompt={initialPrompt} initialThreadId={initialThreadId} />
 
         <SurfaceCard title="Prompt ideas" subtitle="Try these first">
           <ul className="space-y-3 text-sm text-night-200">

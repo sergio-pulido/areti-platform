@@ -25,7 +25,7 @@ type SessionTokens = {
   refreshToken: string | null;
 };
 
-type SessionContext = {
+export type SessionContext = {
   user: CurrentUser;
   accessToken: string;
   refreshToken: string | null;

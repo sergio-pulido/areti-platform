@@ -17,6 +17,7 @@
     "test:integration": "npm run test:integration --workspace @ataraxia/api",
     "test:e2e": "playwright test",
     "test": "npm run test:integration && npm run test:e2e",
+    "ci": "npm run lint && npm run test:integration && npm run test:e2e && npm run build",
     "start:api": "npm run start --workspace @ataraxia/api",
     "start:web": "npm run start --workspace @ataraxia/web"
   },

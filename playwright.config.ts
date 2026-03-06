@@ -3,10 +3,10 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests",
   timeout: 60000,
-  fullyParallel: true,
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
   reporter: "list",
   use: {
     baseURL: "http://localhost:43100",
@@ -28,7 +28,7 @@ export default defineConfig({
     },
     {
       command:
-        "API_BASE_URL=http://localhost:43101 NEXT_PUBLIC_API_BASE_URL=http://localhost:43101 npm run dev --workspace @ataraxia/web -- --port 43100",
+        "rm -f ./apps/web/.next/dev/lock && API_BASE_URL=http://localhost:43101 NEXT_PUBLIC_API_BASE_URL=http://localhost:43101 npm run dev --workspace @ataraxia/web -- --port 43100",
       port: 43100,
       reuseExistingServer: false,
       timeout: 120000,

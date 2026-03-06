@@ -95,3 +95,39 @@
 - **Decision:** Gate Creator section entry and links by role (admin-only), and enforce route-level access control on `/creator/*`.
 - **Why:** Aligns UI affordances with authorization boundaries and prevents misleading entry points.
 - **Tradeoff:** Test flows must handle role-dependent navigation visibility.
+
+## 2026-03-06 - Expand content domains to publish-ready API-backed sections
+- **Context:** Community/creator pages still relied on static arrays for challenges/resources/experts/events/videos.
+- **Decision:** Add dedicated DB tables, public content endpoints, and admin CRUD/status APIs for each missing content domain.
+- **Why:** Eliminates hardcoded page data and enables full CMS lifecycle for visible community/creator content.
+- **Tradeoff:** Larger API and CMS surface area increases maintenance overhead.
+
+## 2026-03-06 - Persist notifications and use topbar bell as real inbox
+- **Context:** Notification bell UI existed but did not reflect server-backed state.
+- **Decision:** Introduce `user_notifications` persistence and read/read-all REST APIs, then wire topbar bell to live unread/read behavior.
+- **Why:** Removes fake affordances and enables reliable, stateful notification UX.
+- **Tradeoff:** Additional write/read volume and revalidation paths for shell-level UI.
+
+## 2026-03-06 - Productize chat with thread/message persistence
+- **Context:** Chat was stateless and lost context on refresh/navigation.
+- **Decision:** Introduce thread/message tables and thread-oriented APIs while keeping legacy `POST /api/v1/chat` compatibility.
+- **Why:** Preserves user context, enables thread management, and supports publish-ready conversational UX.
+- **Tradeoff:** More UI complexity (thread lifecycle management) and larger test matrix.
+
+## 2026-03-06 - Replace dev MFA flow with TOTP lifecycle
+- **Context:** MFA previously depended on server-logged verification codes unsuitable for production.
+- **Decision:** Implement TOTP setup/verify/remove APIs and account UI backed by persisted user TOTP secret records.
+- **Why:** Delivers production-appropriate second-factor flow with standard authenticator apps.
+- **Tradeoff:** Secret management complexity and additional recovery/operational policy considerations.
+
+## 2026-03-06 - Add passkey/device lifecycle controls
+- **Context:** Passkeys existed for registration/sign-in but lacked lifecycle management and session/device controls.
+- **Decision:** Add passkey list/rename/revoke APIs, device/session tracking table integration, and revoke-device actions in settings.
+- **Why:** Gives users direct security posture control and closes major account-management gaps.
+- **Tradeoff:** More session state coupling and account settings complexity.
+
+## 2026-03-06 - Enforce release gate automation and accessibility smoke checks
+- **Context:** Pre-release quality checks were present but not unified into a publish-ready gate.
+- **Decision:** Add one-command CI (`npm run ci`), GitHub Actions workflow, and Playwright accessibility smoke suite on core routes.
+- **Why:** Improves release confidence and catches regressions before publishing.
+- **Tradeoff:** Increased CI runtime and operational cost.

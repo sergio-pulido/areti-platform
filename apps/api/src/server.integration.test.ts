@@ -103,6 +103,61 @@ describe("API integration", () => {
     expect(Array.isArray(summary.body.data.latestEntries)).toBe(true);
   });
 
+  it("supports notifications read flows", async () => {
+    const notifications = await request(app)
+      .get("/api/v1/notifications")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(notifications.status).toBe(200);
+    expect(Array.isArray(notifications.body.data.items)).toBe(true);
+    expect(typeof notifications.body.data.unreadCount).toBe("number");
+
+    const first = notifications.body.data.items[0] as { id?: string } | undefined;
+
+    if (first?.id) {
+      const markOne = await request(app)
+        .patch(`/api/v1/notifications/${first.id}/read`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({});
+
+      expect(markOne.status).toBe(200);
+    }
+
+    const readAll = await request(app)
+      .post("/api/v1/notifications/read-all")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({});
+
+    expect(readAll.status).toBe(200);
+  });
+
+  it("supports persisted chat threads and messages", async () => {
+    const createdThread = await request(app)
+      .post("/api/v1/chat/threads")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ title: "Integration Thread" });
+
+    expect(createdThread.status).toBe(201);
+    const threadId = createdThread.body.data.id as string;
+    expect(typeof threadId).toBe("string");
+
+    const sendMessage = await request(app)
+      .post(`/api/v1/chat/threads/${threadId}/messages`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ prompt: "How can I stay calm before a hard meeting?" });
+
+    expect(sendMessage.status).toBe(201);
+    expect(typeof sendMessage.body.data.answer).toBe("string");
+
+    const messages = await request(app)
+      .get(`/api/v1/chat/threads/${threadId}/messages`)
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(messages.status).toBe(200);
+    expect(Array.isArray(messages.body.data)).toBe(true);
+    expect(messages.body.data.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("keeps draft lesson private until published", async () => {
     const createLesson = await request(app)
       .post("/api/v1/admin/content/lessons")
@@ -148,6 +203,53 @@ describe("API integration", () => {
     expect(publicAfter.status).toBe(200);
     const draftAfter = publicAfter.body.data.find(
       (item: { slug: string }) => item.slug === "test-draft-lesson",
+    );
+    expect(draftAfter).toBeDefined();
+  });
+
+  it("keeps draft challenge private until published", async () => {
+    const createChallenge = await request(app)
+      .post("/api/v1/admin/content/challenges")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        slug: "test-draft-challenge",
+        title: "Draft Challenge",
+        duration: "7 days",
+        summary: "Challenge should only appear after publishing.",
+        status: "DRAFT",
+      });
+
+    expect(createChallenge.status).toBe(201);
+
+    const publicBefore = await request(app).get("/api/v1/content/challenges");
+    expect(publicBefore.status).toBe(200);
+    const draftBefore = publicBefore.body.data.find(
+      (item: { slug: string }) => item.slug === "test-draft-challenge",
+    );
+    expect(draftBefore).toBeUndefined();
+
+    const adminContent = await request(app)
+      .get("/api/v1/admin/content")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(adminContent.status).toBe(200);
+    const challenge = adminContent.body.data.challenges.find(
+      (item: { slug: string; id: number }) => item.slug === "test-draft-challenge",
+    );
+
+    expect(challenge).toBeDefined();
+
+    const publish = await request(app)
+      .patch(`/api/v1/admin/content/challenges/${challenge.id}/status`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ status: "PUBLISHED" });
+
+    expect(publish.status).toBe(200);
+
+    const publicAfter = await request(app).get("/api/v1/content/challenges");
+    expect(publicAfter.status).toBe(200);
+    const draftAfter = publicAfter.body.data.find(
+      (item: { slug: string }) => item.slug === "test-draft-challenge",
     );
     expect(draftAfter).toBeDefined();
   });

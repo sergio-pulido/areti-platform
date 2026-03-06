@@ -1,23 +1,11 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
+import { fetchLibraryLessons } from "@/lib/content-api";
 
-const readingTracks = [
-  {
-    name: "Foundations",
-    description: "Beginner-friendly texts to establish Stoic-Epicurean fundamentals.",
-  },
-  {
-    name: "Applied Practice",
-    description: "Case-based readings for work, relationships, and emotional resilience.",
-  },
-  {
-    name: "Comparative Lens",
-    description: "Cross-school comparisons with Taoist and Buddhist complementary ideas.",
-  },
-];
+export default async function CreatorReadingsPage() {
+  const lessons = await fetchLibraryLessons();
 
-export default function CreatorReadingsPage() {
   return (
     <div>
       <PageHeader
@@ -27,9 +15,9 @@ export default function CreatorReadingsPage() {
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {readingTracks.map((track) => (
-          <SurfaceCard key={track.name} title={track.name}>
-            <p className="text-sm text-night-200">{track.description}</p>
+        {lessons.map((lesson) => (
+          <SurfaceCard key={lesson.slug} title={lesson.title} subtitle={lesson.tradition}>
+            <p className="text-sm text-night-200">{lesson.summary}</p>
             <Link
               href="/creator/cms"
               className="mt-4 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/10 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20"
@@ -38,6 +26,11 @@ export default function CreatorReadingsPage() {
             </Link>
           </SurfaceCard>
         ))}
+        {lessons.length === 0 ? (
+          <p className="rounded-2xl border border-night-800 bg-night-900/60 p-4 text-sm text-night-200">
+            No readings available yet.
+          </p>
+        ) : null}
       </div>
     </div>
   );

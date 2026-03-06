@@ -38,7 +38,7 @@ test("landing loads API content and signup reaches dashboard", async ({ page }) 
   const hasCreatorTopbarAccess = (await creatorTopbarLink.count()) > 0;
   if (hasCreatorTopbarAccess) {
     await creatorTopbarLink.click();
-    await expectUrl(page, /\/creator\/cms/);
+    await expectUrl(page, /\/creator/);
   }
 
   await page.getByLabel("Open user menu").click();
@@ -63,8 +63,8 @@ test("dashboard CTAs remain clickable and route to actionable flows", async ({ p
 
   await page.goto("/dashboard");
   await page.getByLabel("Notifications").click();
-  await page.getByRole("link", { name: "Continue your practice streak" }).click();
-  await expectUrl(page, /\/dashboard\/practices/);
+  await page.getByRole("link", { name: /Explore the Library/i }).click();
+  await expectUrl(page, /\/dashboard\/library/);
 
   await page.goto("/dashboard");
   await page.getByLabel("Quick actions").click();
@@ -79,7 +79,7 @@ test("dashboard CTAs remain clickable and route to actionable flows", async ({ p
   await page.goto("/community");
   await page.getByRole("link", { name: "Request invite" }).first().click();
   await expectUrl(page, /\/dashboard\/chat\?prompt=/);
-  await expect(page.getByText("I want to join", { exact: false })).toBeVisible();
+  await expect(page.getByText("I want to join", { exact: false }).first()).toBeVisible();
 
   const firstPromptIdea = "I feel anxious before big meetings. What should I practice this week?";
   await page.goto("/dashboard/chat");

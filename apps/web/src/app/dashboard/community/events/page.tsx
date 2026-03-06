@@ -1,29 +1,11 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
+import { fetchCommunityEvents } from "@/lib/content-api";
 
-const events = [
-  {
-    slug: "weekly-dialogue",
-    title: "Weekly Socratic Dialogue",
-    schedule: "Tuesdays · 19:00",
-    summary: "Discuss one difficult life decision and test reasoning with the group.",
-  },
-  {
-    slug: "focus-lab",
-    title: "Focus Lab",
-    schedule: "Thursdays · 18:00",
-    summary: "Live coworking and reflection block for deep work and calm execution.",
-  },
-  {
-    slug: "monthly-retrospective",
-    title: "Monthly Retrospective Circle",
-    schedule: "Last Friday · 20:00",
-    summary: "Review wins, failures, and next commitments with accountability partners.",
-  },
-];
+export default async function CommunityEventsPage() {
+  const events = await fetchCommunityEvents();
 
-export default function CommunityEventsPage() {
   return (
     <div>
       <PageHeader
@@ -44,6 +26,11 @@ export default function CommunityEventsPage() {
             </Link>
           </SurfaceCard>
         ))}
+        {events.length === 0 ? (
+          <p className="rounded-2xl border border-night-800 bg-night-900/60 p-4 text-sm text-night-200">
+            No events published yet.
+          </p>
+        ) : null}
       </div>
     </div>
   );

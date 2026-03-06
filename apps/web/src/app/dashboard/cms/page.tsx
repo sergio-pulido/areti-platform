@@ -1,24 +1,44 @@
 import {
+  createChallengeAdminAction,
   createCommunityAdminAction,
+  createEventAdminAction,
+  createExpertAdminAction,
   createHighlightAdminAction,
   createLessonAdminAction,
   createPillarAdminAction,
   createPracticeAdminAction,
+  createResourceAdminAction,
+  createVideoAdminAction,
+  deleteChallengeAdminAction,
   deleteCommunityAdminAction,
+  deleteEventAdminAction,
+  deleteExpertAdminAction,
   deleteHighlightAdminAction,
   deleteLessonAdminAction,
   deletePillarAdminAction,
   deletePracticeAdminAction,
+  deleteResourceAdminAction,
+  deleteVideoAdminAction,
+  setChallengeStatusAdminAction,
   setCommunityStatusAdminAction,
+  setEventStatusAdminAction,
+  setExpertStatusAdminAction,
   setHighlightStatusAdminAction,
   setLessonStatusAdminAction,
   setPillarStatusAdminAction,
   setPracticeStatusAdminAction,
+  setResourceStatusAdminAction,
+  setVideoStatusAdminAction,
+  updateChallengeAdminAction,
   updateCommunityAdminAction,
+  updateEventAdminAction,
+  updateExpertAdminAction,
   updateHighlightAdminAction,
   updateLessonAdminAction,
   updatePillarAdminAction,
   updatePracticeAdminAction,
+  updateResourceAdminAction,
+  updateVideoAdminAction,
 } from "@/actions/admin-content";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
@@ -152,6 +172,72 @@ export default async function CmsPage() {
             <StatusSelect />
             <button type="submit" className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-2 text-night-950">
               Create circle
+            </button>
+          </form>
+        </SurfaceCard>
+
+        <SurfaceCard title="Add Challenge" subtitle="Community challenge">
+          <form action={createChallengeAdminAction} className="grid gap-2 text-sm">
+            <input name="slug" required placeholder="slug" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <input name="title" required placeholder="title" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <input name="duration" required placeholder="duration" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <textarea name="summary" required placeholder="summary" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" rows={3} />
+            <StatusSelect />
+            <button type="submit" className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-2 text-night-950">
+              Create challenge
+            </button>
+          </form>
+        </SurfaceCard>
+
+        <SurfaceCard title="Add Resource" subtitle="Community resource">
+          <form action={createResourceAdminAction} className="grid gap-2 text-sm">
+            <input name="slug" required placeholder="slug" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <input name="title" required placeholder="title" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <textarea name="description" required placeholder="description" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" rows={3} />
+            <input name="href" required placeholder="href" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <input name="cta" required placeholder="cta" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <StatusSelect />
+            <button type="submit" className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-2 text-night-950">
+              Create resource
+            </button>
+          </form>
+        </SurfaceCard>
+
+        <SurfaceCard title="Add Expert" subtitle="Community mentor">
+          <form action={createExpertAdminAction} className="grid gap-2 text-sm">
+            <input name="slug" required placeholder="slug" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <input name="name" required placeholder="name" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <textarea name="focus" required placeholder="focus" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" rows={3} />
+            <StatusSelect />
+            <button type="submit" className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-2 text-night-950">
+              Create expert
+            </button>
+          </form>
+        </SurfaceCard>
+
+        <SurfaceCard title="Add Event" subtitle="Community calendar">
+          <form action={createEventAdminAction} className="grid gap-2 text-sm">
+            <input name="slug" required placeholder="slug" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <input name="title" required placeholder="title" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <input name="schedule" required placeholder="schedule" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <textarea name="summary" required placeholder="summary" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" rows={3} />
+            <StatusSelect />
+            <button type="submit" className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-2 text-night-950">
+              Create event
+            </button>
+          </form>
+        </SurfaceCard>
+
+        <SurfaceCard title="Add Video" subtitle="Creator media">
+          <form action={createVideoAdminAction} className="grid gap-2 text-sm">
+            <input name="slug" required placeholder="slug" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <input name="title" required placeholder="title" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <input name="format" required placeholder="format" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <textarea name="summary" required placeholder="summary" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" rows={3} />
+            <input name="videoUrl" required placeholder="videoUrl" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
+            <StatusSelect />
+            <button type="submit" className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-2 text-night-950">
+              Create video
             </button>
           </form>
         </SurfaceCard>
@@ -422,6 +508,257 @@ export default async function CmsPage() {
                     </select>
                     <button type="submit" className="rounded-md border border-sage-300/40 bg-sage-500/10 px-2 py-1 text-sage-100">
                       Save highlight
+                    </button>
+                  </form>
+                </details>
+              </article>
+            ))}
+          </div>
+        </SurfaceCard>
+
+        <SurfaceCard title="Challenges" subtitle="Community challenge catalog">
+          <div className="space-y-3">
+            {content.challenges.map((item) => (
+              <article key={`challenge-${item.id}`} className="rounded-xl border border-night-700 bg-night-950/80 p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-sand-100">{item.title}</p>
+                    <p className="text-night-200">{item.duration}</p>
+                  </div>
+                  <span className={`rounded-full border px-2 py-0.5 text-xs ${statusClasses(item.status)}`}>
+                    {item.status}
+                  </span>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <form action={setChallengeStatusAdminAction}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <input type="hidden" name="status" value={item.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED"} />
+                    <button type="submit" className="rounded-md border border-night-600 px-2 py-1 text-xs">
+                      {item.status === "PUBLISHED" ? "Unpublish" : "Publish"}
+                    </button>
+                  </form>
+                  <form action={deleteChallengeAdminAction}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <button type="submit" className="rounded-md border border-rose-300/40 px-2 py-1 text-xs text-rose-100">
+                      Delete
+                    </button>
+                  </form>
+                </div>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-night-200">Edit</summary>
+                  <form action={updateChallengeAdminAction} className="mt-2 grid gap-1.5 text-xs">
+                    <input type="hidden" name="id" value={item.id} />
+                    <input name="slug" defaultValue={item.slug} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <input name="title" defaultValue={item.title} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <input name="duration" defaultValue={item.duration} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <textarea name="summary" defaultValue={item.summary} rows={2} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <select name="status" defaultValue={item.status} className="rounded-md border border-night-700 bg-night-900 px-2 py-1">
+                      <option value="DRAFT">DRAFT</option>
+                      <option value="PUBLISHED">PUBLISHED</option>
+                    </select>
+                    <button type="submit" className="rounded-md border border-sage-300/40 bg-sage-500/10 px-2 py-1 text-sage-100">
+                      Save challenge
+                    </button>
+                  </form>
+                </details>
+              </article>
+            ))}
+          </div>
+        </SurfaceCard>
+
+        <SurfaceCard title="Resources" subtitle="Community resource catalog">
+          <div className="space-y-3">
+            {content.resources.map((item) => (
+              <article key={`resource-${item.id}`} className="rounded-xl border border-night-700 bg-night-950/80 p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-sand-100">{item.title}</p>
+                    <p className="text-night-200">{item.href}</p>
+                  </div>
+                  <span className={`rounded-full border px-2 py-0.5 text-xs ${statusClasses(item.status)}`}>
+                    {item.status}
+                  </span>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <form action={setResourceStatusAdminAction}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <input type="hidden" name="status" value={item.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED"} />
+                    <button type="submit" className="rounded-md border border-night-600 px-2 py-1 text-xs">
+                      {item.status === "PUBLISHED" ? "Unpublish" : "Publish"}
+                    </button>
+                  </form>
+                  <form action={deleteResourceAdminAction}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <button type="submit" className="rounded-md border border-rose-300/40 px-2 py-1 text-xs text-rose-100">
+                      Delete
+                    </button>
+                  </form>
+                </div>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-night-200">Edit</summary>
+                  <form action={updateResourceAdminAction} className="mt-2 grid gap-1.5 text-xs">
+                    <input type="hidden" name="id" value={item.id} />
+                    <input name="slug" defaultValue={item.slug} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <input name="title" defaultValue={item.title} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <textarea name="description" defaultValue={item.description} rows={2} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <input name="href" defaultValue={item.href} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <input name="cta" defaultValue={item.cta} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <select name="status" defaultValue={item.status} className="rounded-md border border-night-700 bg-night-900 px-2 py-1">
+                      <option value="DRAFT">DRAFT</option>
+                      <option value="PUBLISHED">PUBLISHED</option>
+                    </select>
+                    <button type="submit" className="rounded-md border border-sage-300/40 bg-sage-500/10 px-2 py-1 text-sage-100">
+                      Save resource
+                    </button>
+                  </form>
+                </details>
+              </article>
+            ))}
+          </div>
+        </SurfaceCard>
+
+        <SurfaceCard title="Experts" subtitle="Community mentors">
+          <div className="space-y-3">
+            {content.experts.map((item) => (
+              <article key={`expert-${item.id}`} className="rounded-xl border border-night-700 bg-night-950/80 p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-sand-100">{item.name}</p>
+                    <p className="text-night-200">{item.slug}</p>
+                  </div>
+                  <span className={`rounded-full border px-2 py-0.5 text-xs ${statusClasses(item.status)}`}>
+                    {item.status}
+                  </span>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <form action={setExpertStatusAdminAction}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <input type="hidden" name="status" value={item.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED"} />
+                    <button type="submit" className="rounded-md border border-night-600 px-2 py-1 text-xs">
+                      {item.status === "PUBLISHED" ? "Unpublish" : "Publish"}
+                    </button>
+                  </form>
+                  <form action={deleteExpertAdminAction}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <button type="submit" className="rounded-md border border-rose-300/40 px-2 py-1 text-xs text-rose-100">
+                      Delete
+                    </button>
+                  </form>
+                </div>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-night-200">Edit</summary>
+                  <form action={updateExpertAdminAction} className="mt-2 grid gap-1.5 text-xs">
+                    <input type="hidden" name="id" value={item.id} />
+                    <input name="slug" defaultValue={item.slug} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <input name="name" defaultValue={item.name} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <textarea name="focus" defaultValue={item.focus} rows={2} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <select name="status" defaultValue={item.status} className="rounded-md border border-night-700 bg-night-900 px-2 py-1">
+                      <option value="DRAFT">DRAFT</option>
+                      <option value="PUBLISHED">PUBLISHED</option>
+                    </select>
+                    <button type="submit" className="rounded-md border border-sage-300/40 bg-sage-500/10 px-2 py-1 text-sage-100">
+                      Save expert
+                    </button>
+                  </form>
+                </details>
+              </article>
+            ))}
+          </div>
+        </SurfaceCard>
+
+        <SurfaceCard title="Events" subtitle="Community calendar">
+          <div className="space-y-3">
+            {content.events.map((item) => (
+              <article key={`event-${item.id}`} className="rounded-xl border border-night-700 bg-night-950/80 p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-sand-100">{item.title}</p>
+                    <p className="text-night-200">{item.schedule}</p>
+                  </div>
+                  <span className={`rounded-full border px-2 py-0.5 text-xs ${statusClasses(item.status)}`}>
+                    {item.status}
+                  </span>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <form action={setEventStatusAdminAction}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <input type="hidden" name="status" value={item.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED"} />
+                    <button type="submit" className="rounded-md border border-night-600 px-2 py-1 text-xs">
+                      {item.status === "PUBLISHED" ? "Unpublish" : "Publish"}
+                    </button>
+                  </form>
+                  <form action={deleteEventAdminAction}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <button type="submit" className="rounded-md border border-rose-300/40 px-2 py-1 text-xs text-rose-100">
+                      Delete
+                    </button>
+                  </form>
+                </div>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-night-200">Edit</summary>
+                  <form action={updateEventAdminAction} className="mt-2 grid gap-1.5 text-xs">
+                    <input type="hidden" name="id" value={item.id} />
+                    <input name="slug" defaultValue={item.slug} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <input name="title" defaultValue={item.title} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <input name="schedule" defaultValue={item.schedule} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <textarea name="summary" defaultValue={item.summary} rows={2} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <select name="status" defaultValue={item.status} className="rounded-md border border-night-700 bg-night-900 px-2 py-1">
+                      <option value="DRAFT">DRAFT</option>
+                      <option value="PUBLISHED">PUBLISHED</option>
+                    </select>
+                    <button type="submit" className="rounded-md border border-sage-300/40 bg-sage-500/10 px-2 py-1 text-sage-100">
+                      Save event
+                    </button>
+                  </form>
+                </details>
+              </article>
+            ))}
+          </div>
+        </SurfaceCard>
+
+        <SurfaceCard title="Videos" subtitle="Creator media">
+          <div className="space-y-3">
+            {content.videos.map((item) => (
+              <article key={`video-${item.id}`} className="rounded-xl border border-night-700 bg-night-950/80 p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-sand-100">{item.title}</p>
+                    <p className="text-night-200">{item.format}</p>
+                  </div>
+                  <span className={`rounded-full border px-2 py-0.5 text-xs ${statusClasses(item.status)}`}>
+                    {item.status}
+                  </span>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <form action={setVideoStatusAdminAction}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <input type="hidden" name="status" value={item.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED"} />
+                    <button type="submit" className="rounded-md border border-night-600 px-2 py-1 text-xs">
+                      {item.status === "PUBLISHED" ? "Unpublish" : "Publish"}
+                    </button>
+                  </form>
+                  <form action={deleteVideoAdminAction}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <button type="submit" className="rounded-md border border-rose-300/40 px-2 py-1 text-xs text-rose-100">
+                      Delete
+                    </button>
+                  </form>
+                </div>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-night-200">Edit</summary>
+                  <form action={updateVideoAdminAction} className="mt-2 grid gap-1.5 text-xs">
+                    <input type="hidden" name="id" value={item.id} />
+                    <input name="slug" defaultValue={item.slug} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <input name="title" defaultValue={item.title} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <input name="format" defaultValue={item.format} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <textarea name="summary" defaultValue={item.summary} rows={2} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <input name="videoUrl" defaultValue={item.videoUrl} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <select name="status" defaultValue={item.status} className="rounded-md border border-night-700 bg-night-900 px-2 py-1">
+                      <option value="DRAFT">DRAFT</option>
+                      <option value="PUBLISHED">PUBLISHED</option>
+                    </select>
+                    <button type="submit" className="rounded-md border border-sage-300/40 bg-sage-500/10 px-2 py-1 text-sage-100">
+                      Save video
                     </button>
                   </form>
                 </details>

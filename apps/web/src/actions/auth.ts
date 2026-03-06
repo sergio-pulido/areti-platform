@@ -37,6 +37,7 @@ function validateSigninMfaInput(
 
   if (
     hasChallengeId &&
+    mfaChallengeId !== "totp" &&
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
       mfaChallengeId,
     )
@@ -133,7 +134,7 @@ export async function signinAction(
 
     if (result.mfaRequired) {
       return {
-        info: "A verification code was generated. Enter the 6-digit code to finish signing in.",
+        info: "MFA is enabled. Enter the 6-digit code from your authenticator app.",
         email,
         mfaRequired: true,
         mfaChallengeId: result.mfaChallengeId,

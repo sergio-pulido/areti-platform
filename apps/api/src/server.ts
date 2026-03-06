@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -17,56 +17,100 @@ import {
   countJournalEntriesByUser,
   countUsers,
   createAdminAuditLog,
+  createChatMessage,
+  createChatThread,
   createCommunity,
+  createCommunityChallenge,
+  createCommunityEvent,
+  createCommunityExpert,
+  createCommunityResource,
+  createCreatorVideo,
   createHighlight,
   createJournalEntry,
   createLesson,
-  createMfaChallenge,
+  createNotification,
   createPasskeyCredential,
   createPillar,
   createPractice,
   createRefreshSession,
   createSession,
   createUser,
+  deleteChatThread,
   deleteCommunity,
+  deleteCommunityChallenge,
+  deleteCommunityEvent,
+  deleteCommunityExpert,
+  deleteCommunityResource,
+  deleteCreatorVideo,
   deleteExpiredRefreshSessionsByUser,
   deleteExpiredSessionsByUser,
   deleteHighlight,
   deleteLesson,
+  deletePasskeyCredentialById,
   deletePillar,
   deletePractice,
   deleteRefreshSessionByTokenHash,
   deleteSessionByTokenHash,
+  deleteUserTotpSecret,
+  getChatThreadByIdForUser,
+  getCommunityChallenges,
   getCommunityCircles,
+  getCommunityEvents,
+  getCommunityExperts,
+  getCommunityResources,
+  getCreatorVideos,
   getLandingContent,
   getLibraryLessons,
   getPasskeyCredentialByCredentialId,
   getPracticeRoutines,
-  getRefreshSessionUserByTokenHash,
+  getRefreshSessionContextByTokenHash,
   getSecuritySettingsByUserId,
+  getSessionDeviceByTokenHash,
   getSessionUserByTokenHash,
+  getUserTotpSecret,
   getUserByEmail,
   getUserById,
+  listChatMessagesForThread,
+  listChatThreadsByUser,
   listAdminAuditLogs,
   listAllContentAdmin,
   listJournalEntriesByUser,
+  listNotificationsByUser,
   listPasskeyCredentialsByUserId,
+  listUserDevicesByUserId,
+  markAllNotificationsRead,
+  markNotificationRead,
+  markUserTotpVerified,
+  renamePasskeyCredentialById,
+  revokeUserDevice,
   rotateRefreshSessionByTokenHash,
+  setCommunityChallengeStatus,
+  setCommunityEventStatus,
+  setCommunityExpertStatus,
+  setCommunityResourceStatus,
   setCommunityStatus,
+  setCreatorVideoStatus,
   setHighlightStatus,
   setLessonStatus,
   setPillarStatus,
   setPracticeStatus,
   setUserMfaEnabled,
   setUserPasskeyEnabled,
+  updateChatThread,
   updateCommunity,
+  updateCommunityChallenge,
+  updateCommunityEvent,
+  updateCommunityExpert,
+  updateCommunityResource,
+  updateCreatorVideo,
   updateHighlight,
   updateLesson,
   updatePasskeyCredential,
   updatePasskeyCredentialCounter,
   updatePillar,
   updatePractice,
-  useMfaChallenge,
+  upsertUserDevice,
+  upsertUserTotpSecret,
   type ContentStatus,
   type CurrentUser,
 } from "@ataraxia/db";
@@ -74,10 +118,14 @@ import {
 const ACCESS_SESSION_TTL_MINUTES = 20;
 const REFRESH_SESSION_TTL_DAYS = 30;
 const PASSWORD_MIN_LENGTH = 10;
-const MFA_CHALLENGE_TTL_MINUTES = 5;
 const PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 const MODERATION_BLOCKED_WORDS = ["suicide", "kill myself", "bomb", "terrorist", "self-harm"];
+const CHAT_WINDOW_MS = 60 * 1000;
+const CHAT_MAX_ATTEMPTS = 20;
+const TOTP_DIGITS = 6;
+const TOTP_STEP_SECONDS = 30;
+const TOTP_WINDOW_STEPS = 1;
 
 type AuthenticatedRequest = Request & {
   authUser: CurrentUser;
@@ -87,6 +135,7 @@ type AuthenticatedRequest = Request & {
 const authAttemptsByKey = new Map<string, number[]>();
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_MAX_ATTEMPTS = 8;
+const chatAttemptsByUser = new Map<string, number[]>();
 
 type PasskeyChallengePurpose = "registration" | "authentication";
 
@@ -119,6 +168,125 @@ function assertWithinAuthRateLimit(key: string): void {
 
   recent.push(now);
   authAttemptsByKey.set(key, recent);
+}
+
+function assertWithinChatRateLimit(userId: string): void {
+  const now = Date.now();
+  const current = chatAttemptsByUser.get(userId) ?? [];
+  const recent = current.filter((timestamp) => now - timestamp <= CHAT_WINDOW_MS);
+
+  if (recent.length >= CHAT_MAX_ATTEMPTS) {
+    throw new Error("Too many chat requests. Please wait a moment and try again.");
+  }
+
+  recent.push(now);
+  chatAttemptsByUser.set(userId, recent);
+}
+
+function base32Encode(buffer: Uint8Array): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = 0;
+  let value = 0;
+  let output = "";
+
+  for (const byte of buffer) {
+    value = (value << 8) | byte;
+    bits += 8;
+
+    while (bits >= 5) {
+      output += alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+
+  if (bits > 0) {
+    output += alphabet[(value << (5 - bits)) & 31];
+  }
+
+  return output;
+}
+
+function base32Decode(input: string): Buffer {
+  const normalized = input.toUpperCase().replace(/=+$/g, "");
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = 0;
+  let value = 0;
+  const output: number[] = [];
+
+  for (const char of normalized) {
+    const idx = alphabet.indexOf(char);
+    if (idx < 0) {
+      continue;
+    }
+
+    value = (value << 5) | idx;
+    bits += 5;
+
+    if (bits >= 8) {
+      output.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+
+  return Buffer.from(output);
+}
+
+function generateTotpSecret(): string {
+  return base32Encode(randomBytes(20));
+}
+
+function generateTotpCode(secretBase32: string, unixSeconds: number): string {
+  const counter = Math.floor(unixSeconds / TOTP_STEP_SECONDS);
+  const counterBytes = Buffer.alloc(8);
+  counterBytes.writeBigUInt64BE(BigInt(counter), 0);
+
+  const key = base32Decode(secretBase32);
+  const digest = createHmac("sha1", key).update(counterBytes).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary =
+    ((digest[offset] & 0x7f) << 24) |
+    ((digest[offset + 1] & 0xff) << 16) |
+    ((digest[offset + 2] & 0xff) << 8) |
+    (digest[offset + 3] & 0xff);
+
+  const otp = binary % 10 ** TOTP_DIGITS;
+  return otp.toString().padStart(TOTP_DIGITS, "0");
+}
+
+function verifyTotpCode(secretBase32: string, code: string, nowSeconds = Date.now() / 1000): boolean {
+  if (!/^\d{6}$/.test(code)) {
+    return false;
+  }
+
+  for (let offset = -TOTP_WINDOW_STEPS; offset <= TOTP_WINDOW_STEPS; offset += 1) {
+    const validCode = generateTotpCode(secretBase32, nowSeconds + offset * TOTP_STEP_SECONDS);
+    if (validCode === code) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function buildDeviceContext(request: Request): {
+  fingerprint: string;
+  label: string;
+  ipAddress: string;
+  userAgent: string;
+} {
+  const userAgent = request.header("user-agent")?.slice(0, 255) ?? "Unknown User Agent";
+  const ipAddress = getIpAddress(request);
+  const fingerprint = createHash("sha256")
+    .update(`${userAgent}|${ipAddress}`)
+    .digest("hex");
+  const label = userAgent.split(" ").slice(0, 3).join(" ").slice(0, 120);
+
+  return {
+    fingerprint,
+    label: label.length > 0 ? label : "Unknown Device",
+    ipAddress,
+    userAgent,
+  };
 }
 
 function normalizePasskeyTransports(transports: unknown): AuthenticatorTransportFuture[] {
@@ -210,10 +378,6 @@ function createOpaqueToken(): string {
   return randomBytes(32).toString("hex");
 }
 
-function hashMfaCode(code: string): string {
-  return createHash("sha256").update(`mfa:${code}`).digest("hex");
-}
-
 function getIpAddress(request: Request): string {
   const forwardedFor = request.headers["x-forwarded-for"];
 
@@ -291,7 +455,7 @@ function auditAdminAction(
   });
 }
 
-async function createAuthTokenPair(userId: string) {
+async function createAuthTokenPair(userId: string, deviceId?: string | null) {
   const accessToken = createOpaqueToken();
   const refreshToken = createOpaqueToken();
 
@@ -302,6 +466,7 @@ async function createAuthTokenPair(userId: string) {
     id: randomUUID(),
     tokenHash: hashToken(accessToken),
     userId,
+    deviceId: deviceId ?? null,
     expiresAt: nowPlusMinutesIso(ACCESS_SESSION_TTL_MINUTES),
   });
 
@@ -309,6 +474,7 @@ async function createAuthTokenPair(userId: string) {
     id: randomUUID(),
     tokenHash: hashToken(refreshToken),
     userId,
+    deviceId: deviceId ?? null,
     expiresAt: nowPlusDaysIso(REFRESH_SESSION_TTL_DAYS),
   });
 
@@ -478,6 +644,47 @@ const communitySchema = z.object({
   status: z.enum(["DRAFT", "PUBLISHED"]),
 });
 
+const challengeSchema = z.object({
+  slug: z.string().trim().min(3).max(80),
+  title: z.string().trim().min(3).max(140),
+  duration: z.string().trim().min(2).max(80),
+  summary: z.string().trim().min(8).max(500),
+  status: z.enum(["DRAFT", "PUBLISHED"]),
+});
+
+const resourceSchema = z.object({
+  slug: z.string().trim().min(3).max(80),
+  title: z.string().trim().min(3).max(140),
+  description: z.string().trim().min(8).max(500),
+  href: z.string().trim().min(1).max(500),
+  cta: z.string().trim().min(2).max(80),
+  status: z.enum(["DRAFT", "PUBLISHED"]),
+});
+
+const expertSchema = z.object({
+  slug: z.string().trim().min(3).max(80),
+  name: z.string().trim().min(3).max(140),
+  focus: z.string().trim().min(8).max(500),
+  status: z.enum(["DRAFT", "PUBLISHED"]),
+});
+
+const eventSchema = z.object({
+  slug: z.string().trim().min(3).max(80),
+  title: z.string().trim().min(3).max(140),
+  schedule: z.string().trim().min(2).max(80),
+  summary: z.string().trim().min(8).max(500),
+  status: z.enum(["DRAFT", "PUBLISHED"]),
+});
+
+const videoSchema = z.object({
+  slug: z.string().trim().min(3).max(80),
+  title: z.string().trim().min(3).max(140),
+  format: z.string().trim().min(2).max(80),
+  summary: z.string().trim().min(8).max(500),
+  videoUrl: z.string().trim().url().max(500),
+  status: z.enum(["DRAFT", "PUBLISHED"]),
+});
+
 const pillarSchema = z.object({
   slug: z.string().trim().min(3).max(80),
   title: z.string().trim().min(3).max(140),
@@ -489,6 +696,23 @@ const highlightSchema = z.object({
   slug: z.string().trim().min(3).max(80),
   description: z.string().trim().min(8).max(300),
   status: z.enum(["DRAFT", "PUBLISHED"]),
+});
+
+const passkeyRenameSchema = z.object({
+  nickname: z.string().trim().min(2).max(80),
+});
+
+const totpVerifySchema = z.object({
+  code: z.string().trim().regex(/^\d{6}$/),
+});
+
+const chatThreadCreateSchema = z.object({
+  title: z.string().trim().min(1).max(120).optional(),
+});
+
+const chatThreadPatchSchema = z.object({
+  title: z.string().trim().min(1).max(120).optional(),
+  archived: z.boolean().optional(),
 });
 
 function parseIdOrFail(request: Request, response: Response): number | null {
@@ -516,14 +740,25 @@ function parseStatusOrFail(request: Request, response: Response): ContentStatus 
 export function createApp() {
   const app = express();
 
-  const allowedOrigins = (process.env.CORS_ORIGINS ?? "http://localhost:3000")
+  const env = z
+    .object({
+      CORS_ORIGINS: z.string().optional(),
+      PASSKEY_RP_ID: z.string().optional(),
+      PASSKEY_RP_NAME: z.string().optional(),
+      PASSKEY_ORIGINS: z.string().optional(),
+      OPENAI_API_KEY: z.string().optional(),
+      OPENAI_CHAT_MODEL: z.string().optional(),
+    })
+    .parse(process.env);
+
+  const allowedOrigins = (env.CORS_ORIGINS ?? "http://localhost:3000")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
-  const passkeyRpId = process.env.PASSKEY_RP_ID ?? "localhost";
-  const passkeyRpName = process.env.PASSKEY_RP_NAME ?? "Ataraxia";
+  const passkeyRpId = env.PASSKEY_RP_ID ?? "localhost";
+  const passkeyRpName = env.PASSKEY_RP_NAME ?? "Ataraxia";
   const passkeyExpectedOrigins = (
-    process.env.PASSKEY_ORIGINS ??
+    env.PASSKEY_ORIGINS ??
     allowedOrigins.join(",") ??
     "http://localhost:3000"
   )
@@ -588,7 +823,17 @@ export function createApp() {
       return;
     }
 
-    const tokens = await createAuthTokenPair(created.id);
+    const deviceContext = buildDeviceContext(req);
+    const deviceId = upsertUserDevice({
+      id: randomUUID(),
+      userId: created.id,
+      fingerprint: deviceContext.fingerprint,
+      label: deviceContext.label,
+      ipAddress: deviceContext.ipAddress,
+      userAgent: deviceContext.userAgent,
+    });
+
+    const tokens = await createAuthTokenPair(created.id, deviceId);
 
     res.status(201).json({
       data: {
@@ -632,43 +877,43 @@ export function createApp() {
     }
 
     if (existing.mfaEnabled) {
-      if (!parsed.data.mfaChallengeId || !parsed.data.mfaCode) {
-        const code = `${Math.floor(100000 + Math.random() * 900000)}`;
-        const challengeId = randomUUID();
+      const totpSecret = getUserTotpSecret(existing.id);
 
-        createMfaChallenge({
-          id: challengeId,
-          userId: existing.id,
-          codeHash: hashMfaCode(code),
-          expiresAt: nowPlusMinutesIso(MFA_CHALLENGE_TTL_MINUTES),
-        });
+      if (!totpSecret?.verifiedAt) {
+        res.status(409).json({ error: "MFA is enabled but not fully configured." });
+        return;
+      }
 
-        // eslint-disable-next-line no-console
-        console.log(`[MFA CODE][${existing.email}] ${code}`);
-
+      if (!parsed.data.mfaCode) {
         res.status(401).json({
           error: "MFA_REQUIRED",
           data: {
             mfaRequired: true,
-            mfaChallengeId: challengeId,
+            mfaChallengeId: "totp",
           },
         });
         return;
       }
 
-      const mfaValid = useMfaChallenge({
-        id: parsed.data.mfaChallengeId,
-        userId: existing.id,
-        codeHash: hashMfaCode(parsed.data.mfaCode),
-      });
+      const mfaValid = verifyTotpCode(totpSecret.secret, parsed.data.mfaCode);
 
       if (!mfaValid) {
-        res.status(401).json({ error: "Invalid or expired MFA challenge/code." });
+        res.status(401).json({ error: "Invalid MFA code." });
         return;
       }
     }
 
-    const tokens = await createAuthTokenPair(existing.id);
+    const deviceContext = buildDeviceContext(req);
+    const deviceId = upsertUserDevice({
+      id: randomUUID(),
+      userId: existing.id,
+      fingerprint: deviceContext.fingerprint,
+      label: deviceContext.label,
+      ipAddress: deviceContext.ipAddress,
+      userAgent: deviceContext.userAgent,
+    });
+
+    const tokens = await createAuthTokenPair(existing.id, deviceId);
 
     res.json({
       data: {
@@ -789,7 +1034,17 @@ export function createApp() {
       );
       setUserPasskeyEnabled(user.id, true);
 
-      const tokens = await createAuthTokenPair(user.id);
+      const deviceContext = buildDeviceContext(req);
+      const deviceId = upsertUserDevice({
+        id: randomUUID(),
+        userId: user.id,
+        fingerprint: deviceContext.fingerprint,
+        label: deviceContext.label,
+        ipAddress: deviceContext.ipAddress,
+        userAgent: deviceContext.userAgent,
+      });
+
+      const tokens = await createAuthTokenPair(user.id, deviceId);
 
       res.json({
         data: {
@@ -812,12 +1067,13 @@ export function createApp() {
     }
 
     const refreshTokenHash = hashToken(parsed.data.refreshToken);
-    const user = getRefreshSessionUserByTokenHash(refreshTokenHash);
+    const refreshContext = getRefreshSessionContextByTokenHash(refreshTokenHash);
 
-    if (!user) {
+    if (!refreshContext) {
       res.status(401).json({ error: "Invalid or expired refresh token." });
       return;
     }
+    const user = refreshContext.user;
 
     const newAccessToken = createOpaqueToken();
     const newRefreshToken = createOpaqueToken();
@@ -826,6 +1082,7 @@ export function createApp() {
       id: randomUUID(),
       tokenHash: hashToken(newRefreshToken),
       userId: user.id,
+      deviceId: refreshContext.deviceId,
       expiresAt: nowPlusDaysIso(REFRESH_SESSION_TTL_DAYS),
     });
 
@@ -838,6 +1095,7 @@ export function createApp() {
       id: randomUUID(),
       tokenHash: hashToken(newAccessToken),
       userId: user.id,
+      deviceId: refreshContext.deviceId,
       expiresAt: nowPlusMinutesIso(ACCESS_SESSION_TTL_MINUTES),
     });
 
@@ -896,6 +1154,16 @@ export function createApp() {
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid payload" });
       return;
+    }
+
+    if (parsed.data.enabled) {
+      const secret = getUserTotpSecret(authReq.authUser.id);
+      if (!secret?.verifiedAt) {
+        res.status(400).json({ error: "Set up and verify TOTP before enabling MFA." });
+        return;
+      }
+    } else {
+      deleteUserTotpSecret(authReq.authUser.id);
     }
 
     setUserMfaEnabled(authReq.authUser.id, parsed.data.enabled);
@@ -1002,6 +1270,7 @@ export function createApp() {
           credentialId: credential.id,
           publicKey: isoBase64URL.fromBuffer(credential.publicKey),
           counter: credential.counter,
+          nickname: existingCredential.nickname,
           transports,
         });
       } else {
@@ -1009,6 +1278,7 @@ export function createApp() {
           id: randomUUID(),
           userId: authReq.authUser.id,
           credentialId: credential.id,
+          nickname: `${authReq.authUser.name.split(" ")[0]}'s passkey`,
           publicKey: isoBase64URL.fromBuffer(credential.publicKey),
           counter: credential.counter,
           transports,
@@ -1028,12 +1298,188 @@ export function createApp() {
     }
   });
 
+  app.get("/api/v1/security/passkeys", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const passkeys = listPasskeyCredentialsByUserId(authReq.authUser.id).map((item) => ({
+      id: item.id,
+      credentialId: item.credentialId,
+      nickname: item.nickname ?? "Unnamed passkey",
+      createdAt: item.createdAt,
+      lastUsedAt: item.lastUsedAt,
+    }));
+    res.json({ data: passkeys });
+  });
+
+  app.patch("/api/v1/security/passkeys/:id", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = passkeyRenameSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid passkey payload" });
+      return;
+    }
+
+    const renamed = renamePasskeyCredentialById(
+      authReq.authUser.id,
+      req.params.id,
+      parsed.data.nickname,
+    );
+
+    if (!renamed) {
+      res.status(404).json({ error: "Passkey not found" });
+      return;
+    }
+
+    res.json({ data: { ok: true } });
+  });
+
+  app.delete("/api/v1/security/passkeys/:id", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const deleted = deletePasskeyCredentialById(authReq.authUser.id, req.params.id);
+
+    if (!deleted) {
+      res.status(404).json({ error: "Passkey not found" });
+      return;
+    }
+
+    const remainingPasskeys = listPasskeyCredentialsByUserId(authReq.authUser.id);
+    if (remainingPasskeys.length === 0) {
+      setUserPasskeyEnabled(authReq.authUser.id, false);
+    }
+
+    res.status(204).send();
+  });
+
+  app.post("/api/v1/security/mfa/totp/setup", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const secret = generateTotpSecret();
+    const issuer = encodeURIComponent("Ataraxia");
+    const label = encodeURIComponent(authReq.authUser.email);
+
+    upsertUserTotpSecret({
+      id: randomUUID(),
+      userId: authReq.authUser.id,
+      secret,
+      verifiedAt: null,
+    });
+
+    res.json({
+      data: {
+        secret,
+        otpAuthUrl: `otpauth://totp/${issuer}:${label}?secret=${secret}&issuer=${issuer}&digits=${TOTP_DIGITS}&period=${TOTP_STEP_SECONDS}`,
+      },
+    });
+  });
+
+  app.post("/api/v1/security/mfa/totp/verify", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = totpVerifySchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid verification payload" });
+      return;
+    }
+
+    const secret = getUserTotpSecret(authReq.authUser.id);
+
+    if (!secret) {
+      res.status(404).json({ error: "No pending TOTP setup found." });
+      return;
+    }
+
+    const valid = verifyTotpCode(secret.secret, parsed.data.code);
+
+    if (!valid) {
+      res.status(401).json({ error: "Invalid verification code." });
+      return;
+    }
+
+    markUserTotpVerified(authReq.authUser.id);
+    setUserMfaEnabled(authReq.authUser.id, true);
+
+    res.json({ data: { mfaEnabled: true } });
+  });
+
+  app.delete("/api/v1/security/mfa/totp", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    deleteUserTotpSecret(authReq.authUser.id);
+    setUserMfaEnabled(authReq.authUser.id, false);
+    res.status(204).send();
+  });
+
+  app.get("/api/v1/security/devices", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const currentSession = getSessionDeviceByTokenHash(hashToken(authReq.authAccessToken));
+    const devices = listUserDevicesByUserId(authReq.authUser.id).map((device) => ({
+      ...device,
+      isCurrent: currentSession?.deviceId === device.id,
+      isRevoked: Boolean(device.revokedAt),
+    }));
+    res.json({ data: devices });
+  });
+
+  app.delete("/api/v1/security/devices/:id", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const revoked = revokeUserDevice(authReq.authUser.id, req.params.id);
+
+    if (!revoked) {
+      res.status(404).json({ error: "Device not found" });
+      return;
+    }
+
+    res.status(204).send();
+  });
+
+  app.get("/api/v1/notifications", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = z
+      .object({
+        limit: z.coerce.number().int().positive().max(50).default(20),
+      })
+      .safeParse(req.query);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    res.json({ data: listNotificationsByUser(authReq.authUser.id, parsed.data.limit) });
+  });
+
+  app.patch("/api/v1/notifications/:id/read", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const updated = markNotificationRead(authReq.authUser.id, req.params.id);
+
+    if (!updated) {
+      res.status(404).json({ error: "Notification not found" });
+      return;
+    }
+
+    res.json({ data: { ok: true } });
+  });
+
+  app.post("/api/v1/notifications/read-all", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const updatedCount = markAllNotificationsRead(authReq.authUser.id);
+    res.json({ data: { updatedCount } });
+  });
+
   app.post("/api/v1/chat", requireAuth, async (req, res) => {
     const parsed = chatSchema.safeParse(req.body);
 
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid prompt" });
       return;
+    }
+
+    try {
+      assertWithinChatRateLimit((req as AuthenticatedRequest).authUser.id);
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(429).json({ error: error.message });
+        return;
+      }
+      throw error;
     }
 
     const moderationError = moderatePrompt(parsed.data.prompt);
@@ -1046,6 +1492,133 @@ export function createApp() {
     const answer = await resolveChatAnswer(parsed.data.prompt);
 
     res.json({ data: { answer } });
+  });
+
+  app.get("/api/v1/chat/threads", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    res.json({ data: listChatThreadsByUser(authReq.authUser.id) });
+  });
+
+  app.post("/api/v1/chat/threads", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = chatThreadCreateSchema.safeParse(req.body ?? {});
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid thread payload" });
+      return;
+    }
+
+    const title = parsed.data.title?.trim() || `Thread ${new Date().toLocaleString()}`;
+    const thread = createChatThread({
+      id: randomUUID(),
+      userId: authReq.authUser.id,
+      title,
+    });
+
+    createNotification({
+      id: randomUUID(),
+      userId: authReq.authUser.id,
+      title: "New chat thread created",
+      body: thread.title,
+      href: `/dashboard/chat?thread=${thread.id}`,
+    });
+
+    res.status(201).json({ data: thread });
+  });
+
+  app.patch("/api/v1/chat/threads/:id", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = chatThreadPatchSchema.safeParse(req.body);
+
+    if (!parsed.success || (parsed.data.title === undefined && parsed.data.archived === undefined)) {
+      res.status(400).json({ error: "Invalid thread patch payload" });
+      return;
+    }
+
+    const updated = updateChatThread(authReq.authUser.id, req.params.id, parsed.data);
+
+    if (!updated) {
+      res.status(404).json({ error: "Thread not found" });
+      return;
+    }
+
+    res.json({ data: { ok: true } });
+  });
+
+  app.delete("/api/v1/chat/threads/:id", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const deleted = deleteChatThread(authReq.authUser.id, req.params.id);
+
+    if (!deleted) {
+      res.status(404).json({ error: "Thread not found" });
+      return;
+    }
+
+    res.status(204).send();
+  });
+
+  app.get("/api/v1/chat/threads/:id/messages", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const messages = listChatMessagesForThread(authReq.authUser.id, req.params.id);
+
+    if (!messages) {
+      res.status(404).json({ error: "Thread not found" });
+      return;
+    }
+
+    res.json({ data: messages });
+  });
+
+  app.post("/api/v1/chat/threads/:id/messages", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = chatSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid prompt" });
+      return;
+    }
+
+    const thread = getChatThreadByIdForUser(authReq.authUser.id, req.params.id);
+
+    if (!thread) {
+      res.status(404).json({ error: "Thread not found" });
+      return;
+    }
+
+    try {
+      assertWithinChatRateLimit(authReq.authUser.id);
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(429).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+
+    const moderationError = moderatePrompt(parsed.data.prompt);
+
+    if (moderationError) {
+      res.status(400).json({ error: moderationError });
+      return;
+    }
+
+    createChatMessage({
+      id: randomUUID(),
+      threadId: thread.id,
+      role: "user",
+      content: parsed.data.prompt,
+    });
+
+    const answer = await resolveChatAnswer(parsed.data.prompt);
+
+    createChatMessage({
+      id: randomUUID(),
+      threadId: thread.id,
+      role: "assistant",
+      content: answer,
+    });
+
+    res.status(201).json({ data: { answer } });
   });
 
   app.get("/api/v1/dashboard/summary", requireAuth, (req, res) => {
@@ -1124,6 +1697,26 @@ export function createApp() {
 
   app.get("/api/v1/content/community", (_req, res) => {
     res.json({ data: getCommunityCircles() });
+  });
+
+  app.get("/api/v1/content/challenges", (_req, res) => {
+    res.json({ data: getCommunityChallenges() });
+  });
+
+  app.get("/api/v1/content/resources", (_req, res) => {
+    res.json({ data: getCommunityResources() });
+  });
+
+  app.get("/api/v1/content/experts", (_req, res) => {
+    res.json({ data: getCommunityExperts() });
+  });
+
+  app.get("/api/v1/content/events", (_req, res) => {
+    res.json({ data: getCommunityEvents() });
+  });
+
+  app.get("/api/v1/content/videos", (_req, res) => {
+    res.json({ data: getCreatorVideos() });
   });
 
   app.get("/api/v1/admin/content", requireAuth, requireAdmin, (_req, res) => {
@@ -1328,6 +1921,316 @@ export function createApp() {
 
     deleteCommunity(id);
     auditAdminAction(authReq, "community.delete", "community", String(id), null);
+    res.status(204).send();
+  });
+
+  app.post("/api/v1/admin/content/challenges", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = challengeSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid challenge payload" });
+      return;
+    }
+
+    createCommunityChallenge(parsed.data);
+    auditAdminAction(authReq, "challenge.create", "challenge", parsed.data.slug, parsed.data);
+    res.status(201).json({ data: { ok: true } });
+  });
+
+  app.put("/api/v1/admin/content/challenges/:id", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    const parsed = challengeSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid challenge payload" });
+      return;
+    }
+
+    updateCommunityChallenge(id, parsed.data);
+    auditAdminAction(authReq, "challenge.update", "challenge", String(id), parsed.data);
+    res.json({ data: { ok: true } });
+  });
+
+  app.patch("/api/v1/admin/content/challenges/:id/status", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    const status = parseStatusOrFail(req, res);
+    if (!status) {
+      return;
+    }
+
+    setCommunityChallengeStatus(id, status);
+    auditAdminAction(authReq, "challenge.status", "challenge", String(id), { status });
+    res.json({ data: { ok: true } });
+  });
+
+  app.delete("/api/v1/admin/content/challenges/:id", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    deleteCommunityChallenge(id);
+    auditAdminAction(authReq, "challenge.delete", "challenge", String(id), null);
+    res.status(204).send();
+  });
+
+  app.post("/api/v1/admin/content/resources", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = resourceSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid resource payload" });
+      return;
+    }
+
+    createCommunityResource(parsed.data);
+    auditAdminAction(authReq, "resource.create", "resource", parsed.data.slug, parsed.data);
+    res.status(201).json({ data: { ok: true } });
+  });
+
+  app.put("/api/v1/admin/content/resources/:id", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    const parsed = resourceSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid resource payload" });
+      return;
+    }
+
+    updateCommunityResource(id, parsed.data);
+    auditAdminAction(authReq, "resource.update", "resource", String(id), parsed.data);
+    res.json({ data: { ok: true } });
+  });
+
+  app.patch("/api/v1/admin/content/resources/:id/status", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    const status = parseStatusOrFail(req, res);
+    if (!status) {
+      return;
+    }
+
+    setCommunityResourceStatus(id, status);
+    auditAdminAction(authReq, "resource.status", "resource", String(id), { status });
+    res.json({ data: { ok: true } });
+  });
+
+  app.delete("/api/v1/admin/content/resources/:id", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    deleteCommunityResource(id);
+    auditAdminAction(authReq, "resource.delete", "resource", String(id), null);
+    res.status(204).send();
+  });
+
+  app.post("/api/v1/admin/content/experts", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = expertSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid expert payload" });
+      return;
+    }
+
+    createCommunityExpert(parsed.data);
+    auditAdminAction(authReq, "expert.create", "expert", parsed.data.slug, parsed.data);
+    res.status(201).json({ data: { ok: true } });
+  });
+
+  app.put("/api/v1/admin/content/experts/:id", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    const parsed = expertSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid expert payload" });
+      return;
+    }
+
+    updateCommunityExpert(id, parsed.data);
+    auditAdminAction(authReq, "expert.update", "expert", String(id), parsed.data);
+    res.json({ data: { ok: true } });
+  });
+
+  app.patch("/api/v1/admin/content/experts/:id/status", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    const status = parseStatusOrFail(req, res);
+    if (!status) {
+      return;
+    }
+
+    setCommunityExpertStatus(id, status);
+    auditAdminAction(authReq, "expert.status", "expert", String(id), { status });
+    res.json({ data: { ok: true } });
+  });
+
+  app.delete("/api/v1/admin/content/experts/:id", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    deleteCommunityExpert(id);
+    auditAdminAction(authReq, "expert.delete", "expert", String(id), null);
+    res.status(204).send();
+  });
+
+  app.post("/api/v1/admin/content/events", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = eventSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid event payload" });
+      return;
+    }
+
+    createCommunityEvent(parsed.data);
+    auditAdminAction(authReq, "event.create", "event", parsed.data.slug, parsed.data);
+    res.status(201).json({ data: { ok: true } });
+  });
+
+  app.put("/api/v1/admin/content/events/:id", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    const parsed = eventSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid event payload" });
+      return;
+    }
+
+    updateCommunityEvent(id, parsed.data);
+    auditAdminAction(authReq, "event.update", "event", String(id), parsed.data);
+    res.json({ data: { ok: true } });
+  });
+
+  app.patch("/api/v1/admin/content/events/:id/status", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    const status = parseStatusOrFail(req, res);
+    if (!status) {
+      return;
+    }
+
+    setCommunityEventStatus(id, status);
+    auditAdminAction(authReq, "event.status", "event", String(id), { status });
+    res.json({ data: { ok: true } });
+  });
+
+  app.delete("/api/v1/admin/content/events/:id", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    deleteCommunityEvent(id);
+    auditAdminAction(authReq, "event.delete", "event", String(id), null);
+    res.status(204).send();
+  });
+
+  app.post("/api/v1/admin/content/videos", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = videoSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid video payload" });
+      return;
+    }
+
+    createCreatorVideo(parsed.data);
+    auditAdminAction(authReq, "video.create", "video", parsed.data.slug, parsed.data);
+    res.status(201).json({ data: { ok: true } });
+  });
+
+  app.put("/api/v1/admin/content/videos/:id", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    const parsed = videoSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid video payload" });
+      return;
+    }
+
+    updateCreatorVideo(id, parsed.data);
+    auditAdminAction(authReq, "video.update", "video", String(id), parsed.data);
+    res.json({ data: { ok: true } });
+  });
+
+  app.patch("/api/v1/admin/content/videos/:id/status", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    const status = parseStatusOrFail(req, res);
+    if (!status) {
+      return;
+    }
+
+    setCreatorVideoStatus(id, status);
+    auditAdminAction(authReq, "video.status", "video", String(id), { status });
+    res.json({ data: { ok: true } });
+  });
+
+  app.delete("/api/v1/admin/content/videos/:id", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const id = parseIdOrFail(req, res);
+    if (!id) {
+      return;
+    }
+
+    deleteCreatorVideo(id);
+    auditAdminAction(authReq, "video.delete", "video", String(id), null);
     res.status(204).send();
   });
 

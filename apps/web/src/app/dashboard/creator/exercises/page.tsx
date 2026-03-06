@@ -1,14 +1,11 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
+import { fetchPracticeRoutines } from "@/lib/content-api";
 
-const exerciseTemplates = [
-  "Morning intention reset",
-  "Evening control audit",
-  "Discomfort practice ladder",
-];
+export default async function CreatorExercisesPage() {
+  const routines = await fetchPracticeRoutines();
 
-export default function CreatorExercisesPage() {
   return (
     <div>
       <PageHeader
@@ -19,11 +16,20 @@ export default function CreatorExercisesPage() {
 
       <SurfaceCard title="Exercise pipelines" subtitle="Draft, review, publish">
         <ul className="space-y-2 text-sm text-night-200">
-          {exerciseTemplates.map((template) => (
-            <li key={template} className="rounded-xl border border-night-700 bg-night-950/70 px-3 py-2">
-              {template}
+          {routines.map((routine) => (
+            <li
+              key={routine.slug}
+              className="rounded-xl border border-night-700 bg-night-950/70 px-3 py-2"
+            >
+              <p className="font-medium text-sand-100">{routine.title}</p>
+              <p className="text-xs text-night-300">{routine.cadence}</p>
             </li>
           ))}
+          {routines.length === 0 ? (
+            <li className="rounded-xl border border-night-700 bg-night-950/70 px-3 py-2 text-night-300">
+              No exercises published yet.
+            </li>
+          ) : null}
         </ul>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link

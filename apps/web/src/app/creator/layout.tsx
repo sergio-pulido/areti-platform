@@ -1,18 +1,19 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { SecuredShell } from "@/components/layout/secured-shell";
-import { requireUser } from "@/lib/auth/session";
+import { requireSession } from "@/lib/auth/session";
 
 type CreatorLayoutProps = {
   children: ReactNode;
 };
 
 export default async function CreatorLayout({ children }: CreatorLayoutProps) {
-  const user = await requireUser();
+  const session = await requireSession();
+  const user = session.user;
 
   if (user.role !== "ADMIN") {
     redirect("/dashboard");
   }
 
-  return <SecuredShell user={user}>{children}</SecuredShell>;
+  return <SecuredShell session={session}>{children}</SecuredShell>;
 }

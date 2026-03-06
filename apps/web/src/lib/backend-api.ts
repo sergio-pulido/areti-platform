@@ -43,6 +43,101 @@ export type ApiSecuritySettings = {
   passkeyEnabled: boolean;
 };
 
+export type ApiPasskey = {
+  id: string;
+  credentialId: string;
+  nickname: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+};
+
+export type ApiNotification = {
+  id: string;
+  userId: string;
+  title: string;
+  body: string;
+  href: string;
+  readAt: string | null;
+  createdAt: string;
+};
+
+export type ApiNotificationsPayload = {
+  items: ApiNotification[];
+  unreadCount: number;
+};
+
+export type ApiDevice = {
+  id: string;
+  userId: string;
+  label: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  lastSeenAt: string;
+  revokedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  isCurrent: boolean;
+  isRevoked: boolean;
+};
+
+export type ApiChatThread = {
+  id: string;
+  userId: string;
+  title: string;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiChatMessage = {
+  id: string;
+  threadId: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+};
+
+export type ApiContentChallenge = {
+  id: number;
+  slug: string;
+  title: string;
+  duration: string;
+  summary: string;
+};
+
+export type ApiContentResource = {
+  id: number;
+  slug: string;
+  title: string;
+  description: string;
+  href: string;
+  cta: string;
+};
+
+export type ApiContentExpert = {
+  id: number;
+  slug: string;
+  name: string;
+  focus: string;
+};
+
+export type ApiContentEvent = {
+  id: number;
+  slug: string;
+  title: string;
+  schedule: string;
+  summary: string;
+};
+
+export type ApiContentVideo = {
+  id: number;
+  slug: string;
+  title: string;
+  format: string;
+  summary: string;
+  videoUrl: string;
+};
+
 export type ApiAdminAuditLog = {
   id: string;
   adminUserId: string;
@@ -105,6 +200,57 @@ export type AdminContentBundle = {
     createdAt: string;
     updatedAt: string;
   }>;
+  challenges: Array<{
+    id: number;
+    slug: string;
+    title: string;
+    duration: string;
+    summary: string;
+    status: ContentStatus;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  resources: Array<{
+    id: number;
+    slug: string;
+    title: string;
+    description: string;
+    href: string;
+    cta: string;
+    status: ContentStatus;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  experts: Array<{
+    id: number;
+    slug: string;
+    name: string;
+    focus: string;
+    status: ContentStatus;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  events: Array<{
+    id: number;
+    slug: string;
+    title: string;
+    schedule: string;
+    summary: string;
+    status: ContentStatus;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  videos: Array<{
+    id: number;
+    slug: string;
+    title: string;
+    format: string;
+    summary: string;
+    videoUrl: string;
+    status: ContentStatus;
+    createdAt: string;
+    updatedAt: string;
+  }>;
 };
 
 const errorSchema = z.object({
@@ -113,7 +259,7 @@ const errorSchema = z.object({
 });
 
 const mfaRequiredDataSchema = z.object({
-  mfaChallengeId: z.string().uuid(),
+  mfaChallengeId: z.string().min(1),
 });
 
 export class ApiHttpError extends Error {
@@ -330,6 +476,26 @@ export async function apiChat(token: string, prompt: string): Promise<{ answer: 
       body: JSON.stringify({ prompt }),
     }),
   );
+}
+
+export async function apiContentChallenges(): Promise<ApiContentChallenge[]> {
+  return requestJson<ApiContentChallenge[]>("/api/v1/content/challenges");
+}
+
+export async function apiContentResources(): Promise<ApiContentResource[]> {
+  return requestJson<ApiContentResource[]>("/api/v1/content/resources");
+}
+
+export async function apiContentExperts(): Promise<ApiContentExpert[]> {
+  return requestJson<ApiContentExpert[]>("/api/v1/content/experts");
+}
+
+export async function apiContentEvents(): Promise<ApiContentEvent[]> {
+  return requestJson<ApiContentEvent[]>("/api/v1/content/events");
+}
+
+export async function apiContentVideos(): Promise<ApiContentVideo[]> {
+  return requestJson<ApiContentVideo[]>("/api/v1/content/videos");
 }
 
 export async function apiAdminContent(token: string): Promise<AdminContentBundle> {
@@ -644,6 +810,480 @@ export async function apiAdminUpdateHighlight(
     withAuth(token, {
       method: "PUT",
       body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiNotifications(token: string, limit = 20): Promise<ApiNotificationsPayload> {
+  return requestJson<ApiNotificationsPayload>(
+    `/api/v1/notifications?limit=${limit}`,
+    withAuth(token),
+  );
+}
+
+export async function apiNotificationRead(token: string, notificationId: string): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/notifications/${notificationId}/read`,
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function apiNotificationsReadAll(token: string): Promise<{ updatedCount: number }> {
+  return requestJson<{ updatedCount: number }>(
+    "/api/v1/notifications/read-all",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function apiSecurityPasskeys(token: string): Promise<ApiPasskey[]> {
+  return requestJson<ApiPasskey[]>("/api/v1/security/passkeys", withAuth(token));
+}
+
+export async function apiSecurityRenamePasskey(
+  token: string,
+  passkeyId: string,
+  nickname: string,
+): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/security/passkeys/${passkeyId}`,
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify({ nickname }),
+    }),
+  );
+}
+
+export async function apiSecurityDeletePasskey(token: string, passkeyId: string): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/security/passkeys/${passkeyId}`,
+    withAuth(token, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function apiTotpSetup(
+  token: string,
+): Promise<{ secret: string; otpAuthUrl: string }> {
+  return requestJson<{ secret: string; otpAuthUrl: string }>(
+    "/api/v1/security/mfa/totp/setup",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function apiTotpVerify(token: string, code: string): Promise<{ mfaEnabled: boolean }> {
+  return requestJson<{ mfaEnabled: boolean }>(
+    "/api/v1/security/mfa/totp/verify",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+  );
+}
+
+export async function apiTotpDisable(token: string): Promise<void> {
+  return requestJson<void>(
+    "/api/v1/security/mfa/totp",
+    withAuth(token, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function apiDevices(token: string): Promise<ApiDevice[]> {
+  return requestJson<ApiDevice[]>("/api/v1/security/devices", withAuth(token));
+}
+
+export async function apiRevokeDevice(token: string, deviceId: string): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/security/devices/${deviceId}`,
+    withAuth(token, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function apiChatThreads(token: string): Promise<ApiChatThread[]> {
+  return requestJson<ApiChatThread[]>("/api/v1/chat/threads", withAuth(token));
+}
+
+export async function apiChatCreateThread(
+  token: string,
+  title?: string,
+): Promise<ApiChatThread> {
+  return requestJson<ApiChatThread>(
+    "/api/v1/chat/threads",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(title ? { title } : {}),
+    }),
+  );
+}
+
+export async function apiChatPatchThread(
+  token: string,
+  threadId: string,
+  input: { title?: string; archived?: boolean },
+): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/chat/threads/${threadId}`,
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiChatDeleteThread(token: string, threadId: string): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/chat/threads/${threadId}`,
+    withAuth(token, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function apiChatMessages(
+  token: string,
+  threadId: string,
+): Promise<ApiChatMessage[]> {
+  return requestJson<ApiChatMessage[]>(
+    `/api/v1/chat/threads/${threadId}/messages`,
+    withAuth(token),
+  );
+}
+
+export async function apiChatPostMessage(
+  token: string,
+  threadId: string,
+  prompt: string,
+): Promise<{ answer: string }> {
+  return requestJson<{ answer: string }>(
+    `/api/v1/chat/threads/${threadId}/messages`,
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
+    }),
+  );
+}
+
+export async function apiAdminCreateChallenge(
+  token: string,
+  input: {
+    slug: string;
+    title: string;
+    duration: string;
+    summary: string;
+    status: ContentStatus;
+  },
+): Promise<void> {
+  return requestJson<void>(
+    "/api/v1/admin/content/challenges",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminUpdateChallenge(
+  token: string,
+  id: number,
+  input: {
+    slug: string;
+    title: string;
+    duration: string;
+    summary: string;
+    status: ContentStatus;
+  },
+): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/challenges/${id}`,
+    withAuth(token, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminSetChallengeStatus(
+  token: string,
+  id: number,
+  status: ContentStatus,
+): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/challenges/${id}/status`,
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  );
+}
+
+export async function apiAdminDeleteChallenge(token: string, id: number): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/challenges/${id}`,
+    withAuth(token, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function apiAdminCreateResource(
+  token: string,
+  input: {
+    slug: string;
+    title: string;
+    description: string;
+    href: string;
+    cta: string;
+    status: ContentStatus;
+  },
+): Promise<void> {
+  return requestJson<void>(
+    "/api/v1/admin/content/resources",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminUpdateResource(
+  token: string,
+  id: number,
+  input: {
+    slug: string;
+    title: string;
+    description: string;
+    href: string;
+    cta: string;
+    status: ContentStatus;
+  },
+): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/resources/${id}`,
+    withAuth(token, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminSetResourceStatus(
+  token: string,
+  id: number,
+  status: ContentStatus,
+): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/resources/${id}/status`,
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  );
+}
+
+export async function apiAdminDeleteResource(token: string, id: number): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/resources/${id}`,
+    withAuth(token, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function apiAdminCreateExpert(
+  token: string,
+  input: {
+    slug: string;
+    name: string;
+    focus: string;
+    status: ContentStatus;
+  },
+): Promise<void> {
+  return requestJson<void>(
+    "/api/v1/admin/content/experts",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminUpdateExpert(
+  token: string,
+  id: number,
+  input: {
+    slug: string;
+    name: string;
+    focus: string;
+    status: ContentStatus;
+  },
+): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/experts/${id}`,
+    withAuth(token, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminSetExpertStatus(
+  token: string,
+  id: number,
+  status: ContentStatus,
+): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/experts/${id}/status`,
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  );
+}
+
+export async function apiAdminDeleteExpert(token: string, id: number): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/experts/${id}`,
+    withAuth(token, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function apiAdminCreateEvent(
+  token: string,
+  input: {
+    slug: string;
+    title: string;
+    schedule: string;
+    summary: string;
+    status: ContentStatus;
+  },
+): Promise<void> {
+  return requestJson<void>(
+    "/api/v1/admin/content/events",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminUpdateEvent(
+  token: string,
+  id: number,
+  input: {
+    slug: string;
+    title: string;
+    schedule: string;
+    summary: string;
+    status: ContentStatus;
+  },
+): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/events/${id}`,
+    withAuth(token, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminSetEventStatus(
+  token: string,
+  id: number,
+  status: ContentStatus,
+): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/events/${id}/status`,
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  );
+}
+
+export async function apiAdminDeleteEvent(token: string, id: number): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/events/${id}`,
+    withAuth(token, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function apiAdminCreateVideo(
+  token: string,
+  input: {
+    slug: string;
+    title: string;
+    format: string;
+    summary: string;
+    videoUrl: string;
+    status: ContentStatus;
+  },
+): Promise<void> {
+  return requestJson<void>(
+    "/api/v1/admin/content/videos",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminUpdateVideo(
+  token: string,
+  id: number,
+  input: {
+    slug: string;
+    title: string;
+    format: string;
+    summary: string;
+    videoUrl: string;
+    status: ContentStatus;
+  },
+): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/videos/${id}`,
+    withAuth(token, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminSetVideoStatus(
+  token: string,
+  id: number,
+  status: ContentStatus,
+): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/videos/${id}/status`,
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  );
+}
+
+export async function apiAdminDeleteVideo(token: string, id: number): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/admin/content/videos/${id}`,
+    withAuth(token, {
+      method: "DELETE",
     }),
   );
 }
