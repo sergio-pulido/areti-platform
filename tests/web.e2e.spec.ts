@@ -72,6 +72,9 @@ test("dashboard CTAs remain clickable and route to actionable flows", async ({ p
   await expectUrl(page, /\/dashboard\/practices/);
 
   await page.getByRole("link", { name: "Start practice" }).first().click();
+  await expectUrl(page, /\/dashboard\/practices\/.+/);
+  await expect(page.getByText("After Practice")).toBeVisible();
+  await page.getByRole("link", { name: "Log reflection" }).click();
   await expectUrl(page, /\/dashboard\/journal\?title=.*&mood=Focused/);
   await expect(page.getByLabel("Title")).toHaveValue(/Practice:/);
   await expect(page.getByLabel("Mood")).toHaveValue("Focused");

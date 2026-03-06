@@ -309,14 +309,21 @@ async function parseErrorPayload(response: Response): Promise<{
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${getApiBaseUrl()}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : "Unknown network error";
+    throw new ApiHttpError(`Unable to reach API service. ${cause}`, 503, "API_UNAVAILABLE");
+  }
 
   if (!response.ok) {
     const parsed = await parseErrorPayload(response);

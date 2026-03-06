@@ -24,12 +24,14 @@ export default async function Home() {
             >
               Privacy
             </Link>
-            <Link
-              href="/auth/signin"
-              className="rounded-xl border border-night-700 px-4 py-2 text-sm text-sand-200 hover:border-night-500"
-            >
-              Sign in
-            </Link>
+            {!user ? (
+              <Link
+                href="/auth/signin"
+                className="rounded-xl border border-night-700 px-4 py-2 text-sm text-sand-200 hover:border-night-500"
+              >
+                Sign in
+              </Link>
+            ) : null}
             <Link
               href={user ? "/dashboard" : "/auth/signup"}
               className="rounded-xl border border-sand-100 bg-sand-100 px-4 py-2 text-sm font-semibold text-night-950 hover:bg-sand-50"

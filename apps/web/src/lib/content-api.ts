@@ -128,6 +128,11 @@ export async function fetchPracticeRoutines(): Promise<PracticeRoutine[]> {
   return (await getContent<PracticeRoutine[]>("/api/v1/content/practices")) ?? [];
 }
 
+export async function fetchPracticeRoutineBySlug(slug: string): Promise<PracticeRoutine | null> {
+  const routines = await fetchPracticeRoutines();
+  return routines.find((routine) => routine.slug === slug) ?? null;
+}
+
 export async function fetchCommunityCircles(): Promise<CommunityCircle[]> {
   return (await getContent<CommunityCircle[]>("/api/v1/content/community")) ?? [];
 }

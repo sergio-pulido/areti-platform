@@ -31,6 +31,10 @@ export type SessionContext = {
   refreshToken: string | null;
 };
 
+function isApiUnavailableError(error: unknown): boolean {
+  return isApiHttpError(error) && error.status >= 500;
+}
+
 function createExpiryDate(): Date {
   const expires = new Date();
   expires.setDate(expires.getDate() + SESSION_TTL_DAYS);
@@ -130,6 +134,10 @@ async function resolveSession(): Promise<SessionContext | null> {
   try {
     return await getSessionFromAccess(tokens);
   } catch (error) {
+    if (isApiUnavailableError(error)) {
+      return null;
+    }
+
     if (!isApiHttpError(error) || error.status !== 401 || !tokens.refreshToken) {
       if (isApiHttpError(error) && error.status === 401) {
         await tryClearSessionCookie();
@@ -152,6 +160,10 @@ async function resolveSession(): Promise<SessionContext | null> {
         refreshToken: rotated.refreshToken,
       });
     } catch (refreshError) {
+      if (isApiUnavailableError(refreshError)) {
+        return null;
+      }
+
       if (isApiHttpError(refreshError) && refreshError.status === 401) {
         await tryClearSessionCookie();
         return null;
