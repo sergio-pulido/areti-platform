@@ -140,6 +140,24 @@
 
 ## 2026-03-06 - Admin content creation entrypoints in member sections
 - **Context:** Admin creation existed only in CMS, while the product needed direct add flows from library/practice pages.
-- **Decision:** Add admin-only create pages at `/dashboard/library/new` and `/dashboard/practices/new`, with reusable lesson/practice form field components shared with CMS add forms.
+- **Decision:** Add admin-only create pages at `/library/new` and `/practices/new`, with reusable lesson/practice form field components shared with CMS add forms.
 - **Why:** Reduces friction for content operations and keeps create schemas consistent across workflows.
 - **Tradeoff:** Additional route surface and role-gated UX states to maintain.
+
+## 2026-03-06 - Keep dashboard as overview, flatten personal tool URLs
+- **Context:** Personal tools (chat/journal/library/practices) were nested under `/dashboard/*`, while the intended IA treats dashboard as a single overview page.
+- **Decision:** Make `/dashboard` overview-only and expose personal tools as standalone routes: `/chat`, `/journal`, `/library`, `/practices` (including detail/create subroutes).
+- **Why:** Cleaner URL model, simpler navigation mental model, and route structure aligned with section-level IA.
+- **Tradeoff:** Existing internal links/revalidation logic required coordinated updates across nav, pages, and actions.
+
+## 2026-03-06 - Ordered multi-provider chat runtime (DeepSeek primary, OpenAI fallback)
+- **Context:** Chat had a single-provider configuration path, limiting runtime resilience and provider portability.
+- **Decision:** Introduce ordered provider runtime config (`CHAT_PROVIDER_ORDER`) with OpenAI-compatible adapters for DeepSeek and OpenAI, defaulting to `deepseek,openai`.
+- **Why:** Enables provider failover without code changes and keeps provider wiring extensible for future additions.
+- **Tradeoff:** Additional environment configuration surface (provider keys/models/base URLs) to manage per environment.
+
+## 2026-03-06 - Chat provider failure transparency + monorepo `.env` auto-loading
+- **Context:** Local `npm run dev` could miss repo-root provider keys (workspace cwd), and provider failures were silently hidden by generic fallback answers.
+- **Decision:** Auto-load `.env` from `apps/api` and monorepo root in API startup, and return explicit `502` errors when configured providers all fail.
+- **Why:** Improves local reliability and makes provider misconfiguration/outage visible instead of masking it as successful chat output.
+- **Tradeoff:** Chat no longer degrades to synthetic fallback when providers are configured but unavailable.

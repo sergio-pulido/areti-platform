@@ -2,11 +2,13 @@
 
 ## Current Status
 - Monorepo architecture is active with frontend (`apps/web`), backend (`apps/api`), and shared DB/ORM (`packages/db`).
-- Canonical section routing is active (`/dashboard/*` personal, `/community/*`, `/creator/*`, `/account/*`) with contextual sidebars and topbar section entry.
+- Canonical section routing is active (`/dashboard` overview, standalone personal tools at `/chat`, `/journal`, `/library`, `/practices`, plus `/community/*`, `/creator/*`, `/account/*`) with contextual sidebars and topbar section entry.
 - Community and creator domains are now fully API-backed across pages and CMS.
 - Notifications are persisted and wired to topbar bell with unread/read-all/read-one behavior.
 - Security settings now include production-ready TOTP enrollment/verification/removal, passkey lifecycle controls, and device/session revocation.
 - Chat is productized with persisted threads/messages and user controls (create/switch/rename/archive/delete).
+- Chat provider runtime now supports ordered fallback (`deepseek,openai` by default) with provider-specific key/model/base-url env wiring.
+- API now auto-loads chat provider env from `apps/api/.env` and repo-root `.env`, and returns explicit `502` when configured providers are unreachable.
 - Release quality gates now include one-command CI (`npm run ci`), API integration tests, e2e, build, and accessibility smoke tests.
 - Library and practices now use explicit manual seed execution (`db:seed:library-practices`) and no longer auto-seed on DB startup.
 - Library/practice cards now route to DB-backed detail pages fetched by slug, with full body content stored in DB.
@@ -37,6 +39,7 @@
     - `GET/POST /api/v1/chat/threads`
     - `PATCH/DELETE /api/v1/chat/threads/:id`
     - `GET/POST /api/v1/chat/threads/:id/messages`
+  - Added ordered multi-provider chat resolution with env-driven provider order (`CHAT_PROVIDER_ORDER`) and DeepSeek/OpenAI provider configs.
   - Added security hardening endpoints:
     - `GET/PATCH/DELETE /api/v1/security/passkeys*`
     - `POST /api/v1/security/mfa/totp/setup`
@@ -54,10 +57,10 @@
     - device/session list with revoke actions
   - Chat UI now persists and manages threads/messages through backend APIs.
   - Library and practices lists now render reusable clickable card components.
-  - Added `/dashboard/library/[slug]` article detail and upgraded `/dashboard/practices/[slug]` to DB protocol content.
+  - Added `/library/[slug]` article detail and upgraded `/practices/[slug]` to DB protocol content.
   - Added admin-only create pages:
-    - `/dashboard/library/new`
-    - `/dashboard/practices/new`
+    - `/library/new`
+    - `/practices/new`
   - Added proxy routes for thread chat and TOTP flows in Next route handlers.
 - Testing/CI:
   - Expanded API integration tests for notifications, thread chat persistence, and challenge publish lifecycle.

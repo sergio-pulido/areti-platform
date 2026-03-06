@@ -1,4 +1,6 @@
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -125,6 +127,11 @@ const PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const MODERATION_BLOCKED_WORDS = ["suicide", "kill myself", "bomb", "terrorist", "self-harm"];
 const CHAT_WINDOW_MS = 60 * 1000;
 const CHAT_MAX_ATTEMPTS = 20;
+const DEFAULT_CHAT_PROVIDER_ORDER = ["deepseek", "openai"] as const;
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
+const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
+const DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
 const TOTP_DIGITS = 6;
 const TOTP_STEP_SECONDS = 30;
 const TOTP_WINDOW_STEPS = 1;
@@ -134,10 +141,60 @@ type AuthenticatedRequest = Request & {
   authAccessToken: string;
 };
 
+type ChatProvider = (typeof DEFAULT_CHAT_PROVIDER_ORDER)[number];
+
+type ChatProviderRuntime = {
+  provider: ChatProvider;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+};
+
+type ChatRuntimeConfig = {
+  providers: ChatProviderRuntime[];
+};
+
+const envSchema = z.object({
+  CORS_ORIGINS: z.string().optional(),
+  PASSKEY_RP_ID: z.string().optional(),
+  PASSKEY_RP_NAME: z.string().optional(),
+  PASSKEY_ORIGINS: z.string().optional(),
+  CHAT_PROVIDER_ORDER: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_CHAT_MODEL: z.string().optional(),
+  OPENAI_BASE_URL: z.string().optional(),
+  DEEPSEEK_API_KEY: z.string().optional(),
+  DEEPSEEK_CHAT_MODEL: z.string().optional(),
+  DEEPSEEK_BASE_URL: z.string().optional(),
+});
+
+type AppEnv = z.infer<typeof envSchema>;
+
 const authAttemptsByKey = new Map<string, number[]>();
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_MAX_ATTEMPTS = 8;
 const chatAttemptsByUser = new Map<string, number[]>();
+
+const serverFilePath = fileURLToPath(import.meta.url);
+const serverDirPath = path.dirname(serverFilePath);
+const apiRootPath = path.resolve(serverDirPath, "..");
+const repoRootPath = path.resolve(apiRootPath, "..", "..");
+
+function loadOptionalEnvFile(filePath: string): void {
+  try {
+    process.loadEnvFile(filePath);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+}
+
+// Support both package-local and monorepo-root .env files for local dev.
+loadOptionalEnvFile(path.join(apiRootPath, ".env"));
+loadOptionalEnvFile(path.join(repoRootPath, ".env"));
 
 type PasskeyChallengePurpose = "registration" | "authentication";
 
@@ -520,45 +577,144 @@ function fallbackChatAnswer(prompt: string): string {
   return `Balanced guidance: choose virtue for decisions (Stoicism), choose sustainable pleasure and friendship (Epicureanism), reduce attachment to outcomes (Buddhism), and avoid forcing what can be guided softly (Taoism). Apply one principle in the next 24 hours. Prompt: "${prompt}".`;
 }
 
-async function resolveChatAnswer(prompt: string): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY;
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "");
+}
 
-  if (!apiKey) {
+function parseChatProviderOrder(rawOrder?: string): ChatProvider[] {
+  const parsed = (rawOrder ?? DEFAULT_CHAT_PROVIDER_ORDER.join(","))
+    .split(",")
+    .map((provider) => provider.trim().toLowerCase())
+    .filter((provider): provider is ChatProvider =>
+      provider === "deepseek" || provider === "openai",
+    );
+
+  if (parsed.length === 0) {
+    return [...DEFAULT_CHAT_PROVIDER_ORDER];
+  }
+
+  return parsed.filter((provider, index) => parsed.indexOf(provider) === index);
+}
+
+function createChatRuntimeConfig(env: AppEnv): ChatRuntimeConfig {
+  const providerOrder = parseChatProviderOrder(env.CHAT_PROVIDER_ORDER);
+  const providerConfigs: Record<ChatProvider, ChatProviderRuntime | null> = {
+    deepseek: env.DEEPSEEK_API_KEY
+      ? {
+          provider: "deepseek",
+          apiKey: env.DEEPSEEK_API_KEY,
+          baseUrl: normalizeBaseUrl(env.DEEPSEEK_BASE_URL ?? DEFAULT_DEEPSEEK_BASE_URL),
+          model: env.DEEPSEEK_CHAT_MODEL ?? DEFAULT_DEEPSEEK_MODEL,
+        }
+      : null,
+    openai: env.OPENAI_API_KEY
+      ? {
+          provider: "openai",
+          apiKey: env.OPENAI_API_KEY,
+          baseUrl: normalizeBaseUrl(env.OPENAI_BASE_URL ?? DEFAULT_OPENAI_BASE_URL),
+          model: env.OPENAI_CHAT_MODEL ?? DEFAULT_OPENAI_MODEL,
+        }
+      : null,
+  };
+
+  const providers = providerOrder
+    .map((provider) => providerConfigs[provider])
+    .filter((provider): provider is ChatProviderRuntime => provider !== null);
+
+  return { providers };
+}
+
+type ChatCompletionPayload = {
+  choices?: Array<{
+    message?: {
+      content?: string | Array<{ text?: string; type?: string }>;
+    };
+  }>;
+};
+
+function extractAssistantMessage(payload: ChatCompletionPayload): string | null {
+  const content = payload.choices?.[0]?.message?.content;
+
+  if (typeof content === "string") {
+    const trimmed = content.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (!Array.isArray(content)) {
+    return null;
+  }
+
+  const text = content
+    .filter((part): part is { text: string } => part.type === "text" && typeof part.text === "string")
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+
+  return text.length > 0 ? text : null;
+}
+
+async function resolveProviderAnswer(
+  prompt: string,
+  provider: ChatProviderRuntime,
+): Promise<string | null> {
+  try {
+    const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${provider.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: provider.model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a practical philosophy coach blending Stoicism, Epicureanism, Buddhism, and Taoism. Give concise, actionable guidance.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0.6,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.warn(
+        `[chat] Provider "${provider.provider}" failed with status ${response.status}. ${errorBody.slice(0, 300)}`,
+      );
+      return null;
+    }
+
+    const payload = (await response.json()) as ChatCompletionPayload;
+    return extractAssistantMessage(payload);
+  } catch (error) {
+    console.warn(
+      `[chat] Provider "${provider.provider}" request error: ${
+        error instanceof Error ? error.message : "unknown error"
+      }`,
+    );
+    return null;
+  }
+}
+
+async function resolveChatAnswer(prompt: string, chatConfig: ChatRuntimeConfig): Promise<string> {
+  if (chatConfig.providers.length === 0) {
     return fallbackChatAnswer(prompt);
   }
 
-  const model = process.env.OPENAI_CHAT_MODEL ?? "gpt-4.1-mini";
-
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      input: [
-        {
-          role: "system",
-          content:
-            "You are a practical philosophy coach blending Stoicism, Epicureanism, Buddhism, and Taoism. Give concise, actionable guidance.",
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      temperature: 0.6,
-    }),
-  });
-
-  if (!response.ok) {
-    return fallbackChatAnswer(prompt);
+  for (const provider of chatConfig.providers) {
+    const answer = await resolveProviderAnswer(prompt, provider);
+    if (answer) {
+      return answer;
+    }
   }
 
-  const json = (await response.json()) as { output_text?: string };
-
-  return json.output_text?.trim() || fallbackChatAnswer(prompt);
+  throw new Error("All configured chat providers failed.");
 }
 
 const signupSchema = z
@@ -743,17 +899,8 @@ function parseStatusOrFail(request: Request, response: Response): ContentStatus 
 
 export function createApp() {
   const app = express();
-
-  const env = z
-    .object({
-      CORS_ORIGINS: z.string().optional(),
-      PASSKEY_RP_ID: z.string().optional(),
-      PASSKEY_RP_NAME: z.string().optional(),
-      PASSKEY_ORIGINS: z.string().optional(),
-      OPENAI_API_KEY: z.string().optional(),
-      OPENAI_CHAT_MODEL: z.string().optional(),
-    })
-    .parse(process.env);
+  const env = envSchema.parse(process.env);
+  const chatConfig = createChatRuntimeConfig(env);
 
   const allowedOrigins = (env.CORS_ORIGINS ?? "http://localhost:3000")
     .split(",")
@@ -1493,7 +1640,19 @@ export function createApp() {
       return;
     }
 
-    const answer = await resolveChatAnswer(parsed.data.prompt);
+    let answer = "";
+    try {
+      answer = await resolveChatAnswer(parsed.data.prompt, chatConfig);
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(502).json({
+          error:
+            "Unable to reach configured chat providers. Check CHAT_PROVIDER_ORDER and provider API keys/models.",
+        });
+        return;
+      }
+      throw error;
+    }
 
     res.json({ data: { answer } });
   });
@@ -1524,7 +1683,7 @@ export function createApp() {
       userId: authReq.authUser.id,
       title: "New chat thread created",
       body: thread.title,
-      href: `/dashboard/chat?thread=${thread.id}`,
+      href: `/chat?thread=${thread.id}`,
     });
 
     res.status(201).json({ data: thread });
@@ -1613,7 +1772,19 @@ export function createApp() {
       content: parsed.data.prompt,
     });
 
-    const answer = await resolveChatAnswer(parsed.data.prompt);
+    let answer = "";
+    try {
+      answer = await resolveChatAnswer(parsed.data.prompt, chatConfig);
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(502).json({
+          error:
+            "Unable to reach configured chat providers. Check CHAT_PROVIDER_ORDER and provider API keys/models.",
+        });
+        return;
+      }
+      throw error;
+    }
 
     createChatMessage({
       id: randomUUID(),

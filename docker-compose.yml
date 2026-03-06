@@ -9,6 +9,13 @@ services:
       API_PORT: 4000
       CORS_ORIGINS: http://localhost:3000,http://web:3000
       ATARAXIA_DB_PATH: /app/data/ataraxia.docker.db
+      CHAT_PROVIDER_ORDER: ${CHAT_PROVIDER_ORDER:-deepseek,openai}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_CHAT_MODEL: ${DEEPSEEK_CHAT_MODEL:-deepseek-chat}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4.1-mini}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
     ports:
       - "4000:4000"
     volumes:

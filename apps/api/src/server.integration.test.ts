@@ -19,6 +19,9 @@ beforeAll(async () => {
   process.env.NODE_ENV = "test";
   process.env.ATARAXIA_DB_PATH = testDbPath;
   process.env.CORS_ORIGINS = "http://localhost:3000";
+  process.env.CHAT_PROVIDER_ORDER = "deepseek,openai";
+  process.env.DEEPSEEK_API_KEY = "";
+  process.env.OPENAI_API_KEY = "";
 
   const module = await import("./server.js");
   app = module.createApp();

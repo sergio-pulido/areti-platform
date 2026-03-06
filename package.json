@@ -8,6 +8,9 @@
   ],
   "scripts": {
     "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev --workspace @ataraxia/api\" \"npm run dev --workspace @ataraxia/web\"",
+    "dev:stop": "bash -lc 'for p in 3000 3001 3002 4000; do pids=$(lsof -tiTCP:$p -sTCP:LISTEN || true); if [ -n \"$pids\" ]; then kill -15 $pids; fi; done; sleep 1; for p in 3000 3001 3002 4000; do pids=$(lsof -tiTCP:$p -sTCP:LISTEN || true); if [ -n \"$pids\" ]; then kill -9 $pids; fi; done; docker compose down >/dev/null 2>&1 || true'",
+    "dev:ports": "bash -lc 'lsof -nP -iTCP:3000 -iTCP:3001 -iTCP:3002 -iTCP:4000 -sTCP:LISTEN || true'",
+    "dev:restart": "npm run dev:stop && npm run dev",
     "dev:api": "npm run dev --workspace @ataraxia/api",
     "dev:web": "npm run dev --workspace @ataraxia/web",
     "build": "npm run build --workspace @ataraxia/web && npm run typecheck --workspace @ataraxia/api && npm run typecheck --workspace @ataraxia/db",

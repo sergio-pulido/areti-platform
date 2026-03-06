@@ -87,6 +87,18 @@ npm run db:seed:library-practices
 npm run dev
 ```
 
+Stop and fully free local dev ports:
+
+```bash
+npm run dev:stop
+```
+
+Check which process is still listening on the app ports:
+
+```bash
+npm run dev:ports
+```
+
 6. Open:
 - Web: [http://localhost:3000](http://localhost:3000)
 - API: [http://localhost:4000](http://localhost:4000)
@@ -129,3 +141,15 @@ Services:
 - `PASSKEY_RP_ID` (default: `localhost`)
 - `PASSKEY_RP_NAME` (default: `Ataraxia`)
 - `PASSKEY_ORIGINS` (comma-separated origins allowed for WebAuthn verification)
+- `CHAT_PROVIDER_ORDER` (comma-separated provider priority; default: `deepseek,openai`)
+- `DEEPSEEK_API_KEY` (DeepSeek key for chat provider)
+- `DEEPSEEK_CHAT_MODEL` (default: `deepseek-chat`)
+- `DEEPSEEK_BASE_URL` (default: `https://api.deepseek.com/v1`)
+- `OPENAI_API_KEY` (OpenAI key for chat provider fallback)
+- `OPENAI_CHAT_MODEL` (default: `gpt-4.1-mini`)
+- `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
+
+Chat provider keys are read by `apps/api` from process environment on startup.
+
+For `docker compose`, put the chat env vars in a repo-root `.env` file.
+For local `npm run dev`, the API now auto-loads `.env` from `apps/api/.env` and repo-root `.env`.
