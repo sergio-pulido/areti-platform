@@ -70,6 +70,24 @@ function getStatus(formData: FormData, key: string): ContentStatus {
   return value;
 }
 
+function getStatusOrDefault(
+  formData: FormData,
+  key: string,
+  fallback: ContentStatus,
+): ContentStatus {
+  const value = getString(formData, key);
+
+  if (!value) {
+    return fallback;
+  }
+
+  if (value !== "DRAFT" && value !== "PUBLISHED") {
+    throw new Error(`Invalid status for ${key}`);
+  }
+
+  return value;
+}
+
 async function requireAdminToken(): Promise<string> {
   const session = await requireSession();
 
@@ -81,7 +99,6 @@ async function requireAdminToken(): Promise<string> {
 }
 
 function revalidateCms(): void {
-  revalidatePath("/dashboard/cms");
   revalidatePath("/creator/cms");
   revalidatePath("/creator");
   revalidatePath("/");
@@ -108,7 +125,8 @@ export async function createLessonAdminAction(formData: FormData): Promise<void>
     level: getString(formData, "level"),
     minutes: getNumber(formData, "minutes"),
     summary: getString(formData, "summary"),
-    status: getStatus(formData, "status"),
+    content: getString(formData, "content"),
+    status: getStatusOrDefault(formData, "status", "PUBLISHED"),
   });
 
   revalidateCms();
@@ -144,6 +162,7 @@ export async function updateLessonAdminAction(formData: FormData): Promise<void>
     level: getString(formData, "level"),
     minutes: getNumber(formData, "minutes"),
     summary: getString(formData, "summary"),
+    content: getString(formData, "content"),
     status: getStatus(formData, "status"),
   });
 
@@ -158,7 +177,8 @@ export async function createPracticeAdminAction(formData: FormData): Promise<voi
     title: getString(formData, "title"),
     description: getString(formData, "description"),
     cadence: getString(formData, "cadence"),
-    status: getStatus(formData, "status"),
+    protocol: getString(formData, "protocol"),
+    status: getStatusOrDefault(formData, "status", "PUBLISHED"),
   });
 
   revalidateCms();
@@ -192,6 +212,7 @@ export async function updatePracticeAdminAction(formData: FormData): Promise<voi
     title: getString(formData, "title"),
     description: getString(formData, "description"),
     cadence: getString(formData, "cadence"),
+    protocol: getString(formData, "protocol"),
     status: getStatus(formData, "status"),
   });
 

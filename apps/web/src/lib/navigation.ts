@@ -131,7 +131,7 @@ export const dashboardNavSections: NavSection[] = [
     label: "Creator",
     href: "/creator",
     description: "Publish content for members",
-    matchPrefixes: ["/creator", "/dashboard/cms"],
+    matchPrefixes: ["/creator"],
     items: [
       {
         href: "/creator/cms",
