@@ -65,6 +65,11 @@ test("dashboard CTAs remain clickable and route to actionable flows", async ({ p
   await page.getByLabel("Notifications").click();
   await page.getByRole("link", { name: /Explore the Library/i }).click();
   await expectUrl(page, /\/dashboard\/library/);
+  await page.getByRole("link", { name: /Open article/i }).first().click();
+  await expectUrl(page, /\/dashboard\/library\/.+/);
+  await expect(page.getByText("Action Prompt")).toBeVisible();
+  await page.getByRole("link", { name: "Back to library" }).click();
+  await expectUrl(page, /\/dashboard\/library/);
 
   await page.goto("/dashboard");
   await page.getByLabel("Quick actions").click();

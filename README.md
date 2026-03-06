@@ -10,14 +10,16 @@ Monorepo for a Stoic + Epicurean philosophy platform with a separated frontend, 
 ## Architecture
 - Auth/session/journal and content are backend-owned via REST APIs.
 - Frontend uses server actions + API clients and keeps HTTP-only access+refresh session tokens.
-- Shared DB package runs Drizzle migrations and seeds initial content.
+- Shared DB package runs Drizzle migrations; library/practice seed data is loaded via explicit command.
 
 ## REST API Surface
 ### Public
 - `GET /health`
 - `GET /api/v1/content/landing`
 - `GET /api/v1/content/library?q=...`
+- `GET /api/v1/content/library/:slug`
 - `GET /api/v1/content/practices`
+- `GET /api/v1/content/practices/:slug`
 - `GET /api/v1/content/community`
 
 ### Auth
@@ -73,13 +75,19 @@ npm run db:generate
 npm run db:migrate
 ```
 
-4. Run API + web together:
+4. Seed library and practices (manual, optional but recommended for local):
+
+```bash
+npm run db:seed:library-practices
+```
+
+5. Run API + web together:
 
 ```bash
 npm run dev
 ```
 
-5. Open:
+6. Open:
 - Web: [http://localhost:3000](http://localhost:3000)
 - API: [http://localhost:4000](http://localhost:4000)
 

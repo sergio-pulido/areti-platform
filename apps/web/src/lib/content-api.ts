@@ -19,6 +19,7 @@ export type LibraryLesson = {
   level: string;
   minutes: number;
   summary: string;
+  content: string;
 };
 
 export type PracticeRoutine = {
@@ -27,6 +28,7 @@ export type PracticeRoutine = {
   title: string;
   description: string;
   cadence: string;
+  protocol: string;
 };
 
 export type CommunityCircle = {
@@ -124,13 +126,16 @@ export async function fetchLibraryLessons(query?: string): Promise<LibraryLesson
   return (await getContent<LibraryLesson[]>(`/api/v1/content/library${qs}`)) ?? [];
 }
 
+export async function fetchLibraryLessonBySlug(slug: string): Promise<LibraryLesson | null> {
+  return getContent<LibraryLesson>(`/api/v1/content/library/${encodeURIComponent(slug)}`);
+}
+
 export async function fetchPracticeRoutines(): Promise<PracticeRoutine[]> {
   return (await getContent<PracticeRoutine[]>("/api/v1/content/practices")) ?? [];
 }
 
 export async function fetchPracticeRoutineBySlug(slug: string): Promise<PracticeRoutine | null> {
-  const routines = await fetchPracticeRoutines();
-  return routines.find((routine) => routine.slug === slug) ?? null;
+  return getContent<PracticeRoutine>(`/api/v1/content/practices/${encodeURIComponent(slug)}`);
 }
 
 export async function fetchCommunityCircles(): Promise<CommunityCircle[]> {

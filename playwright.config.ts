@@ -21,7 +21,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "rm -f ./data/ataraxia.e2e.db && ATARAXIA_DB_PATH=./data/ataraxia.e2e.db API_PORT=43101 CORS_ORIGINS=http://localhost:43100 npm run dev:api",
+        "rm -f ./data/ataraxia.e2e.db && ATARAXIA_DB_PATH=./data/ataraxia.e2e.db npm run db:seed:library-practices && ATARAXIA_DB_PATH=./data/ataraxia.e2e.db API_PORT=43101 CORS_ORIGINS=http://localhost:43100 npm run dev:api",
       port: 43101,
       reuseExistingServer: false,
       timeout: 120000,

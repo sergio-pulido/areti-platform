@@ -326,34 +326,6 @@ function seedIfEmpty(): void {
       .run();
   }
 
-  const lessonCount = db.select({ count: count() }).from(libraryLessons).get();
-  if ((lessonCount?.count ?? 0) === 0) {
-    db.insert(libraryLessons)
-      .values(
-        LIBRARY_SEED.map((item) => ({
-          ...item,
-          status: "PUBLISHED" as ContentStatus,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        })),
-      )
-      .run();
-  }
-
-  const routineCount = db.select({ count: count() }).from(practiceRoutines).get();
-  if ((routineCount?.count ?? 0) === 0) {
-    db.insert(practiceRoutines)
-      .values(
-        PRACTICE_SEED.map((item) => ({
-          ...item,
-          status: "PUBLISHED" as ContentStatus,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        })),
-      )
-      .run();
-  }
-
   const circleCount = db.select({ count: count() }).from(communityCircles).get();
   if ((circleCount?.count ?? 0) === 0) {
     db.insert(communityCircles)
@@ -437,6 +409,90 @@ function seedIfEmpty(): void {
       )
       .run();
   }
+}
+
+export function seedLibraryAndPracticesContent(): void {
+  const timestamp = nowIso();
+
+  db.transaction(() => {
+    for (const item of LIBRARY_SEED) {
+      const existing = db
+        .select({ id: libraryLessons.id })
+        .from(libraryLessons)
+        .where(eq(libraryLessons.slug, item.slug))
+        .limit(1)
+        .get();
+
+      if (existing) {
+        db.update(libraryLessons)
+          .set({
+            title: item.title,
+            tradition: item.tradition,
+            level: item.level,
+            minutes: item.minutes,
+            summary: item.summary,
+            content: item.content,
+            status: "PUBLISHED",
+            updatedAt: timestamp,
+          })
+          .where(eq(libraryLessons.id, existing.id))
+          .run();
+        continue;
+      }
+
+      db.insert(libraryLessons)
+        .values({
+          slug: item.slug,
+          title: item.title,
+          tradition: item.tradition,
+          level: item.level,
+          minutes: item.minutes,
+          summary: item.summary,
+          content: item.content,
+          status: "PUBLISHED",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
+        .run();
+    }
+
+    for (const item of PRACTICE_SEED) {
+      const existing = db
+        .select({ id: practiceRoutines.id })
+        .from(practiceRoutines)
+        .where(eq(practiceRoutines.slug, item.slug))
+        .limit(1)
+        .get();
+
+      if (existing) {
+        db.update(practiceRoutines)
+          .set({
+            title: item.title,
+            description: item.description,
+            cadence: item.cadence,
+            protocol: item.protocol,
+            status: "PUBLISHED",
+            updatedAt: timestamp,
+          })
+          .where(eq(practiceRoutines.id, existing.id))
+          .run();
+        continue;
+      }
+
+      db.insert(practiceRoutines)
+        .values({
+          slug: item.slug,
+          title: item.title,
+          description: item.description,
+          cadence: item.cadence,
+          protocol: item.protocol,
+          status: "PUBLISHED",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
+        .run();
+    }
+  });
 }
 
 if (!globalForDb.seeded) {
@@ -1074,11 +1130,23 @@ export function getLibraryLessons(query?: string) {
           like(libraryLessons.title, likeValue),
           like(libraryLessons.tradition, likeValue),
           like(libraryLessons.summary, likeValue),
+          like(libraryLessons.content, likeValue),
         ),
       ),
     )
     .orderBy(desc(libraryLessons.id))
     .all();
+}
+
+export function getLibraryLessonBySlug(slug: string) {
+  return (
+    db
+      .select()
+      .from(libraryLessons)
+      .where(and(eq(libraryLessons.slug, slug), eq(libraryLessons.status, "PUBLISHED")))
+      .limit(1)
+      .get() ?? null
+  );
 }
 
 export function getPracticeRoutines() {
@@ -1088,6 +1156,17 @@ export function getPracticeRoutines() {
     .where(eq(practiceRoutines.status, "PUBLISHED"))
     .orderBy(asc(practiceRoutines.id))
     .all();
+}
+
+export function getPracticeRoutineBySlug(slug: string) {
+  return (
+    db
+      .select()
+      .from(practiceRoutines)
+      .where(and(eq(practiceRoutines.slug, slug), eq(practiceRoutines.status, "PUBLISHED")))
+      .limit(1)
+      .get() ?? null
+  );
 }
 
 export function getCommunityCircles() {
@@ -1166,6 +1245,7 @@ export function createLesson(input: {
   level: string;
   minutes: number;
   summary: string;
+  content: string;
   status: ContentStatus;
 }) {
   const timestamp = nowIso();
@@ -1178,6 +1258,7 @@ export function createLesson(input: {
       level: input.level,
       minutes: input.minutes,
       summary: input.summary,
+      content: input.content,
       status: input.status,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -1194,6 +1275,7 @@ export function updateLesson(
     level: string;
     minutes: number;
     summary: string;
+    content: string;
     status: ContentStatus;
   },
 ) {
@@ -1205,6 +1287,7 @@ export function updateLesson(
       level: input.level,
       minutes: input.minutes,
       summary: input.summary,
+      content: input.content,
       status: input.status,
       updatedAt: nowIso(),
     })
@@ -1231,6 +1314,7 @@ export function createPractice(input: {
   title: string;
   description: string;
   cadence: string;
+  protocol: string;
   status: ContentStatus;
 }) {
   const timestamp = nowIso();
@@ -1241,6 +1325,7 @@ export function createPractice(input: {
       title: input.title,
       description: input.description,
       cadence: input.cadence,
+      protocol: input.protocol,
       status: input.status,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -1255,6 +1340,7 @@ export function updatePractice(
     title: string;
     description: string;
     cadence: string;
+    protocol: string;
     status: ContentStatus;
   },
 ) {
@@ -1264,6 +1350,7 @@ export function updatePractice(
       title: input.title,
       description: input.description,
       cadence: input.cadence,
+      protocol: input.protocol,
       status: input.status,
       updatedAt: nowIso(),
     })

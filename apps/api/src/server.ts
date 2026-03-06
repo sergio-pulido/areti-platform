@@ -60,8 +60,10 @@ import {
   getCommunityResources,
   getCreatorVideos,
   getLandingContent,
+  getLibraryLessonBySlug,
   getLibraryLessons,
   getPasskeyCredentialByCredentialId,
+  getPracticeRoutineBySlug,
   getPracticeRoutines,
   getRefreshSessionContextByTokenHash,
   getSecuritySettingsByUserId,
@@ -625,6 +627,7 @@ const lessonSchema = z.object({
   level: z.string().trim().min(2).max(40),
   minutes: z.coerce.number().int().positive().max(300),
   summary: z.string().trim().min(8).max(500),
+  content: z.string().trim().min(32).max(8000),
   status: z.enum(["DRAFT", "PUBLISHED"]),
 });
 
@@ -633,6 +636,7 @@ const practiceSchema = z.object({
   title: z.string().trim().min(3).max(140),
   description: z.string().trim().min(8).max(500),
   cadence: z.string().trim().min(3).max(80),
+  protocol: z.string().trim().min(32).max(8000),
   status: z.enum(["DRAFT", "PUBLISHED"]),
 });
 
@@ -1691,8 +1695,52 @@ export function createApp() {
     res.json({ data: getLibraryLessons(parsed.data.q) });
   });
 
+  app.get("/api/v1/content/library/:slug", (req, res) => {
+    const parsed = z
+      .object({
+        slug: z.string().trim().min(3).max(80),
+      })
+      .safeParse(req.params);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid slug parameter" });
+      return;
+    }
+
+    const lesson = getLibraryLessonBySlug(parsed.data.slug);
+
+    if (!lesson) {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+
+    res.json({ data: lesson });
+  });
+
   app.get("/api/v1/content/practices", (_req, res) => {
     res.json({ data: getPracticeRoutines() });
+  });
+
+  app.get("/api/v1/content/practices/:slug", (req, res) => {
+    const parsed = z
+      .object({
+        slug: z.string().trim().min(3).max(80),
+      })
+      .safeParse(req.params);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid slug parameter" });
+      return;
+    }
+
+    const routine = getPracticeRoutineBySlug(parsed.data.slug);
+
+    if (!routine) {
+      res.status(404).json({ error: "Practice not found" });
+      return;
+    }
+
+    res.json({ data: routine });
   });
 
   app.get("/api/v1/content/community", (_req, res) => {

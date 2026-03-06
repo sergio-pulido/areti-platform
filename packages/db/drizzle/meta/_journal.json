@@ -22,6 +22,13 @@
       "when": 1772812581931,
       "tag": "0002_legal_colossus",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1772817488919,
+      "tag": "0003_unknown_lord_tyger",
+      "breakpoints": true
     }
   ]
 }

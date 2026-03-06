@@ -14,6 +14,7 @@
     "lint": "npm run lint --workspace @ataraxia/web && npm run typecheck --workspace @ataraxia/api && npm run typecheck --workspace @ataraxia/db",
     "db:generate": "npm run db:generate --workspace @ataraxia/db",
     "db:migrate": "npm run db:migrate --workspace @ataraxia/db",
+    "db:seed:library-practices": "npm run db:seed:library-practices --workspace @ataraxia/db",
     "test:integration": "npm run test:integration --workspace @ataraxia/api",
     "test:e2e": "playwright test",
     "test": "npm run test:integration && npm run test:e2e",

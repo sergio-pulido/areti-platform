@@ -8,13 +8,17 @@
 - Security settings now include production-ready TOTP enrollment/verification/removal, passkey lifecycle controls, and device/session revocation.
 - Chat is productized with persisted threads/messages and user controls (create/switch/rename/archive/delete).
 - Release quality gates now include one-command CI (`npm run ci`), API integration tests, e2e, build, and accessibility smoke tests.
+- Library and practices now use explicit manual seed execution (`db:seed:library-practices`) and no longer auto-seed on DB startup.
+- Library/practice cards now route to DB-backed detail pages fetched by slug, with full body content stored in DB.
+- Admin-only creation pages are now available directly in member-facing library/practices sections.
 
 ## Delivered Scope
 - DB/ORM:
   - Added tables for challenges/resources/experts/events/videos.
   - Added tables for notifications, chat threads/messages, TOTP secrets, and device tracking.
   - Added session-refresh linkage to device identity and passkey lifecycle fields.
-  - Updated seeds and migration set for new domains.
+  - Added `content` and `protocol` fields to library/practice tables for full detail rendering.
+  - Switched library/practice seed loading to explicit command-run seeding (`db:seed:library-practices`).
 - API:
   - Added content endpoints:
     - `/api/v1/content/challenges`
@@ -22,6 +26,8 @@
     - `/api/v1/content/experts`
     - `/api/v1/content/events`
     - `/api/v1/content/videos`
+    - `/api/v1/content/library/:slug`
+    - `/api/v1/content/practices/:slug`
   - Added admin CRUD/status endpoints under `/api/v1/admin/content/*` for all new content types.
   - Added notifications endpoints:
     - `GET /api/v1/notifications`
@@ -47,6 +53,11 @@
     - passkey inventory with rename/revoke
     - device/session list with revoke actions
   - Chat UI now persists and manages threads/messages through backend APIs.
+  - Library and practices lists now render reusable clickable card components.
+  - Added `/dashboard/library/[slug]` article detail and upgraded `/dashboard/practices/[slug]` to DB protocol content.
+  - Added admin-only create pages:
+    - `/dashboard/library/new`
+    - `/dashboard/practices/new`
   - Added proxy routes for thread chat and TOTP flows in Next route handlers.
 - Testing/CI:
   - Expanded API integration tests for notifications, thread chat persistence, and challenge publish lifecycle.

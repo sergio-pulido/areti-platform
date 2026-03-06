@@ -131,3 +131,15 @@
 - **Decision:** Add one-command CI (`npm run ci`), GitHub Actions workflow, and Playwright accessibility smoke suite on core routes.
 - **Why:** Improves release confidence and catches regressions before publishing.
 - **Tradeoff:** Increased CI runtime and operational cost.
+
+## 2026-03-06 - Manual library/practice seeding with DB-backed detail pages
+- **Context:** Library and practices required a true empty-state startup plus explicit initial content loading, while detail pages needed full DB content instead of static UI scaffolding.
+- **Decision:** Remove auto-seeding for library/practice tables, add explicit `db:seed:library-practices` seeder, add full-body DB fields (`content`, `protocol`), and expose slug detail endpoints for both content types.
+- **Why:** Gives deterministic environment control (empty vs seeded), enables realistic member-facing detail experiences, and keeps list/detail data fully backend-owned.
+- **Tradeoff:** Slightly more setup responsibility in local/test environments (seeder command required when prefilled content is expected).
+
+## 2026-03-06 - Admin content creation entrypoints in member sections
+- **Context:** Admin creation existed only in CMS, while the product needed direct add flows from library/practice pages.
+- **Decision:** Add admin-only create pages at `/dashboard/library/new` and `/dashboard/practices/new`, with reusable lesson/practice form field components shared with CMS add forms.
+- **Why:** Reduces friction for content operations and keeps create schemas consistent across workflows.
+- **Tradeoff:** Additional route surface and role-gated UX states to maintain.

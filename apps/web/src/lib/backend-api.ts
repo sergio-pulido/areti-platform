@@ -176,6 +176,7 @@ export type AdminContentBundle = {
     level: string;
     minutes: number;
     summary: string;
+    content: string;
     status: ContentStatus;
     createdAt: string;
     updatedAt: string;
@@ -186,6 +187,7 @@ export type AdminContentBundle = {
     title: string;
     description: string;
     cadence: string;
+    protocol: string;
     status: ContentStatus;
     createdAt: string;
     updatedAt: string;
@@ -522,6 +524,7 @@ export async function apiAdminCreateLesson(
     level: string;
     minutes: number;
     summary: string;
+    content: string;
     status: ContentStatus;
   },
 ): Promise<void> {
@@ -567,6 +570,7 @@ export async function apiAdminUpdateLesson(
     level: string;
     minutes: number;
     summary: string;
+    content: string;
     status: ContentStatus;
   },
 ): Promise<void> {
@@ -586,6 +590,7 @@ export async function apiAdminCreatePractice(
     title: string;
     description: string;
     cadence: string;
+    protocol: string;
     status: ContentStatus;
   },
 ): Promise<void> {
@@ -629,6 +634,7 @@ export async function apiAdminUpdatePractice(
     title: string;
     description: string;
     cadence: string;
+    protocol: string;
     status: ContentStatus;
   },
 ): Promise<void> {

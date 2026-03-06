@@ -41,6 +41,10 @@ import {
   updateVideoAdminAction,
 } from "@/actions/admin-content";
 import { PageHeader } from "@/components/dashboard/page-header";
+import {
+  LessonFormFields,
+  PracticeFormFields,
+} from "@/components/dashboard/content-form-fields";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import {
   apiAdminAudit,
@@ -137,13 +141,7 @@ export default async function CmsPage() {
       <section className="grid gap-4 xl:grid-cols-2">
         <SurfaceCard title="Add Lesson" subtitle="Library content">
           <form action={createLessonAdminAction} className="grid gap-2 text-sm">
-            <input name="slug" required placeholder="slug" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
-            <input name="title" required placeholder="title" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
-            <input name="tradition" required placeholder="tradition" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
-            <input name="level" required placeholder="level" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
-            <input name="minutes" type="number" min="1" required placeholder="minutes" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
-            <textarea name="summary" required placeholder="summary" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" rows={3} />
-            <StatusSelect />
+            <LessonFormFields />
             <button type="submit" className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-2 text-night-950">
               Create lesson
             </button>
@@ -152,11 +150,7 @@ export default async function CmsPage() {
 
         <SurfaceCard title="Add Practice" subtitle="Practice protocol">
           <form action={createPracticeAdminAction} className="grid gap-2 text-sm">
-            <input name="slug" required placeholder="slug" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
-            <input name="title" required placeholder="title" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
-            <textarea name="description" required placeholder="description" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" rows={3} />
-            <input name="cadence" required placeholder="cadence" className="rounded-lg border border-night-700 bg-night-950 px-3 py-2" />
-            <StatusSelect />
+            <PracticeFormFields />
             <button type="submit" className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-2 text-night-950">
               Create practice
             </button>
@@ -305,6 +299,7 @@ export default async function CmsPage() {
                     <input name="level" defaultValue={item.level} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
                     <input name="minutes" type="number" min={1} defaultValue={item.minutes} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
                     <textarea name="summary" defaultValue={item.summary} rows={2} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <textarea name="content" defaultValue={item.content} rows={6} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
                     <select name="status" defaultValue={item.status} className="rounded-md border border-night-700 bg-night-900 px-2 py-1">
                       <option value="DRAFT">DRAFT</option>
                       <option value="PUBLISHED">PUBLISHED</option>
@@ -355,6 +350,7 @@ export default async function CmsPage() {
                     <input name="title" defaultValue={item.title} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
                     <textarea name="description" defaultValue={item.description} rows={2} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
                     <input name="cadence" defaultValue={item.cadence} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
+                    <textarea name="protocol" defaultValue={item.protocol} rows={6} className="rounded-md border border-night-700 bg-night-900 px-2 py-1" />
                     <select name="status" defaultValue={item.status} className="rounded-md border border-night-700 bg-night-900 px-2 py-1">
                       <option value="DRAFT">DRAFT</option>
                       <option value="PUBLISHED">PUBLISHED</option>

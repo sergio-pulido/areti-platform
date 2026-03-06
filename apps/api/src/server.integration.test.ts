@@ -169,6 +169,8 @@ describe("API integration", () => {
         level: "Beginner",
         minutes: 5,
         summary: "Draft content should not appear publicly until published.",
+        content:
+          "Draft content should not appear publicly until published. This body validates detail endpoints.",
         status: "DRAFT",
       });
 
@@ -205,6 +207,39 @@ describe("API integration", () => {
       (item: { slug: string }) => item.slug === "test-draft-lesson",
     );
     expect(draftAfter).toBeDefined();
+
+    const lessonDetail = await request(app).get("/api/v1/content/library/test-draft-lesson");
+    expect(lessonDetail.status).toBe(200);
+    expect(lessonDetail.body.data.slug).toBe("test-draft-lesson");
+    expect(typeof lessonDetail.body.data.content).toBe("string");
+
+    const lessonMissing = await request(app).get("/api/v1/content/library/does-not-exist");
+    expect(lessonMissing.status).toBe(404);
+  });
+
+  it("returns practice details by slug and 404 for unknown slug", async () => {
+    const createPractice = await request(app)
+      .post("/api/v1/admin/content/practices")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        slug: "test-practice-detail",
+        title: "Practice Detail",
+        description: "Practice description for list view.",
+        cadence: "Daily · 5 min",
+        protocol:
+          "1. Prepare your posture.\n2. Follow the breath.\n3. Log one concrete observation.",
+        status: "PUBLISHED",
+      });
+
+    expect(createPractice.status).toBe(201);
+
+    const detail = await request(app).get("/api/v1/content/practices/test-practice-detail");
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.slug).toBe("test-practice-detail");
+    expect(typeof detail.body.data.protocol).toBe("string");
+
+    const missing = await request(app).get("/api/v1/content/practices/not-found");
+    expect(missing.status).toBe(404);
   });
 
   it("keeps draft challenge private until published", async () => {
