@@ -114,6 +114,13 @@ export type ApiDashboardSummary = {
     practicesCompletedThisWeek: number;
     lessonsCompleted: number;
     totalLessons: number;
+    recentCompletions: Array<{
+      contentKind: "lesson" | "practice";
+      contentSlug: string;
+      title: string;
+      completedAt: string;
+      href: string;
+    }>;
   };
 };
 

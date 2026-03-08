@@ -305,3 +305,15 @@
 - **Decision:** Keep deferred routes in code but remove them from account sidenav for now; only core tabs are visible.
 - **Why:** Reduces cognitive load and keeps account navigation focused on actions users can complete today.
 - **Tradeoff:** Deferred capabilities are less discoverable until explicitly reintroduced.
+
+## 2026-03-08 - Prioritize completion-backed continuity on dashboard
+- **Context:** Dashboard continuity cards still relied mostly on journal-only heuristics even after lesson/practice completion persistence existed.
+- **Decision:** Extend dashboard summary with `progress.recentCompletions` and prefer those items in "Continue your path", with journal fallback when no completions exist.
+- **Why:** Improves return-to-value by steering users back into recent useful behaviors instead of generic restarts.
+- **Tradeoff:** Completion-based continuity currently favors explicit "mark complete" interactions and not partial-progress telemetry.
+
+## 2026-03-08 - Make startup seed inserts conflict-safe
+- **Context:** Parallel process startup (web/api/e2e seed scripts) could race on initial seed inserts and trigger unique-slug violations (`content_highlights.slug`).
+- **Decision:** Keep startup seed checks but make seed inserts use conflict-ignore semantics so duplicate writes become no-ops.
+- **Why:** Preserves deterministic startup in local/dev/test without adding locking complexity.
+- **Tradeoff:** Seed conflicts are now tolerated by design, so accidental duplicate intent in seed data can be less visible unless explicitly validated.

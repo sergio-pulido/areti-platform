@@ -82,6 +82,7 @@ export {
   listChatMessagesForThread,
   listChatEvents,
   listChatThreadsByUser,
+  listRecentContentCompletionsByUser,
   listJournalEntriesByUser,
   listNotificationsByUser,
   listPasskeyCredentialsByUserId,
@@ -157,6 +158,7 @@ export type {
   UserNotificationPreferencesRecord,
   UserPreferencesRecord,
   UserProfileRecord,
+  RecentContentCompletionItem,
   UserContentCompletionSummary,
 } from "./client.js";
 export type { ContentCompletionKind, ContentStatus, LegalPolicyType, UserRole } from "./schema.js";

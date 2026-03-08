@@ -238,8 +238,10 @@ describe("API integration", () => {
     expect(typeof summary.body.data.progress.practicesCompletedThisWeek).toBe("number");
     expect(typeof summary.body.data.progress.lessonsCompleted).toBe("number");
     expect(typeof summary.body.data.progress.totalLessons).toBe("number");
+    expect(Array.isArray(summary.body.data.progress.recentCompletions)).toBe(true);
     expect(summary.body.data.progress.practicesCompletedThisWeek).toBeGreaterThanOrEqual(1);
     expect(summary.body.data.progress.lessonsCompleted).toBeGreaterThanOrEqual(1);
+    expect(summary.body.data.progress.recentCompletions.length).toBeGreaterThanOrEqual(2);
   });
 
   it("supports notifications read flows", async () => {

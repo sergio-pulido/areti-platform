@@ -16,7 +16,7 @@ import type {
   DashboardTodayAction,
 } from "@/components/dashboard/home/types";
 import { requireSession } from "@/lib/auth/session";
-import type { ApiJournalEntry } from "@/lib/backend-api";
+import type { ApiDashboardSummary, ApiJournalEntry } from "@/lib/backend-api";
 import { apiDashboardSummary, apiJournalList, apiSecuritySettings } from "@/lib/backend-api";
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -256,7 +256,52 @@ function buildTodayActions(input: {
 }
 
 function buildContinueItems(latestEntries: ApiJournalEntry[]): DashboardContinueItem[] {
-  if (latestEntries.length === 0) {
+  const items: DashboardContinueItem[] = [];
+
+  if (latestEntries.length > 0) {
+    const [latest] = latestEntries;
+    items.push({
+      id: `continue-reflection-${latest.id}`,
+      title: latest.title,
+      context: summarizeReflection(latest.body),
+      meta: `Reflected ${dateFormatter.format(new Date(latest.createdAt))}`,
+      href: "/journal",
+      ctaLabel: "Revisit",
+    });
+  }
+
+  return items;
+}
+
+function buildContinueItemsWithCompletions(input: {
+  latestEntries: ApiJournalEntry[];
+  recentCompletions: ApiDashboardSummary["progress"]["recentCompletions"];
+}): DashboardContinueItem[] {
+  const items: DashboardContinueItem[] = input.recentCompletions.slice(0, 3).map((completion) => ({
+    id: `continue-completion-${completion.contentKind}-${completion.contentSlug}`,
+    title:
+      completion.contentKind === "lesson"
+        ? `Lesson completed: ${completion.title}`
+        : `Practice completed: ${completion.title}`,
+    context:
+      completion.contentKind === "lesson"
+        ? "Reopen and apply one principle in today’s decisions."
+        : "Repeat this practice to keep momentum steady.",
+    meta: `Completed ${dateFormatter.format(new Date(completion.completedAt))}`,
+    href: completion.href,
+    ctaLabel: completion.contentKind === "lesson" ? "Open lesson" : "Open practice",
+  }));
+
+  const reflectionItems = buildContinueItems(input.latestEntries);
+  for (const item of reflectionItems) {
+    items.push(item);
+  }
+
+  if (items.length > 0) {
+    return items;
+  }
+
+  if (input.latestEntries.length === 0) {
     return [
       {
         id: "continue-lesson-intro",
@@ -277,8 +322,7 @@ function buildContinueItems(latestEntries: ApiJournalEntry[]): DashboardContinue
     ];
   }
 
-  const [latest] = latestEntries;
-  const items: DashboardContinueItem[] = [
+  return [
     {
       id: "continue-lesson",
       title: "Lesson 2: Control and attention",
@@ -295,17 +339,7 @@ function buildContinueItems(latestEntries: ApiJournalEntry[]): DashboardContinue
       href: "/practices",
       ctaLabel: "Continue",
     },
-    {
-      id: `continue-reflection-${latest.id}`,
-      title: latest.title,
-      context: summarizeReflection(latest.body),
-      meta: `Reflected ${dateFormatter.format(new Date(latest.createdAt))}`,
-      href: "/journal",
-      ctaLabel: "Revisit",
-    },
   ];
-
-  return items;
 }
 
 function buildRecentReflections(entries: ApiJournalEntry[]): DashboardReflectionItem[] {
@@ -473,7 +507,10 @@ export default async function DashboardPage() {
     latestEntry,
     isNewUser,
   });
-  const continueItems = buildContinueItems(journalEntries);
+  const continueItems = buildContinueItemsWithCompletions({
+    latestEntries: journalEntries,
+    recentCompletions: summary.progress.recentCompletions,
+  });
   const recentReflections = buildRecentReflections(journalEntries);
   const progressSummary = buildProgressSummary({
     reflectionsThisWeek: summary.progress.reflectionsThisWeek,

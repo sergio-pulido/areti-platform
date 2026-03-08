@@ -75,10 +75,13 @@ test("a11y smoke checks core secured routes", async ({ page }) => {
   await page.getByLabel("Chat prompt").fill("Create one test thread.");
   await page.getByRole("button", { name: "Send chat message" }).click();
   await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
+  await page.getByLabel("Open thread actions").click();
   await page.getByRole("button", { name: /^Archive$/ }).first().click();
-  await expect(page.getByRole("button", { name: "Restore" })).toBeVisible();
   await page.getByLabel("Show archived threads").click();
-  await page.getByRole("button", { name: "Restore" }).click();
+  await expect(page.getByLabel("Open thread actions").first()).toBeVisible();
+  await page.getByLabel("Open thread actions").first().click();
+  await expect(page.getByRole("button", { name: "Restore" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Restore" }).first().click();
   await page.keyboard.press("Tab");
   const focusedTag = await page.evaluate(() => document.activeElement?.tagName?.toLowerCase() ?? "");
   expect(["button", "input", "textarea", "a", "summary", "nextjs-portal", "div"]).toContain(

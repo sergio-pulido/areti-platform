@@ -242,19 +242,25 @@ test("companion supports thread lifecycle and persisted messaging", async ({ pag
   await expect(page.getByText("Conversation starters")).toHaveCount(0);
   await expect(page.getByText("Socratic Conversation Studio")).toHaveCount(0);
 
+  await page.getByLabel("Open thread actions").click();
   await page.getByRole("button", { name: "Rename" }).first().click();
   await page.getByLabel("Rename thread title").fill("Plan Sprint Decisions");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("main").getByText("Plan Sprint Decisions")).toBeVisible();
   await expect(page.getByText("What is areti?", { exact: false })).toBeVisible();
 
+  await page.getByLabel("Open thread actions").click();
   await expect(page.getByRole("button", { name: /^Archive$/ }).first()).toBeVisible();
   await page.getByRole("button", { name: /^Archive$/ }).first().click();
+  await page.getByLabel("Open thread actions").click();
   await expect(page.getByRole("button", { name: "Restore" })).toBeVisible();
   await page.getByLabel("Show archived threads").click();
   await expect(page.getByRole("button", { name: "Plan Sprint Decisions" }).first()).toBeVisible();
+  await page.getByLabel("Open thread actions").click();
   await page.getByRole("button", { name: "Restore" }).click();
+  await page.getByLabel("Open thread actions").click();
   await expect(page.getByRole("button", { name: /^Archive$/ }).first()).toBeVisible();
+  await page.getByLabel("Open thread actions").click();
   await page.getByRole("button", { name: "Delete" }).first().click();
   await expect(page).toHaveURL(/\/chat(\?thread=.*)?$/, { timeout: 15000 });
 });

@@ -257,6 +257,13 @@ export type UserContentCompletionSummary = {
   totalLessons: number;
 };
 
+export type RecentContentCompletionItem = {
+  contentKind: ContentCompletionKind;
+  contentSlug: string;
+  completionCount: number;
+  lastCompletedAt: string;
+};
+
 const globalForDb = globalThis as unknown as {
   sqlite?: Database.Database;
   migrated?: boolean;
@@ -552,6 +559,7 @@ function seedIfEmpty(): void {
           updatedAt: timestamp,
         })),
       )
+      .onConflictDoNothing()
       .run();
   }
 
@@ -566,6 +574,7 @@ function seedIfEmpty(): void {
           updatedAt: timestamp,
         })),
       )
+      .onConflictDoNothing()
       .run();
   }
 
@@ -580,6 +589,7 @@ function seedIfEmpty(): void {
           updatedAt: timestamp,
         })),
       )
+      .onConflictDoNothing()
       .run();
   }
 
@@ -594,6 +604,7 @@ function seedIfEmpty(): void {
           updatedAt: timestamp,
         })),
       )
+      .onConflictDoNothing()
       .run();
   }
 
@@ -608,6 +619,7 @@ function seedIfEmpty(): void {
           updatedAt: timestamp,
         })),
       )
+      .onConflictDoNothing()
       .run();
   }
 
@@ -622,6 +634,7 @@ function seedIfEmpty(): void {
           updatedAt: timestamp,
         })),
       )
+      .onConflictDoNothing()
       .run();
   }
 
@@ -636,6 +649,7 @@ function seedIfEmpty(): void {
           updatedAt: timestamp,
         })),
       )
+      .onConflictDoNothing()
       .run();
   }
 
@@ -650,6 +664,7 @@ function seedIfEmpty(): void {
           updatedAt: timestamp,
         })),
       )
+      .onConflictDoNothing()
       .run();
   }
 }
@@ -2190,6 +2205,24 @@ export function getUserContentCompletionSummary(userId: string): UserContentComp
     practicesCompletedThisWeek: practicesCompletedThisWeekRow?.count ?? 0,
     totalLessons: totalLessonsRow?.count ?? 0,
   };
+}
+
+export function listRecentContentCompletionsByUser(
+  userId: string,
+  limit: number,
+): RecentContentCompletionItem[] {
+  return db
+    .select({
+      contentKind: userContentCompletions.contentKind,
+      contentSlug: userContentCompletions.contentSlug,
+      completionCount: userContentCompletions.completionCount,
+      lastCompletedAt: userContentCompletions.lastCompletedAt,
+    })
+    .from(userContentCompletions)
+    .where(eq(userContentCompletions.userId, userId))
+    .orderBy(desc(userContentCompletions.lastCompletedAt))
+    .limit(limit)
+    .all();
 }
 
 export function getLandingContent() {

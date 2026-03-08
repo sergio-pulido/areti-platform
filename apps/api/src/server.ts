@@ -93,6 +93,7 @@ import {
   listChatEvents,
   listAdminAuditLogs,
   listAllContentAdmin,
+  listRecentContentCompletionsByUser,
   listJournalEntriesByUser,
   listNotificationsByUser,
   listPasskeyCredentialsByUserId,
@@ -800,6 +801,13 @@ type DashboardProgress = {
   practicesCompletedThisWeek: number;
   lessonsCompleted: number;
   totalLessons: number;
+  recentCompletions: Array<{
+    contentKind: "lesson" | "practice";
+    contentSlug: string;
+    title: string;
+    completedAt: string;
+    href: string;
+  }>;
 };
 
 function toUtcDayStart(dateValue: Date): number {
@@ -823,6 +831,7 @@ function computeDashboardProgress(entries: Array<{ createdAt: string }>): Dashbo
       practicesCompletedThisWeek: 0,
       lessonsCompleted: 0,
       totalLessons: 0,
+      recentCompletions: [],
     };
   }
 
@@ -856,7 +865,16 @@ function computeDashboardProgress(entries: Array<{ createdAt: string }>): Dashbo
     practicesCompletedThisWeek: 0,
     lessonsCompleted: 0,
     totalLessons: 0,
+    recentCompletions: [],
   };
+}
+
+function slugToTitle(slug: string): string {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function createChatRuntimeConfig(env: AppEnv): ChatRuntimeConfig {
@@ -3068,9 +3086,34 @@ export function createApp() {
     const latestEntries = listJournalEntriesByUser(authReq.authUser.id, 3);
     const progressEntries = listJournalEntriesByUser(authReq.authUser.id, 365);
     const completionSummary = getUserContentCompletionSummary(authReq.authUser.id);
+    const recentCompletionRows = listRecentContentCompletionsByUser(authReq.authUser.id, 4);
+    const recentCompletions = recentCompletionRows.map((item) => {
+      if (item.contentKind === "lesson") {
+        const lesson = getLibraryLessonBySlug(item.contentSlug);
+
+        return {
+          contentKind: item.contentKind,
+          contentSlug: item.contentSlug,
+          title: lesson?.title ?? slugToTitle(item.contentSlug),
+          completedAt: item.lastCompletedAt,
+          href: `/library/${item.contentSlug}`,
+        };
+      }
+
+      const practice = getPracticeRoutineBySlug(item.contentSlug);
+
+      return {
+        contentKind: item.contentKind,
+        contentSlug: item.contentSlug,
+        title: practice?.title ?? slugToTitle(item.contentSlug),
+        completedAt: item.lastCompletedAt,
+        href: `/practices/${item.contentSlug}`,
+      };
+    });
     const progress = {
       ...computeDashboardProgress(progressEntries),
       ...completionSummary,
+      recentCompletions,
     };
 
     res.json({
