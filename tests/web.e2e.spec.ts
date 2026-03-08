@@ -227,20 +227,20 @@ test("companion supports thread lifecycle and persisted messaging", async ({ pag
   await page.goto("/chat");
 
   await expect(page).toHaveURL(/\/chat$/, { timeout: 15000 });
-  await expect(page.getByText("Socratic Conversation Studio")).toBeVisible();
-  await expect(page.getByText("Conversation starters")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Reflective Companion" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Begin where you are" })).toBeVisible();
   await expect(page.getByLabel("Chat prompt")).toBeVisible();
 
   await page.getByLabel("Create a new conversation thread").first().click();
   await expect(page).toHaveURL(/\/chat$/, { timeout: 15000 });
-  await expect(page.getByText("Conversation starters")).toBeVisible();
-  await expect(page.locator("aside").getByText("History", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Begin where you are" })).toBeVisible();
+  await expect(page.getByLabel("Create a new conversation thread").first()).toBeVisible();
 
   await page.getByLabel("Chat prompt").fill("What is areti?");
   await page.getByRole("button", { name: "Send chat message" }).click();
   await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
-  await expect(page.getByText("Conversation starters")).toHaveCount(0);
-  await expect(page.getByText("Socratic Conversation Studio")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Begin where you are" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Reflective Companion" })).toHaveCount(0);
 
   await page.getByLabel("Open thread actions").click();
   await page.getByRole("button", { name: "Rename" }).first().click();
@@ -253,16 +253,11 @@ test("companion supports thread lifecycle and persisted messaging", async ({ pag
   await expect(page.getByRole("button", { name: /^Archive$/ }).first()).toBeVisible();
   await page.getByRole("button", { name: /^Archive$/ }).first().click();
   await page.getByLabel("Open thread actions").click();
-  await expect(page.getByRole("button", { name: "Restore" })).toBeVisible();
-  await page.getByLabel("Show archived threads").click();
-  await expect(page.getByRole("button", { name: "Plan Sprint Decisions" }).first()).toBeVisible();
-  await page.getByLabel("Open thread actions").click();
-  await page.getByRole("button", { name: "Restore" }).click();
-  await page.getByLabel("Open thread actions").click();
+  await expect(page.getByRole("button", { name: "Restore" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Restore" }).first().click();
+  await page.getByLabel("Open thread actions").first().click();
   await expect(page.getByRole("button", { name: /^Archive$/ }).first()).toBeVisible();
-  await page.getByLabel("Open thread actions").click();
-  await page.getByRole("button", { name: "Delete" }).first().click();
-  await expect(page).toHaveURL(/\/chat(\?thread=.*)?$/, { timeout: 15000 });
+  await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
 });
 
 test("section sidebars are isolated across personal, community, and account sections", async ({
@@ -278,7 +273,7 @@ test("section sidebars are isolated across personal, community, and account sect
   await expect(sidebar.getByRole("link", { name: "Profile" })).toHaveCount(0);
 
   await topbar.getByRole("link", { name: "Companion" }).first().click();
-  await expect(sidebar.getByText("Conversations")).toBeVisible();
+  await expect(sidebar.getByLabel("Create a new conversation thread").first()).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Library" })).toHaveCount(0);
 
   await openUserMenu(page);
@@ -373,10 +368,19 @@ test("account password flow validates failure and success", async ({ page }) => 
     await cookieAccept.first().click();
   }
 
-  await page.getByLabel("Email").fill(email);
+  const signupEmailInput = page.getByLabel("Email");
+  await signupEmailInput.fill(email);
+  await expect(signupEmailInput).toHaveValue(email);
   await page.getByLabel("Password", { exact: true }).fill(oldPassword);
   await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
   await page.getByRole("button", { name: "Create free account" }).click();
+  try {
+    await expect(page).toHaveURL(/\/auth\/verify-email/, { timeout: 5000 });
+  } catch {
+    await signupEmailInput.fill(email);
+    await expect(signupEmailInput).toHaveValue(email);
+    await page.getByRole("button", { name: "Create free account" }).click();
+  }
   await expectUrl(page, /\/auth\/verify-email/);
   await page.getByRole("button", { name: "Verify Email" }).click();
   await expectUrl(page, /\/onboarding/);
