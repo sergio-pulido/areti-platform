@@ -5,14 +5,19 @@ import type { DashboardContinueItem } from "@/components/dashboard/home/types";
 
 type DashboardContinueSectionProps = {
   items: DashboardContinueItem[];
+  isNewUser?: boolean;
 };
 
-export function DashboardContinueSection({ items }: DashboardContinueSectionProps) {
+export function DashboardContinueSection({ items, isNewUser = false }: DashboardContinueSectionProps) {
   return (
     <section aria-label="Continue your path" className="space-y-3">
       <div>
-        <h2 className="text-lg font-semibold text-sand-100">Continue your path</h2>
-        <p className="mt-1 text-sm text-night-200">Pick up where you left off.</p>
+        <h2 className="text-lg font-semibold text-sand-100">
+          {isNewUser ? "Start your path" : "Continue your path"}
+        </h2>
+        <p className="mt-1 text-sm text-night-200">
+          {isNewUser ? "Begin with a simple entry point." : "Pick up where you left off."}
+        </p>
       </div>
       <Card variant="default" className="rounded-[var(--radius-2xl)] border-night-700/80 p-2 md:p-3">
         <ul className="space-y-2">

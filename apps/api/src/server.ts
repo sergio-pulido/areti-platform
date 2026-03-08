@@ -791,6 +791,63 @@ function parseChatProviderOrder(rawOrder?: string): ChatProvider[] {
   return parsed.filter((provider, index) => parsed.indexOf(provider) === index);
 }
 
+type DashboardProgress = {
+  streakDays: number;
+  reflectionsThisWeek: number;
+  daysSinceLastEntry: number | null;
+};
+
+function toUtcDayStart(dateValue: Date): number {
+  return Date.UTC(dateValue.getUTCFullYear(), dateValue.getUTCMonth(), dateValue.getUTCDate());
+}
+
+function dayDiffFromNow(isoTimestamp: string): number {
+  const now = new Date();
+  const todayStart = toUtcDayStart(now);
+  const source = new Date(isoTimestamp);
+  const sourceStart = toUtcDayStart(source);
+  return Math.max(0, Math.floor((todayStart - sourceStart) / (24 * 60 * 60 * 1000)));
+}
+
+function computeDashboardProgress(entries: Array<{ createdAt: string }>): DashboardProgress {
+  if (entries.length === 0) {
+    return {
+      streakDays: 0,
+      reflectionsThisWeek: 0,
+      daysSinceLastEntry: null,
+    };
+  }
+
+  const daysSinceLastEntry = dayDiffFromNow(entries[0].createdAt);
+  const reflectionsThisWeek = entries.filter((entry) => dayDiffFromNow(entry.createdAt) <= 6).length;
+
+  const uniqueDays = Array.from(
+    new Set(entries.map((entry) => new Date(entry.createdAt).toISOString().slice(0, 10))),
+  );
+
+  let streakDays = 0;
+  if (daysSinceLastEntry <= 1) {
+    streakDays = 1;
+    for (let index = 1; index < uniqueDays.length; index += 1) {
+      const previousDay = new Date(`${uniqueDays[index - 1]}T00:00:00.000Z`);
+      const currentDay = new Date(`${uniqueDays[index]}T00:00:00.000Z`);
+      const diffDays = Math.round((toUtcDayStart(previousDay) - toUtcDayStart(currentDay)) / (24 * 60 * 60 * 1000));
+
+      if (diffDays !== 1) {
+        break;
+      }
+
+      streakDays += 1;
+    }
+  }
+
+  return {
+    streakDays,
+    reflectionsThisWeek,
+    daysSinceLastEntry,
+  };
+}
+
 function createChatRuntimeConfig(env: AppEnv): ChatRuntimeConfig {
   const providerOrder = parseChatProviderOrder(env.CHAT_PROVIDER_ORDER);
   const providerConfigs: Record<ChatProvider, ChatProviderRuntime | null> = {
@@ -2965,11 +3022,14 @@ export function createApp() {
     const authReq = req as AuthenticatedRequest;
     const entriesCount = countJournalEntriesByUser(authReq.authUser.id);
     const latestEntries = listJournalEntriesByUser(authReq.authUser.id, 3);
+    const progressEntries = listJournalEntriesByUser(authReq.authUser.id, 365);
+    const progress = computeDashboardProgress(progressEntries);
 
     res.json({
       data: {
         entriesCount,
         latestEntries,
+        progress,
       },
     });
   });

@@ -3,9 +3,10 @@ import type { DashboardProgressSummary as DashboardProgressSummaryType } from "@
 
 type DashboardProgressSummaryProps = {
   summary: DashboardProgressSummaryType;
+  isNewUser?: boolean;
 };
 
-export function DashboardProgressSummary({ summary }: DashboardProgressSummaryProps) {
+export function DashboardProgressSummary({ summary, isNewUser = false }: DashboardProgressSummaryProps) {
   const items = [
     {
       label: "Current streak",
@@ -29,7 +30,11 @@ export function DashboardProgressSummary({ summary }: DashboardProgressSummaryPr
     <section aria-label="Progress summary" className="space-y-3">
       <div>
         <h2 className="text-lg font-semibold text-sand-100">Progress at a glance</h2>
-        <p className="mt-1 text-sm text-night-200">Light signals to keep momentum visible.</p>
+        <p className="mt-1 text-sm text-night-200">
+          {isNewUser
+            ? "Start one reflection to activate your progress signals."
+            : "Light signals to keep momentum visible."}
+        </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {items.map((item) => (

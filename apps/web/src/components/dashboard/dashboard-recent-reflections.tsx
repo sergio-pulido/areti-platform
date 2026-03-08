@@ -6,6 +6,7 @@ import type { DashboardReflectionItem } from "@/components/dashboard/home/types"
 
 type DashboardRecentReflectionsProps = {
   items: DashboardReflectionItem[];
+  isNewUser?: boolean;
 };
 
 const stateClassMap: Record<string, string> = {
@@ -15,7 +16,10 @@ const stateClassMap: Record<string, string> = {
   Overwhelmed: "border-rose-300/30 bg-rose-500/10 text-rose-100",
 };
 
-export function DashboardRecentReflections({ items }: DashboardRecentReflectionsProps) {
+export function DashboardRecentReflections({
+  items,
+  isNewUser = false,
+}: DashboardRecentReflectionsProps) {
   return (
     <section aria-label="Recent reflections">
       <Card variant="default" className="rounded-[var(--radius-2xl)] border-night-700/80">
@@ -24,7 +28,9 @@ export function DashboardRecentReflections({ items }: DashboardRecentReflections
 
         {items.length === 0 ? (
           <p className="mt-4 rounded-xl border border-night-700/80 bg-night-950/70 p-4 text-sm text-night-200">
-            No reflections yet. Start with one short entry to build continuity.
+            {isNewUser
+              ? "No reflections yet. Start with one short check-in and your home will personalize."
+              : "No recent reflections. Re-enter with one short note to rebuild continuity."}
           </p>
         ) : (
           <ul className="mt-4 space-y-3">

@@ -107,6 +107,11 @@ export type ApiJournalEntry = {
 export type ApiDashboardSummary = {
   entriesCount: number;
   latestEntries: ApiJournalEntry[];
+  progress: {
+    streakDays: number;
+    reflectionsThisWeek: number;
+    daysSinceLastEntry: number | null;
+  };
 };
 
 export type ApiSecuritySettings = {

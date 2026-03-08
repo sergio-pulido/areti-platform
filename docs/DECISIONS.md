@@ -264,6 +264,12 @@
 - **Why:** Aligns homepage behavior with retention and daily engagement goals by answering "what should I do now?" in under 10 seconds.
 - **Tradeoff:** Some progress signals are currently heuristic/mocked until deeper lesson/practice progress APIs are available.
 
+## 2026-03-08 - Compute dashboard progress signals server-side
+- **Context:** Dashboard progress and recency behavior depended on frontend heuristics, which could drift from persisted user activity.
+- **Decision:** Extend `/api/v1/dashboard/summary` to include computed progress (`streakDays`, `reflectionsThisWeek`, `daysSinceLastEntry`) derived from journal history on the backend.
+- **Why:** Provides a single, authoritative progress source for home recommendations and UI summaries.
+- **Tradeoff:** Current signals are journal-derived; lesson/practice completion remains a later API extension.
+
 ## 2026-03-08 - Consolidate profile UX for personal-use product fit
 - **Context:** Splitting profile into main/extra/contact/professional tabs reflected a copied enterprise/community pattern and did not match this app’s personal-use scope.
 - **Decision:** Collapse account identity editing into a single `/account/profile` tab and remove extra/professional profile sections from account navigation (legacy routes redirect to profile).

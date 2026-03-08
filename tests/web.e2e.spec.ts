@@ -22,7 +22,7 @@ async function signupAndGoDashboard(page: Page): Promise<void> {
   }
 
   const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const email = `user+${uniqueId}@example.com`;
+  const email = `user.${uniqueId}@example.com`;
 
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill("StrongPass123");
@@ -48,6 +48,17 @@ async function signupAndGoDashboard(page: Page): Promise<void> {
   await expectUrl(page, /\/dashboard/);
 }
 
+async function createJournalReflection(page: Page): Promise<void> {
+  await page.goto("/journal");
+  await page.getByLabel("Title").fill("Momentum checkpoint");
+  await page.getByLabel("Mood").selectOption("Focused");
+  await page
+    .getByRole("textbox", { name: "Reflection", exact: true })
+    .fill("I clarified what I can control and chose one concrete next action for today.");
+  await page.getByRole("button", { name: "Save Reflection" }).click();
+  await expect(page.getByRole("heading", { name: "Momentum checkpoint" })).toBeVisible();
+}
+
 test("landing loads API content and signup reaches dashboard", async ({ page }) => {
   await page.goto("/");
 
@@ -55,7 +66,7 @@ test("landing loads API content and signup reaches dashboard", async ({ page }) 
   await expect(page.getByText("Stoic Core")).toBeVisible();
 
   await signupAndGoDashboard(page);
-  await expect(page.getByText(/^Welcome,/)).toBeVisible();
+  await expect(page.getByText(/^Good (morning|afternoon|evening),/)).toBeVisible();
 
   const topbar = page.locator("header");
   await page.getByLabel("Open user menu").click();
@@ -91,7 +102,7 @@ test("cookie consent gate redirects protected routes until accepted", async ({ p
 
 test("signin unverified state offers resend link and opens code verification", async ({ page }) => {
   const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const email = `pending+${uniqueId}@example.com`;
+  const email = `pending.${uniqueId}@example.com`;
   const password = "StrongPass123";
 
   await page.goto("/auth/signup");
@@ -158,10 +169,32 @@ test("dashboard CTAs remain clickable and route to actionable flows", async ({ p
   await expect(page).toHaveURL(/\/chat(\?.*(prompt|thread)=.*)?/, { timeout: 15000 });
   await expect(page.getByText("I want to join", { exact: false }).first()).toBeVisible();
 
-  const firstPromptIdea = "I feel anxious before big meetings. What should I practice this week?";
   await page.goto("/chat");
-  await page.getByLabel(`Use prompt idea: ${firstPromptIdea}`).click();
+  await page
+    .getByRole("button", { name: /I feel anxious and scattered\. Help me settle/i })
+    .first()
+    .click();
+  await expect(page.getByLabel("Chat prompt")).toHaveValue(/I feel anxious and scattered/i);
+  await page.getByRole("button", { name: "Send chat message" }).click();
   await expect(page).toHaveURL(/\/chat\?.*thread=/, { timeout: 15000 });
+});
+
+test("dashboard prioritizes next action and adapts from new user to returning user", async ({ page }) => {
+  await signupAndGoDashboard(page);
+
+  await expect(page.getByText("Begin with one short check-in.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today for you" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Start your path" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Recent reflections" })).toBeVisible();
+  await expect(
+    page.getByText("No reflections yet. Start with one short check-in and your home will personalize."),
+  ).toBeVisible();
+
+  await createJournalReflection(page);
+  await page.goto("/dashboard");
+
+  await expect(page.getByRole("heading", { name: "Continue your path" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Momentum checkpoint" }).first()).toBeVisible();
 });
 
 test("companion supports thread lifecycle and persisted messaging", async ({ page }) => {
@@ -299,7 +332,7 @@ test("account sidebar matches simplified B2C IA", async ({ page }) => {
 
 test("account password flow validates failure and success", async ({ page }) => {
   const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const email = `password+${uniqueId}@example.com`;
+  const email = `password.${uniqueId}@example.com`;
   const oldPassword = "StrongPass123";
   const newPassword = "StrongPass456";
 

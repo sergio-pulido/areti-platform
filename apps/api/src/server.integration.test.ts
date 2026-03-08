@@ -214,6 +214,9 @@ describe("API integration", () => {
     expect(summary.status).toBe(200);
     expect(summary.body.data.entriesCount).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(summary.body.data.latestEntries)).toBe(true);
+    expect(typeof summary.body.data.progress.streakDays).toBe("number");
+    expect(typeof summary.body.data.progress.reflectionsThisWeek).toBe("number");
+    expect(typeof summary.body.data.progress.daysSinceLastEntry).toBe("number");
   });
 
   it("supports notifications read flows", async () => {

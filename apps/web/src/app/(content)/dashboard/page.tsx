@@ -193,8 +193,9 @@ function buildRecommendedAction(input: {
 function buildTodayActions(input: {
   daysSinceLatestEntry: number;
   latestEntry: ApiJournalEntry | null;
+  isNewUser: boolean;
 }): DashboardTodayAction[] {
-  const { daysSinceLatestEntry, latestEntry } = input;
+  const { daysSinceLatestEntry, latestEntry, isNewUser } = input;
   const reflectionMood = latestEntry ? deriveState(latestEntry.mood) : "Grounded";
 
   return [
@@ -202,7 +203,9 @@ function buildTodayActions(input: {
       id: "today-practice",
       kind: "practice",
       title: "Today’s practice",
-      description: "Reset attention before the day accelerates.",
+      description: isNewUser
+        ? "Begin with a short reset to learn the practice format."
+        : "Reset attention before the day accelerates.",
       meta: "4 min",
       cta: {
         label: "Start practice",
@@ -214,7 +217,9 @@ function buildTodayActions(input: {
       kind: "reflection",
       title: "Reflection prompt",
       description:
-        daysSinceLatestEntry >= 2
+        isNewUser
+          ? "Capture one honest sentence about what you need today."
+          : daysSinceLatestEntry >= 2
           ? "Name what has been draining your attention lately."
           : "Clarify what deserves your energy next.",
       meta: "2 min",
@@ -227,10 +232,12 @@ function buildTodayActions(input: {
       id: "continue-lesson",
       kind: "lesson",
       title: "Continue lesson",
-      description: "Resume where you stopped without re-reading everything.",
+      description: isNewUser
+        ? "Start with a foundational lesson on control and attention."
+        : "Resume where you stopped without re-reading everything.",
       meta: "8 min",
       cta: {
-        label: "Resume lesson",
+        label: isNewUser ? "Start lesson" : "Resume lesson",
         href: "/library",
       },
     },
@@ -316,21 +323,14 @@ function buildRecentReflections(entries: ApiJournalEntry[]): DashboardReflection
 
 function buildProgressSummary(input: {
   entriesCount: number;
-  daysSinceLatestEntry: number;
-  recentEntries: ApiJournalEntry[];
+  reflectionsThisWeek: number;
+  streakDays: number;
 }): DashboardProgressSummaryType {
-  const reflectionsThisWeek = input.recentEntries.filter((entry) => {
-    const ageInDays = getDaysSince(entry.createdAt);
-    return ageInDays <= 7;
-  }).length;
-
-  const streakDays =
-    input.entriesCount === 0
-      ? 0
-      : Math.max(1, Math.min(30, input.entriesCount + (input.daysSinceLatestEntry <= 1 ? 2 : 0)));
+  const streakDays = Math.max(0, input.streakDays);
+  const reflectionsThisWeek = Math.max(0, input.reflectionsThisWeek);
   const practicesThisWeek = Math.max(
     0,
-    Math.min(7, reflectionsThisWeek + (input.daysSinceLatestEntry <= 1 ? 1 : 0)),
+    Math.min(7, reflectionsThisWeek + (streakDays > 0 ? 1 : 0)),
   );
   const lessonProgressPercent = Math.max(12, Math.min(96, 24 + input.entriesCount * 6));
 
@@ -342,7 +342,36 @@ function buildProgressSummary(input: {
   };
 }
 
-function buildCompanionContext(daysSinceLatestEntry: number): DashboardCompanionContext {
+function buildCompanionContext(daysSinceLatestEntry: number, isNewUser: boolean): DashboardCompanionContext {
+  if (isNewUser) {
+    return {
+      headline: "Start your first guided check-in.",
+      description: "In under 3 minutes, get one clear next step tailored to your current state.",
+      cta: {
+        label: "Open Companion",
+        href: "/chat",
+      },
+      prompts: [
+        {
+          label: "Help me get started",
+          href: "/chat?prompt=I%20am%20new%20here.%20What%20is%20the%20best%20first%20step%20today%3F",
+        },
+        {
+          label: "Guide a 3-minute reset",
+          href: "/chat?prompt=Guide%20a%203-minute%20reset%20for%20me%20right%20now.",
+        },
+        {
+          label: "What should I focus on today?",
+          href: "/chat?prompt=What%20should%20I%20focus%20on%20today%20and%20why%3F",
+        },
+        {
+          label: "Help me think clearly",
+          href: "/chat?prompt=Help%20me%20think%20clearly%20about%20what%20matters%20today.",
+        },
+      ],
+    };
+  }
+
   return {
     headline:
       daysSinceLatestEntry >= 3
@@ -427,8 +456,10 @@ export default async function DashboardPage() {
   ]);
 
   const firstName = getFirstName(user.name);
+  const isNewUser = summary.entriesCount === 0;
   const latestEntry = journalEntries[0] ?? null;
-  const daysSinceLatestEntry = getDaysSince(latestEntry?.createdAt ?? null);
+  const daysSinceLatestEntry =
+    summary.progress.daysSinceLastEntry ?? getDaysSince(latestEntry?.createdAt ?? null);
 
   const nextRecommendedAction = buildRecommendedAction({
     entriesCount: summary.entriesCount,
@@ -438,15 +469,16 @@ export default async function DashboardPage() {
   const todayActions = buildTodayActions({
     daysSinceLatestEntry,
     latestEntry,
+    isNewUser,
   });
   const continueItems = buildContinueItems(journalEntries);
   const recentReflections = buildRecentReflections(journalEntries);
   const progressSummary = buildProgressSummary({
     entriesCount: summary.entriesCount,
-    daysSinceLatestEntry,
-    recentEntries: journalEntries,
+    reflectionsThisWeek: summary.progress.reflectionsThisWeek,
+    streakDays: summary.progress.streakDays,
   });
-  const companionContext = buildCompanionContext(daysSinceLatestEntry);
+  const companionContext = buildCompanionContext(daysSinceLatestEntry, isNewUser);
   const accountNudges = buildAccountNudges({
     mfaEnabled: security.mfaEnabled,
     passkeyEnabled: security.passkeyEnabled,
@@ -465,14 +497,14 @@ export default async function DashboardPage() {
 
       <DashboardTodayActions actions={todayActions} />
 
-      <DashboardContinueSection items={continueItems} />
+      <DashboardContinueSection items={continueItems} isNewUser={isNewUser} />
 
       <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <DashboardRecentReflections items={recentReflections} />
+        <DashboardRecentReflections items={recentReflections} isNewUser={isNewUser} />
         <DashboardCompanionPanel companion={companionContext} />
       </section>
 
-      <DashboardProgressSummary summary={progressSummary} />
+      <DashboardProgressSummary summary={progressSummary} isNewUser={isNewUser} />
 
       <DashboardAccountNudges nudges={accountNudges} />
     </div>

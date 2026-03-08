@@ -8,7 +8,7 @@ async function signup(page: import("@playwright/test").Page): Promise<void> {
   }
 
   const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const email = `a11y+${uniqueId}@example.com`;
+  const email = `a11y.${uniqueId}@example.com`;
 
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill("StrongPass123");
