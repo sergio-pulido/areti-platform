@@ -9,9 +9,12 @@
 - Companion history now supports `Active` and `Archived` views with restore flow, while preserving active-only default thread listing API behavior.
 - Companion now supports account-level user custom instructions appended to the global Areti system prompt.
 - Chat telemetry is now persisted (`chat_events`) and exposed to admins via API for lifecycle observability.
+- Companion chat UX now prioritizes guided reflective conversation: lighter hierarchy, compact thread controls, structured assistant rendering, continuity snippets, follow-up chips, and a mode-driven composer.
 - Community and creator domains are now fully API-backed across pages and CMS.
 - Notifications are persisted and wired to topbar bell with unread/read-all/read-one behavior.
 - Signup now requires mandatory Terms/Privacy acceptance, stores auditable legal consent records, and defers session creation until email verification.
+- Auth pages are now conversion-optimized with simplified auth-only topbar nav, clearer value-focused hero copy, stronger field/CTA hierarchy, and premium high-contrast form states.
+- Signup now removes `name` and `confirmPassword` from first step, uses a single required legal consent checkbox, and keeps passkey as a first-class secondary path.
 - Auth now supports verification-link + 6-digit-code flows via Resend (`/api/v1/auth/verify-email`, `/api/v1/auth/resend-verification`) with first-verified-user admin promotion.
 - Required onboarding is now enforced before app access (`/onboarding`) and persisted for personalization and prompt shaping.
 - Cookie consent is now enforced for app routes via route middleware/proxy redirect to `/legal/cookies?next=...`.
@@ -92,7 +95,10 @@
   - Community and creator pages now consume backend content APIs (no hardcoded arrays).
   - Creator root (`/creator`) now renders actionable overview page (no redirect).
   - Topbar bell now consumes notifications API; quick actions remains separate icon/control.
-  - Added mandatory signup legal checkboxes for Terms and Privacy acceptance.
+  - Added mandatory signup legal consent with auditable Terms/Privacy acceptance recording.
+  - Redesigned auth shell/forms for conversion: contextual topbar (`Privacy`, `Terms`, and one auth switch), clearer left-panel value copy, modernized passkey CTA, and explicit trust microcopy.
+  - Added reusable auth UI primitives (`AuthHeroPanel`, `AuthCard`, `AuthField`, `PasswordField`, `PasswordStrengthChecklist`, `LegalConsent`, `AuthDivider`, `PasskeyButton`, `AuthFooterLink`, `AuthTrustMicrocopy`).
+  - Simplified signup contract in UI to `email + password + acceptLegal`, with live password criteria checklist and show/hide password controls on both sign-in and signup.
   - Added `/auth/verify-email` flow and enforced onboarding completion routing before secured shell access.
   - Added global cookie consent banner with acceptance persistence and app-route gate redirect behavior.
   - Replaced page-specific headers with a shared AppTopbar (guest + authenticated variants with mobile action handling).
@@ -127,6 +133,7 @@
   - Companion intro header + starters render only in draft mode (`/chat` without `?thread=`); active-thread workspaces hide intro/starter panels.
   - Companion history now includes Active/Archived tabs, debounced search, and list virtualization for larger histories.
   - Thread details panel now shows status and supports restore for archived threads; archived threads disable composer until restored.
+  - Companion chat UI now has lighter framing, compact overflow thread actions, preview-rich thread rows, guided empty state starters, structured assistant message sections, follow-up action chips, and a ritual-style composer with mode pills + rotating prompts.
   - Library and practices lists now render reusable clickable card components.
   - Added `/library/[slug]` article detail and upgraded `/practices/[slug]` to DB protocol content.
   - Added admin-only create pages:

@@ -1,15 +1,47 @@
-import { MessageCircleQuestion } from "lucide-react";
+"use client";
 
-export function ChatEmptyState() {
+import { MessageCircleQuestion } from "lucide-react";
+import { cn } from "@/lib/cn";
+
+type ChatEmptyStateProps = {
+  prompts?: string[];
+  onUsePrompt?: (prompt: string) => void;
+};
+
+const DEFAULT_PROMPTS = [
+  "I feel anxious and scattered. Help me settle in the next 10 minutes.",
+  "Help me think clearly through a difficult decision.",
+  "Guide a short evening reflection I can do tonight.",
+  "I want to improve one relationship without losing myself.",
+];
+
+export function ChatEmptyState({ prompts = DEFAULT_PROMPTS, onUsePrompt }: ChatEmptyStateProps) {
   return (
-    <div className="flex h-[360px] flex-col items-center justify-center rounded-[var(--radius-xl)] border border-night-800 bg-night-950/70 px-6 text-center">
-      <div className="rounded-full border border-night-700 bg-night-900/80 p-3">
-        <MessageCircleQuestion size={20} className="text-sage-200" />
-      </div>
-      <h2 className="mt-4 text-lg font-semibold text-sand-100">No thread selected</h2>
-      <p className="mt-2 max-w-md text-sm text-night-200">
-        Pick a thread from the sidebar or create a new one to start a Companion conversation.
+    <section className="rounded-[var(--radius-2xl)] border border-night-800/65 bg-night-950/40 px-5 py-6 sm:px-6">
+      <h2 className="text-xl font-semibold text-sand-100">Begin where you are</h2>
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-night-200">
+        Write one honest sentence, or start with one of these prompts.
       </p>
-    </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        {prompts.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            onClick={() => onUsePrompt?.(prompt)}
+            className={cn(
+              "group flex items-start gap-2 rounded-xl border border-night-800/65 bg-night-950/50 px-3 py-2.5 text-left transition",
+              "hover:border-sage-300/35 hover:bg-sage-500/10",
+            )}
+          >
+            <MessageCircleQuestion
+              size={14}
+              className="mt-0.5 shrink-0 text-night-300 transition group-hover:text-sage-200"
+            />
+            <span className="text-sm text-night-100">{prompt}</span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }

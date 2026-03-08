@@ -24,18 +24,11 @@ async function signupAndGoDashboard(page: Page): Promise<void> {
   const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const email = `user+${uniqueId}@example.com`;
 
-  await page.getByLabel("Name").fill("Admin E2E");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill("StrongPass123");
-  await page.getByLabel("Confirm Password").fill("StrongPass123");
-  await page
-    .getByRole("checkbox", { name: /I accept the Terms and Conditions/i })
-    .check();
-  await page
-    .getByRole("checkbox", { name: /I accept the Privacy Policy/i })
-    .check();
+  await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
 
-  await page.getByRole("button", { name: "Create Account" }).click();
+  await page.getByRole("button", { name: "Create free account" }).click();
   await expectUrl(page, /\/auth\/verify-email/);
   await page.getByRole("button", { name: "Verify Email" }).click();
   await expectUrl(page, /\/onboarding/);
@@ -62,7 +55,7 @@ test("landing loads API content and signup reaches dashboard", async ({ page }) 
   await expect(page.getByText("Stoic Core")).toBeVisible();
 
   await signupAndGoDashboard(page);
-  await expect(page.getByText("Welcome, Admin")).toBeVisible();
+  await expect(page.getByText(/^Welcome,/)).toBeVisible();
 
   const topbar = page.locator("header");
   await page.getByLabel("Open user menu").click();
@@ -107,20 +100,17 @@ test("signin unverified state offers resend link and opens code verification", a
     await cookieAccept.first().click();
   }
 
-  await page.getByLabel("Name").fill("Pending Verification User");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByLabel("Confirm Password").fill(password);
-  await page.getByRole("checkbox", { name: /I accept the Terms and Conditions/i }).check();
-  await page.getByRole("checkbox", { name: /I accept the Privacy Policy/i }).check();
-  await page.getByRole("button", { name: "Create Account" }).click();
+  await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
+  await page.getByRole("button", { name: "Create free account" }).click();
   await expectUrl(page, /\/auth\/verify-email/);
 
   await page.goto("/auth/signin");
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign In", exact: true }).click();
-  await expect(page.getByText("Email not verified. Check your inbox or")).toBeVisible();
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByText(/Email not verified/i)).toBeVisible();
 
   await page.getByRole("link", { name: "Request a new verification email" }).click();
   await expect(page).toHaveURL(
@@ -319,13 +309,10 @@ test("account password flow validates failure and success", async ({ page }) => 
     await cookieAccept.first().click();
   }
 
-  await page.getByLabel("Name").fill("Password User");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(oldPassword);
-  await page.getByLabel("Confirm Password").fill(oldPassword);
-  await page.getByRole("checkbox", { name: /I accept the Terms and Conditions/i }).check();
-  await page.getByRole("checkbox", { name: /I accept the Privacy Policy/i }).check();
-  await page.getByRole("button", { name: "Create Account" }).click();
+  await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
+  await page.getByRole("button", { name: "Create free account" }).click();
   await expectUrl(page, /\/auth\/verify-email/);
   await page.getByRole("button", { name: "Verify Email" }).click();
   await expectUrl(page, /\/onboarding/);
@@ -361,12 +348,12 @@ test("account password flow validates failure and success", async ({ page }) => 
   await page.goto("/auth/signin");
 
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(oldPassword);
-  await page.getByRole("button", { name: "Sign In", exact: true }).click();
+  await page.getByLabel("Password", { exact: true }).fill(oldPassword);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByText("Invalid email or password.")).toBeVisible();
 
-  await page.getByLabel("Password").fill(newPassword);
-  await page.getByRole("button", { name: "Sign In", exact: true }).click();
+  await page.getByLabel("Password", { exact: true }).fill(newPassword);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expectUrl(page, /\/dashboard/);
 });
 

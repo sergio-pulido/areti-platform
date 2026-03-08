@@ -12,6 +12,10 @@ import { getTopbarSectionsForRole } from "@/lib/navigation";
 type AppTopbarProps = {
   user?: CurrentUser | null;
   accessToken?: string;
+  guestAuthSwitch?: {
+    href: string;
+    label: string;
+  };
 };
 
 function initials(name: string): string {
@@ -23,7 +27,7 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-export async function AppTopbar({ user, accessToken }: AppTopbarProps) {
+export async function AppTopbar({ user, accessToken, guestAuthSwitch }: AppTopbarProps) {
   if (!user || !accessToken) {
     return (
       <header className="sticky top-0 z-40 border-b border-night-800/80 bg-night-950/95 px-4 py-2 backdrop-blur lg:px-8">
@@ -44,18 +48,29 @@ export async function AppTopbar({ user, accessToken }: AppTopbarProps) {
             >
               Terms
             </Link>
-            <Link
-              href="/auth/signin"
-              className="rounded-lg border border-night-700 px-3 py-1.5 text-sand-200 hover:border-night-500"
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/auth/signup"
-              className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-1.5 font-semibold text-night-950 hover:bg-sand-50"
-            >
-              Get started
-            </Link>
+            {guestAuthSwitch ? (
+              <Link
+                href={guestAuthSwitch.href}
+                className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-1.5 font-semibold text-night-950 hover:bg-sand-50"
+              >
+                {guestAuthSwitch.label}
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href="/auth/signin"
+                  className="rounded-lg border border-night-700 px-3 py-1.5 text-sand-200 hover:border-night-500"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/auth/signup"
+                  className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-1.5 font-semibold text-night-950 hover:bg-sand-50"
+                >
+                  Get started
+                </Link>
+              </>
+            )}
           </nav>
         </div>
       </header>

@@ -17,7 +17,11 @@ export default async function SignupPage() {
   return (
     <AuthShell
       title="Create your account"
-      subtitle="Join the platform and unlock your dashboard, practices, journal, and AI companion."
+      subtitle="Start your practice, journal, and AI-guided reflection in under a minute."
+      guestAuthSwitch={{
+        href: "/auth/signin",
+        label: "Sign in",
+      }}
     >
       <SignupForm />
     </AuthShell>

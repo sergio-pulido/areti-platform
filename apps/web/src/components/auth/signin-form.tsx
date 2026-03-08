@@ -7,14 +7,27 @@ import type {
 } from "@simplewebauthn/browser";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { signinAction } from "@/actions/auth";
 import { initialAuthActionState } from "@/actions/auth-state";
+import { AuthDivider } from "@/components/auth/auth-divider";
+import { AuthField } from "@/components/auth/auth-field";
+import { AuthFooterLink } from "@/components/auth/auth-footer-link";
+import { AuthTrustMicrocopy } from "@/components/auth/auth-trust-microcopy";
+import { PasskeyButton } from "@/components/auth/passkey-button";
+import { PasswordField } from "@/components/auth/password-field";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/cn";
 
 type PasskeyAuthOptionsData = {
   challengeId: string;
   options: PublicKeyCredentialRequestOptionsJSON;
+};
+
+type SigninFormProps = {
+  initialEmail?: string;
+  autoStartPasskey?: boolean;
 };
 
 function SubmitButton({ mfaRequired }: { mfaRequired: boolean }) {
@@ -24,9 +37,9 @@ function SubmitButton({ mfaRequired }: { mfaRequired: boolean }) {
     <button
       type="submit"
       disabled={pending}
-      className="w-full rounded-xl border border-sand-100 bg-sand-100 px-4 py-3 text-sm font-semibold tracking-wide text-night-950 transition hover:bg-sand-50 disabled:cursor-not-allowed disabled:opacity-50"
+      className="w-full rounded-xl border border-sand-100 bg-sand-100 px-4 py-3 text-sm font-semibold tracking-wide text-night-950 transition hover:bg-sand-50 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {pending ? "Checking..." : mfaRequired ? "Verify Code" : "Sign In"}
+      {pending ? (mfaRequired ? "Verifying..." : "Signing in...") : mfaRequired ? "Verify code" : "Sign in"}
     </button>
   );
 }
@@ -41,19 +54,76 @@ async function parseApiData<T>(response: Response): Promise<T> {
   return payload.data;
 }
 
-export function SigninForm() {
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+function humanizePasskeyError(error: unknown): string {
+  if (error instanceof DOMException && error.name === "NotAllowedError") {
+    return "Passkey sign-in was canceled. Try again when you're ready.";
+  }
+
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+
+    if (message.includes("unavailable")) {
+      return "Passkey sign-in is not set up for this account yet.";
+    }
+
+    if (message.includes("challenge") || message.includes("request failed")) {
+      return "We couldn't complete passkey sign-in. Please try again.";
+    }
+
+    return error.message;
+  }
+
+  return "We couldn't complete passkey sign-in. Please try again.";
+}
+
+export function SigninForm({ initialEmail = "", autoStartPasskey = false }: SigninFormProps) {
   const router = useRouter();
-  const emailRef = useRef<HTMLInputElement>(null);
   const [state, formAction] = useActionState(signinAction, initialAuthActionState);
+  const [email, setEmail] = useState(initialEmail);
+  const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [touched, setTouched] = useState({ email: false, password: false, mfaCode: false });
   const [passkeyPending, setPasskeyPending] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const passkeyAutostarted = useRef(false);
+
   const mfaRequired = Boolean(state.mfaRequired && state.mfaChallengeId);
 
-  async function handlePasskeySignin() {
-    const email = emailRef.current?.value.trim().toLowerCase() ?? "";
+  function buildLocalErrors(force: boolean): Record<string, string> {
+    const errors: Record<string, string> = {};
+    const shouldShow = force || submitAttempted;
 
-    if (!email || !email.includes("@")) {
-      setPasskeyError("Enter your account email first, then use passkey sign-in.");
+    if ((shouldShow || touched.email) && !isValidEmail(email)) {
+      errors.email = "Use a valid email address.";
+    }
+
+    if ((shouldShow || touched.password) && password.length === 0) {
+      errors.password = "Password is required.";
+    }
+
+    if (mfaRequired && (shouldShow || touched.mfaCode) && !/^\d{6}$/.test(mfaCode)) {
+      errors.mfaCode = "Enter the 6-digit verification code.";
+    }
+
+    return errors;
+  }
+
+  const localFieldErrors = buildLocalErrors(false);
+
+  const emailError = localFieldErrors.email ?? state.fieldErrors?.email?.[0];
+  const passwordError = localFieldErrors.password ?? state.fieldErrors?.password?.[0];
+  const mfaError = localFieldErrors.mfaCode ?? state.fieldErrors?.mfaCode?.[0];
+
+  const handlePasskeySignin = useCallback(async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!isValidEmail(normalizedEmail)) {
+      setPasskeyError("Enter your account email first.");
       return;
     }
 
@@ -66,7 +136,7 @@ export function SigninForm() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: normalizedEmail }),
       });
 
       const optionsPayload = await parseApiData<PasskeyAuthOptionsData>(optionsResponse);
@@ -91,64 +161,89 @@ export function SigninForm() {
       router.push("/dashboard");
       router.refresh();
     } catch (error) {
-      if (error instanceof Error) {
-        setPasskeyError(error.message);
-      } else {
-        setPasskeyError("Unable to sign in with passkey.");
-      }
+      setPasskeyError(humanizePasskeyError(error));
     } finally {
       setPasskeyPending(false);
     }
-  }
+  }, [email, router]);
+
+  useEffect(() => {
+    if (!autoStartPasskey || mfaRequired || passkeyAutostarted.current) {
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      return;
+    }
+
+    passkeyAutostarted.current = true;
+    void handlePasskeySignin();
+  }, [autoStartPasskey, email, handlePasskeySignin, mfaRequired]);
+
+  const authError = state.unverifiedEmail
+    ? "Email not verified. Check your inbox to continue."
+    : state.error
+      ? state.error
+      : null;
 
   return (
-    <form action={formAction} className="space-y-4">
-      <div className="space-y-1">
-        <label htmlFor="email" className="text-sm text-sand-200">
-          Email
-        </label>
-        <input
-          ref={emailRef}
+    <form
+      action={formAction}
+      className="space-y-4"
+      onSubmit={(event) => {
+        setSubmitAttempted(true);
+        setPasskeyError(null);
+
+        if (Object.keys(buildLocalErrors(true)).length > 0) {
+          event.preventDefault();
+        }
+      }}
+    >
+      <AuthField id="email" label="Email" error={emailError}>
+        <Input
           id="email"
           name="email"
           type="email"
           required
           autoComplete="email"
-          defaultValue={state.email ?? ""}
-          className="w-full rounded-xl border border-night-700 bg-night-900/80 px-4 py-3 text-sm text-sand-100 outline-none ring-0 placeholder:text-night-300 focus:border-sage-300"
-          placeholder="you@philosophy.app"
+          value={email}
+          onChange={(event) => setEmail(event.currentTarget.value)}
+          onBlur={() => setTouched((current) => ({ ...current, email: true }))}
+          aria-invalid={emailError ? true : undefined}
+          aria-describedby={emailError ? "email-error" : undefined}
+          placeholder="name@example.com"
+          className={cn(
+            "h-11 border-night-600/90 bg-night-950/85 px-4 transition-colors duration-150 hover:border-night-500/90 focus:border-sage-300",
+            emailError ? "border-amber-400/80 focus:border-amber-300" : undefined,
+          )}
         />
-        {state.fieldErrors?.email?.[0] ? (
-          <p className="text-xs text-amber-300">{state.fieldErrors.email[0]}</p>
-        ) : null}
-      </div>
+      </AuthField>
 
-      <div className="space-y-1">
-        <label htmlFor="password" className="text-sm text-sand-200">
-          Password
-        </label>
-        <input
-          id="password"
-          name="password"
-          type="password"
-          required
-          autoComplete="current-password"
-          className="w-full rounded-xl border border-night-700 bg-night-900/80 px-4 py-3 text-sm text-sand-100 outline-none ring-0 placeholder:text-night-300 focus:border-sage-300"
-          placeholder="Your strong password"
-        />
-        {state.fieldErrors?.password?.[0] ? (
-          <p className="text-xs text-amber-300">{state.fieldErrors.password[0]}</p>
-        ) : null}
-      </div>
+      <PasswordField
+        id="password"
+        name="password"
+        label="Password"
+        autoComplete="current-password"
+        value={password}
+        onChange={setPassword}
+        onBlur={() => setTouched((current) => ({ ...current, password: true }))}
+        error={passwordError}
+        placeholder="Enter your password"
+        labelRight={
+          <a
+            href="mailto:support@areti.app?subject=Password%20reset%20help"
+            className="text-xs text-sage-200 hover:text-sage-100"
+          >
+            Forgot password?
+          </a>
+        }
+      />
 
       {mfaRequired ? (
         <>
           <input type="hidden" name="mfaChallengeId" value={state.mfaChallengeId} readOnly />
-          <div className="space-y-1">
-            <label htmlFor="mfaCode" className="text-sm text-sand-200">
-              MFA Code
-            </label>
-            <input
+          <AuthField id="mfaCode" label="Verification code" error={mfaError}>
+            <Input
               id="mfaCode"
               name="mfaCode"
               type="text"
@@ -156,51 +251,61 @@ export function SigninForm() {
               inputMode="numeric"
               pattern="[0-9]{6}"
               maxLength={6}
-              className="w-full rounded-xl border border-night-700 bg-night-900/80 px-4 py-3 text-sm text-sand-100 outline-none ring-0 placeholder:text-night-300 focus:border-sage-300"
-              placeholder="6-digit verification code"
+              value={mfaCode}
+              onChange={(event) => setMfaCode(event.currentTarget.value)}
+              onBlur={() => setTouched((current) => ({ ...current, mfaCode: true }))}
+              aria-invalid={mfaError ? true : undefined}
+              aria-describedby={mfaError ? "mfaCode-error" : undefined}
+              placeholder="6-digit code"
+              className={cn(
+                "h-11 border-night-600/90 bg-night-950/85 px-4 transition-colors duration-150 hover:border-night-500/90 focus:border-sage-300",
+                mfaError ? "border-amber-400/80 focus:border-amber-300" : undefined,
+              )}
             />
-            {state.fieldErrors?.mfaCode?.[0] ? (
-              <p className="text-xs text-amber-300">{state.fieldErrors.mfaCode[0]}</p>
-            ) : null}
-          </div>
+          </AuthField>
         </>
       ) : null}
 
-      {state.info ? <p className="text-sm text-sage-200">{state.info}</p> : null}
-      {state.unverifiedEmail ? (
-        <p className="text-sm text-amber-300">
-          Email not verified. Check your inbox or{" "}
-          <Link
-            href={`/auth/verify-email?email=${encodeURIComponent(state.unverifiedEmail)}&resend=1`}
-            className="text-sage-200 underline underline-offset-2 hover:text-sage-100"
-          >
-            Request a new verification email
-          </Link>
-          .
+      {state.info ? (
+        <p className="rounded-xl border border-sage-400/40 bg-sage-500/10 px-3 py-2 text-sm text-sage-100">
+          {state.info}
         </p>
-      ) : state.error ? <p className="text-sm text-amber-300">{state.error}</p> : null}
+      ) : null}
+
+      {authError ? (
+        <div className="rounded-xl border border-amber-400/60 bg-amber-500/10 px-3 py-2 text-sm text-amber-200" role="alert">
+          {authError}
+          {state.unverifiedEmail ? (
+            <>
+              {" "}
+              <Link
+                href={`/auth/verify-email?email=${encodeURIComponent(state.unverifiedEmail)}&resend=1`}
+                className="text-sage-200 underline underline-offset-2 hover:text-sage-100"
+              >
+                Request a new verification email
+              </Link>
+              .
+            </>
+          ) : null}
+        </div>
+      ) : null}
 
       <SubmitButton mfaRequired={mfaRequired} />
 
       {!mfaRequired ? (
-        <button
-          type="button"
-          onClick={handlePasskeySignin}
-          disabled={passkeyPending}
-          className="w-full rounded-xl border border-night-600 bg-night-900/80 px-4 py-3 text-sm font-medium text-sand-100 transition hover:border-sage-300 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {passkeyPending ? "Opening passkey prompt..." : "Sign In With Passkey"}
-        </button>
+        <>
+          <AuthDivider />
+          <PasskeyButton onClick={() => void handlePasskeySignin()} pending={passkeyPending} />
+          {passkeyError ? (
+            <p className="rounded-xl border border-amber-400/50 bg-amber-500/10 px-3 py-2 text-sm text-amber-200" role="alert">
+              {passkeyError}
+            </p>
+          ) : null}
+        </>
       ) : null}
 
-      {passkeyError ? <p className="text-sm text-amber-300">{passkeyError}</p> : null}
-
-      <p className="text-xs text-night-300">
-        New here?{" "}
-        <Link href="/auth/signup" className="text-sage-200 hover:text-sage-100">
-          Create your account
-        </Link>
-      </p>
+      <AuthFooterLink text="New here?" href="/auth/signup" cta="Create your account" />
+      <AuthTrustMicrocopy text="Private by default. Fast sign-in. No unnecessary noise." />
     </form>
   );
 }

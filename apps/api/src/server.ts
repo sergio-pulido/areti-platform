@@ -563,6 +563,32 @@ function authKey(intent: "signin" | "signup", request: Request, email: string): 
   return `${intent}:${getIpAddress(request)}:${email.toLowerCase()}`;
 }
 
+function deriveSignupDisplayName(email: string): string {
+  const localPart = email.split("@")[0] ?? "";
+  const normalized = localPart
+    .replace(/[._-]+/g, " ")
+    .replace(/[^a-zA-Z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) {
+    return "Member";
+  }
+
+  const titleCase = normalized
+    .split(" ")
+    .slice(0, 2)
+    .map((segment) => segment[0]?.toUpperCase() + segment.slice(1).toLowerCase())
+    .join(" ")
+    .trim();
+
+  if (titleCase.length < 2) {
+    return "Member";
+  }
+
+  return titleCase.slice(0, 80);
+}
+
 function getBearerToken(request: Request): string | null {
   const authHeader = request.header("authorization") ?? "";
 
@@ -956,7 +982,6 @@ async function resolveChatThreadTitle(
 
 const signupSchema = z
   .object({
-    name: z.string().trim().min(2).max(80),
     email: z.string().trim().toLowerCase().email().max(120),
     password: z
       .string()
@@ -964,13 +989,21 @@ const signupSchema = z
       .regex(/[a-z]/)
       .regex(/[A-Z]/)
       .regex(/\d/),
-    confirmPassword: z.string(),
-    acceptTerms: z.literal(true),
-    acceptPrivacy: z.literal(true),
+    acceptLegal: z.boolean().optional(),
+    acceptTerms: z.boolean().optional(),
+    acceptPrivacy: z.boolean().optional(),
   })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
+  .superRefine((data, ctx) => {
+    const hasUnifiedConsent = data.acceptLegal === true;
+    const hasLegacyConsent = data.acceptTerms === true && data.acceptPrivacy === true;
+
+    if (!hasUnifiedConsent && !hasLegacyConsent) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Legal consent is required.",
+        path: ["acceptLegal"],
+      });
+    }
   });
 
 const verifyEmailSchema = z
@@ -1445,7 +1478,7 @@ export function createApp() {
 
     const created = createUser({
       id: randomUUID(),
-      name: parsed.data.name,
+      name: deriveSignupDisplayName(parsed.data.email),
       email: parsed.data.email,
       passwordHash: await argon2.hash(parsed.data.password, {
         type: argon2.argon2id,

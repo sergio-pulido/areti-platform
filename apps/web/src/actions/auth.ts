@@ -88,12 +88,9 @@ export async function signupAction(
   formData: FormData,
 ): Promise<AuthActionState> {
   const input = {
-    name: getString(formData, "name"),
-    email: getString(formData, "email"),
+    email: getString(formData, "email").trim().toLowerCase(),
     password: getString(formData, "password"),
-    confirmPassword: getString(formData, "confirmPassword"),
-    acceptTerms: getBoolean(formData, "acceptTerms"),
-    acceptPrivacy: getBoolean(formData, "acceptPrivacy"),
+    acceptLegal: getBoolean(formData, "acceptLegal"),
   };
 
   const parsed = signupSchema.safeParse(input);
@@ -101,6 +98,7 @@ export async function signupAction(
   if (!parsed.success) {
     return {
       error: "Please fix the highlighted fields.",
+      email: input.email,
       fieldErrors: parsed.error.flatten().fieldErrors,
     };
   }
@@ -111,7 +109,7 @@ export async function signupAction(
     result = await apiSignup(parsed.data);
   } catch (error) {
     if (error instanceof Error) {
-      return { error: error.message };
+      return { error: error.message, email: input.email };
     }
 
     throw error;

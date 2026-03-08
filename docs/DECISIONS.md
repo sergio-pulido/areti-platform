@@ -216,6 +216,12 @@
 - **Why:** Improves compliance posture and supports future legal/version audits.
 - **Tradeoff:** Slightly larger auth payloads and additional write overhead on signup.
 
+## 2026-03-08 - Conversion-focused auth UX with low-friction signup
+- **Context:** Auth pages were visually strong but had avoidable signup friction and unclear primary actions.
+- **Decision:** Redesign `/auth/signin` and `/auth/signup` around explicit CTA hierarchy, visible field labels, passkey secondary CTA, stronger error/loading states, and a simplified auth-only topbar nav; remove signup `name` + `confirmPassword`; unify legal consent into one required checkbox (`acceptLegal`) while still recording both Terms and Privacy acceptance server-side.
+- **Why:** Reduces initial account-creation friction, improves trust clarity, and keeps modern passkey flows visible without sacrificing compliance evidence.
+- **Tradeoff:** New accounts now receive a provisional display name derived from email local-part until users personalize profile details later.
+
 ## 2026-03-08 - Enforce onboarding gate before secured app usage
 - **Context:** Personalization signals were insufficient and optional onboarding allowed users into app flows without profile context.
 - **Decision:** Add required `/onboarding` flow with persisted profile answers, block secured-shell access until completion, and allow edits later from Account settings.
@@ -257,6 +263,12 @@
 - **Decision:** Collapse account identity editing into a single `/account/profile` tab and remove extra/professional profile sections from account navigation (legacy routes redirect to profile).
 - **Why:** Simpler IA, less cognitive load, and better alignment with a solo personal-practice product.
 - **Tradeoff:** Existing schema can still hold extra fields, but UI/API focus intentionally limits surfaced profile controls.
+
+## 2026-03-08 - Companion UX Wave 3 focuses on guided reflective conversation
+- **Context:** Companion had strong visual polish but remained overly container-heavy and passive, with weak chat hierarchy, generic composer behavior, and low thread re-entry clarity.
+- **Decision:** Refactor frontend chat UX in `apps/web` to reduce chrome and increase guidance: compact thread header with overflow actions, denser preview-first sidebar rows, structured assistant message rendering, contextual follow-up chips, and a mode-driven composer with rotating suggestions + resume cues.
+- **Why:** Moves the product from “styled chatbot” toward a premium reflective companion that improves scanability, continuity, and practical next-step behavior without backend surface expansion.
+- **Tradeoff:** Adds client-side UI/state logic for message structuring and suggestion helpers, which increases component complexity while keeping transport/API semantics unchanged.
 
 ## 2026-03-08 - B2C account IA simplification with canonical routes
 - **Context:** Account navigation still looked like an admin console (home/settings/password/sessions/danger) and was harder to scan for consumer users.

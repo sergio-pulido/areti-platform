@@ -35,10 +35,8 @@ afterAll(() => {
 describe("API integration", () => {
   it("requires legal consent during signup", async () => {
     const response = await request(app).post("/api/v1/auth/signup").send({
-      name: "Admin User",
       email: adminEmail,
       password: "StrongPass123",
-      confirmPassword: "StrongPass123",
     });
 
     expect(response.status).toBe(400);
@@ -46,12 +44,9 @@ describe("API integration", () => {
 
   it("signs up with verification-required response, blocks signin until verified, then verifies and returns auth token pair", async () => {
     const response = await request(app).post("/api/v1/auth/signup").send({
-      name: "Admin User",
       email: adminEmail,
       password: "StrongPass123",
-      confirmPassword: "StrongPass123",
-      acceptTerms: true,
-      acceptPrivacy: true,
+      acceptLegal: true,
     });
 
     expect(response.status).toBe(201);
@@ -340,12 +335,9 @@ describe("API integration", () => {
     const email = `delete+${unique}@example.com`;
 
     const signup = await request(app).post("/api/v1/auth/signup").send({
-      name: "Delete Me",
       email,
       password: "DeletePass123",
-      confirmPassword: "DeletePass123",
-      acceptTerms: true,
-      acceptPrivacy: true,
+      acceptLegal: true,
     });
 
     expect(signup.status).toBe(201);

@@ -62,6 +62,10 @@ export default async function VerifyEmailPage({ searchParams }: VerifyEmailPageP
     <AuthShell
       title="Verify your email"
       subtitle="Check your inbox for a verification link and 6-digit code."
+      guestAuthSwitch={{
+        href: "/auth/signin",
+        label: "Sign in",
+      }}
     >
       <VerifyEmailForm
         initialEmail={email}

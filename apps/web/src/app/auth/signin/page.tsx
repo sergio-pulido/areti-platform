@@ -3,8 +3,15 @@ import { AuthShell } from "@/components/auth/auth-shell";
 import { SigninForm } from "@/components/auth/signin-form";
 import { getCurrentUser } from "@/lib/auth/session";
 
-export default async function SigninPage() {
-  const user = await getCurrentUser();
+type SigninPageProps = {
+  searchParams: Promise<{
+    email?: string;
+    passkey?: string;
+  }>;
+};
+
+export default async function SigninPage({ searchParams }: SigninPageProps) {
+  const [user, params] = await Promise.all([getCurrentUser(), searchParams]);
 
   if (user) {
     if (user.onboardingCompletedAt) {
@@ -14,12 +21,19 @@ export default async function SigninPage() {
     redirect("/onboarding");
   }
 
+  const initialEmail = params.email?.trim().toLowerCase() ?? "";
+  const autoStartPasskey = params.passkey === "1";
+
   return (
     <AuthShell
       title="Welcome back"
-      subtitle="Sign in to continue your philosophical practice and dashboard workflow."
+      subtitle="Continue your practice, journal, and conversations."
+      guestAuthSwitch={{
+        href: "/auth/signup",
+        label: "Create account",
+      }}
     >
-      <SigninForm />
+      <SigninForm initialEmail={initialEmail} autoStartPasskey={autoStartPasskey} />
     </AuthShell>
   );
 }

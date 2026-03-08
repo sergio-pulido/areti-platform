@@ -465,12 +465,9 @@ function withAuth(token: string, init?: RequestInit): RequestInit {
 }
 
 export async function apiSignup(input: {
-  name: string;
   email: string;
   password: string;
-  confirmPassword: string;
-  acceptTerms: boolean;
-  acceptPrivacy: boolean;
+  acceptLegal: boolean;
 }): Promise<ApiSignupResult> {
   return requestJson<ApiSignupResult>("/api/v1/auth/signup", {
     method: "POST",

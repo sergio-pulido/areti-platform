@@ -10,17 +10,10 @@ async function signup(page: import("@playwright/test").Page): Promise<void> {
   const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const email = `a11y+${uniqueId}@example.com`;
 
-  await page.getByLabel("Name").fill("A11y User");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill("StrongPass123");
-  await page.getByLabel("Confirm Password").fill("StrongPass123");
-  await page
-    .getByRole("checkbox", { name: /I accept the Terms and Conditions/i })
-    .check();
-  await page
-    .getByRole("checkbox", { name: /I accept the Privacy Policy/i })
-    .check();
-  await page.getByRole("button", { name: "Create Account" }).click();
+  await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
+  await page.getByRole("button", { name: "Create free account" }).click();
   await expect(page).toHaveURL(/\/auth\/verify-email/, { timeout: 15000 });
   await page.getByRole("button", { name: "Verify Email" }).click();
   await expect(page).toHaveURL(/\/onboarding/, { timeout: 15000 });
