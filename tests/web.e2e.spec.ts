@@ -96,6 +96,40 @@ test("cookie consent gate redirects protected routes until accepted", async ({ p
   await expectUrl(page, /\/auth\/signin/);
 });
 
+test("signin unverified state offers resend link and opens code verification", async ({ page }) => {
+  const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const email = `pending+${uniqueId}@example.com`;
+  const password = "StrongPass123";
+
+  await page.goto("/auth/signup");
+  const cookieAccept = page.getByRole("button", { name: "Accept cookies" });
+  if (await cookieAccept.count()) {
+    await cookieAccept.first().click();
+  }
+
+  await page.getByLabel("Name").fill("Pending Verification User");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByLabel("Confirm Password").fill(password);
+  await page.getByRole("checkbox", { name: /I accept the Terms and Conditions/i }).check();
+  await page.getByRole("checkbox", { name: /I accept the Privacy Policy/i }).check();
+  await page.getByRole("button", { name: "Create Account" }).click();
+  await expectUrl(page, /\/auth\/verify-email/);
+
+  await page.goto("/auth/signin");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign In", exact: true }).click();
+  await expect(page.getByText("Email not verified. Check your inbox or")).toBeVisible();
+
+  await page.getByRole("link", { name: "Request a new verification email" }).click();
+  await expect(page).toHaveURL(
+    /\/auth\/verify-email\?email=.*&(resendStatus=sent|resendStatus=already-verified|resendError=.*)/,
+    { timeout: 15000 },
+  );
+  await expect(page.getByLabel("Verification code")).toBeVisible();
+});
+
 test("dashboard CTAs remain clickable and route to actionable flows", async ({ page }) => {
   await signupAndGoDashboard(page);
 

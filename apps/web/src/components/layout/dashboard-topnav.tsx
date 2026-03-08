@@ -25,6 +25,7 @@ function initials(name: string): string {
 
 export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProps) {
   const topbarSections = getTopbarSectionsForRole(user.role);
+  const dropdownSections = topbarSections.filter((section) => section.id !== "companion");
 
   let notifications: Awaited<ReturnType<typeof apiNotifications>> = {
     items: [],
@@ -185,9 +186,20 @@ export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProp
                   <p className="text-xs text-night-300">{user.email}</p>
                 </div>
                 <div className="my-1 border-t border-night-700" />
+                <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Account</p>
+                <div className="flex flex-col text-sm">
+                  <Link
+                    href="/account"
+                    aria-label="Open account section"
+                    className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
+                  >
+                    Account
+                  </Link>
+                </div>
+                <div className="my-1 border-t border-night-700" />
                 <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Sections</p>
                 <div className="flex flex-col text-sm">
-                  {topbarSections.map((section) => (
+                  {dropdownSections.map((section) => (
                     <Link
                       key={section.id}
                       href={section.href}
@@ -199,18 +211,8 @@ export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProp
                   ))}
                 </div>
                 <div className="my-1 border-t border-night-700" />
-                <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Account</p>
+                <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Legal</p>
                 <div className="flex flex-col text-sm">
-                  <Link
-                    href="/account/profile"
-                    aria-label="Open account section"
-                    className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
-                  >
-                    Account
-                  </Link>
-                  <Link href="/account/security" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
-                    Security
-                  </Link>
                   <Link href="/legal/privacy" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                     Privacy Policy
                   </Link>

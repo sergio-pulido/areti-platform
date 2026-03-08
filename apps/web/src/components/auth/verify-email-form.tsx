@@ -40,9 +40,16 @@ function ResendButton() {
 type VerifyEmailFormProps = {
   initialEmail: string;
   token: string;
+  initialInfo?: string;
+  initialError?: string;
 };
 
-export function VerifyEmailForm({ initialEmail, token }: VerifyEmailFormProps) {
+export function VerifyEmailForm({
+  initialEmail,
+  token,
+  initialInfo = "",
+  initialError = "",
+}: VerifyEmailFormProps) {
   const [verifyState, verifyAction] = useActionState<EmailVerificationActionState, FormData>(
     verifyEmailAction,
     {
@@ -59,6 +66,8 @@ export function VerifyEmailForm({ initialEmail, token }: VerifyEmailFormProps) {
   );
 
   const resolvedEmail = verifyState.email ?? resendState.email ?? initialEmail;
+  const resolvedResendInfo = resendState.info ?? initialInfo;
+  const resolvedResendError = resendState.error ?? initialError;
 
   return (
     <div className="space-y-6">
@@ -111,8 +120,8 @@ export function VerifyEmailForm({ initialEmail, token }: VerifyEmailFormProps) {
 
       <form action={resendAction} className="space-y-3">
         <input type="hidden" name="email" value={resolvedEmail} />
-        {resendState.error ? <p className="text-sm text-amber-300">{resendState.error}</p> : null}
-        {resendState.info ? <p className="text-sm text-sage-200">{resendState.info}</p> : null}
+        {resolvedResendError ? <p className="text-sm text-amber-300">{resolvedResendError}</p> : null}
+        {resolvedResendInfo ? <p className="text-sm text-sage-200">{resolvedResendInfo}</p> : null}
         <ResendButton />
       </form>
 

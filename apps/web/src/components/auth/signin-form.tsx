@@ -167,18 +167,18 @@ export function SigninForm() {
       ) : null}
 
       {state.info ? <p className="text-sm text-sage-200">{state.info}</p> : null}
-      {state.error ? <p className="text-sm text-amber-300">{state.error}</p> : null}
       {state.unverifiedEmail ? (
-        <p className="text-xs text-night-200">
-          Verify here:{" "}
+        <p className="text-sm text-amber-300">
+          Email not verified. Check your inbox or{" "}
           <Link
-            href={`/auth/verify-email?email=${encodeURIComponent(state.unverifiedEmail)}`}
-            className="text-sage-200 hover:text-sage-100"
+            href={`/auth/verify-email?email=${encodeURIComponent(state.unverifiedEmail)}&resend=1`}
+            className="text-sage-200 underline underline-offset-2 hover:text-sage-100"
           >
-            open verification page
+            Request a new verification email
           </Link>
+          .
         </p>
-      ) : null}
+      ) : state.error ? <p className="text-sm text-amber-300">{state.error}</p> : null}
 
       <SubmitButton mfaRequired={mfaRequired} />
 

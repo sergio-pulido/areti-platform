@@ -274,7 +274,7 @@ export async function signinAction(
 
     if (isApiHttpError(error) && error.code === "EMAIL_NOT_VERIFIED") {
       return {
-        error: "Email not verified. Check your inbox or request a new verification email.",
+        error: "Email not verified. Check your inbox.",
         email,
         unverifiedEmail: email,
       };

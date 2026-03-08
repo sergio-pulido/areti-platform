@@ -29,14 +29,16 @@ export function DashboardSidenav({ user }: DashboardSidenavProps) {
 
   return (
     <aside className="hidden w-80 shrink-0 border-r border-night-800/70 bg-night-950/90 p-6 lg:flex lg:flex-col lg:gap-8">
-      <div>
-        <Link href="/dashboard" className="inline-block">
-          <p className="text-xs uppercase tracking-[0.35em] text-sage-200/90">Areti</p>
-          <h1 className="mt-2 font-title text-3xl leading-tight text-sand-100">
-            School of Calm Power
-          </h1>
-        </Link>
-      </div>
+      {activeSection.id === "account" ? null : (
+        <div>
+          <Link href="/dashboard" className="inline-block">
+            <p className="text-xs uppercase tracking-[0.35em] text-sage-200/90">Areti</p>
+            <h1 className="mt-2 font-title text-3xl leading-tight text-sand-100">
+              School of Calm Power
+            </h1>
+          </Link>
+        </div>
+      )}
 
       <nav className="flex-1 space-y-4 overflow-y-auto pr-1">
         <section className="space-y-2">
