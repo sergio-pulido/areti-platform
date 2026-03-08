@@ -19,7 +19,7 @@ export default async function CommunityChallengesPage() {
           <SurfaceCard key={challenge.slug} title={challenge.title} subtitle={challenge.duration}>
             <p className="text-sm text-night-200">{challenge.summary}</p>
             <Link
-              href={`/dashboard/chat?prompt=${encodeURIComponent(`I want to join the ${challenge.title} challenge. Help me create a realistic plan and accountability message.`)}`}
+              href={`/chat?prompt=${encodeURIComponent(`I want to join the ${challenge.title} challenge. Help me create a realistic plan and accountability message.`)}`}
               className="mt-4 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/10 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20"
             >
               Join challenge

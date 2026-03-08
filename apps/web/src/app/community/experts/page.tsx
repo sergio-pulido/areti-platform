@@ -19,7 +19,7 @@ export default async function CommunityExpertsPage() {
           <SurfaceCard key={expert.slug} title={expert.name}>
             <p className="text-sm text-night-200">{expert.focus}</p>
             <Link
-              href={`/dashboard/chat?prompt=${encodeURIComponent(`Help me write a concise request for guidance to ${expert.name} about: ${expert.focus}`)}`}
+              href={`/chat?prompt=${encodeURIComponent(`Help me write a concise request for guidance to ${expert.name} about: ${expert.focus}`)}`}
               className="mt-4 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/10 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20"
             >
               Request guidance

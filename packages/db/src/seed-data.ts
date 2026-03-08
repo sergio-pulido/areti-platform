@@ -271,7 +271,7 @@ export const COMMUNITY_RESOURCES_SEED = [
     slug: "challenge-starter-kit",
     title: "Challenge Starter Kit",
     description: "Templates and checklists to launch a focused group challenge.",
-    href: "/dashboard/library?q=challenge",
+    href: "/library?q=challenge",
     cta: "Open in library",
   },
   {
@@ -285,7 +285,7 @@ export const COMMUNITY_RESOURCES_SEED = [
     slug: "reflection-prompts-bank",
     title: "Reflection Prompts Bank",
     description: "Prompt collection for retrospectives, reviews, and planning.",
-    href: "/dashboard/chat?prompt=Give%20me%2010%20high-quality%20reflection%20prompts%20for%20a%20community%20group.",
+    href: "/chat?prompt=Give%20me%2010%20high-quality%20reflection%20prompts%20for%20a%20community%20group.",
     cta: "Generate prompts",
   },
 ] as const;

@@ -97,6 +97,28 @@ export type ApiChatMessage = {
   createdAt: string;
 };
 
+export type ApiChatPreferences = {
+  customInstructions: string;
+};
+
+export type ApiChatEvent = {
+  id: string;
+  userId: string;
+  threadId: string | null;
+  eventType:
+    | "thread_first_message_created"
+    | "thread_auto_titled"
+    | "thread_renamed"
+    | "thread_archived"
+    | "thread_restored"
+    | "thread_deleted"
+    | "message_provider_error";
+  payloadJson: string;
+  createdAt: string;
+};
+
+export type ApiChatThreadScope = "active" | "archived" | "all";
+
 export type ApiContentChallenge = {
   id: number;
   slug: string;
@@ -515,6 +537,13 @@ export async function apiAdminAudit(token: string, limit = 40): Promise<ApiAdmin
   return requestJson<ApiAdminAuditLog[]>(`/api/v1/admin/audit?limit=${limit}`, withAuth(token));
 }
 
+export async function apiAdminChatEvents(token: string, limit = 200): Promise<ApiChatEvent[]> {
+  return requestJson<ApiChatEvent[]>(
+    `/api/v1/admin/chat/events?limit=${limit}`,
+    withAuth(token),
+  );
+}
+
 export async function apiAdminCreateLesson(
   token: string,
   input: {
@@ -925,8 +954,11 @@ export async function apiRevokeDevice(token: string, deviceId: string): Promise<
   );
 }
 
-export async function apiChatThreads(token: string): Promise<ApiChatThread[]> {
-  return requestJson<ApiChatThread[]>("/api/v1/chat/threads", withAuth(token));
+export async function apiChatThreads(
+  token: string,
+  scope: ApiChatThreadScope = "active",
+): Promise<ApiChatThread[]> {
+  return requestJson<ApiChatThread[]>(`/api/v1/chat/threads?scope=${scope}`, withAuth(token));
 }
 
 export async function apiChatCreateThread(
@@ -985,6 +1017,23 @@ export async function apiChatPostMessage(
     withAuth(token, {
       method: "POST",
       body: JSON.stringify({ prompt }),
+    }),
+  );
+}
+
+export async function apiChatPreferences(token: string): Promise<ApiChatPreferences> {
+  return requestJson<ApiChatPreferences>("/api/v1/chat/preferences", withAuth(token));
+}
+
+export async function apiSetChatPreferences(
+  token: string,
+  customInstructions: string,
+): Promise<ApiChatPreferences> {
+  return requestJson<ApiChatPreferences>(
+    "/api/v1/chat/preferences",
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify({ customInstructions }),
     }),
   );
 }

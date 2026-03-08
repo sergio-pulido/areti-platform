@@ -19,6 +19,7 @@ import {
   countJournalEntriesByUser,
   countUsers,
   createAdminAuditLog,
+  createChatEvent,
   createChatMessage,
   createChatThread,
   createCommunity,
@@ -71,11 +72,13 @@ import {
   getSecuritySettingsByUserId,
   getSessionDeviceByTokenHash,
   getSessionUserByTokenHash,
+  getUserCompanionPreferences,
   getUserTotpSecret,
   getUserByEmail,
   getUserById,
   listChatMessagesForThread,
   listChatThreadsByUser,
+  listChatEvents,
   listAdminAuditLogs,
   listAllContentAdmin,
   listJournalEntriesByUser,
@@ -114,7 +117,9 @@ import {
   updatePillar,
   updatePractice,
   upsertUserDevice,
+  upsertUserCompanionPreferences,
   upsertUserTotpSecret,
+  type ChatThreadScope,
   type ContentStatus,
   type CurrentUser,
 } from "@ataraxia/db";
@@ -132,6 +137,34 @@ const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
+const DEFAULT_CHAT_GLOBAL_SYSTEM_PROMPT = `
+You are Ataraxia Companion, a practical philosophy and psychology coach.
+Primary mission: help the user cultivate ataraxia through concrete action.
+
+Core balance:
+- Stoicism: clarity about control, virtue, discipline, courage, justice.
+- Epicureanism: sustainable pleasure, friendship, simplicity, freedom from unnecessary desire.
+
+Supporting lenses (non-dogmatic):
+- Buddhism, Zen, and Dzogchen: awareness, non-attachment, compassion, direct experience.
+- Taoist wu-wei: reduce forcing and align with natural constraints.
+- Modern psychology and ethics: evidence-aware habits, emotional regulation, relational integrity, long-term character.
+
+Canonical references should be practical, not academic. Prefer short grounded nods to figures like Marcus Aurelius, Epictetus, Seneca, and Epicurus when useful.
+
+Response style:
+- concise, clear, anti-jargon, warm but direct
+- focus on practical next steps and tradeoffs
+- include one concrete action the user can do within 24 hours
+- do not pretend certainty; state assumptions when needed
+
+Safety and boundaries:
+- Do not provide harmful, illegal, or manipulative guidance.
+- For self-harm, crisis, or dangerous situations: prioritize immediate safety, encourage reaching local emergency/crisis support, and avoid philosophical abstraction.
+- For medical/legal/financial high-stakes topics: provide general educational framing and suggest qualified professional support for decisions.
+`.trim();
+const CHAT_TITLE_SYSTEM_PROMPT =
+  "You write concise conversation titles. Return only one short title (3-7 words), plain text, no quotes.";
 const TOTP_DIGITS = 6;
 const TOTP_STEP_SECONDS = 30;
 const TOTP_WINDOW_STEPS = 1;
@@ -152,7 +185,21 @@ type ChatProviderRuntime = {
 
 type ChatRuntimeConfig = {
   providers: ChatProviderRuntime[];
+  globalSystemPrompt: string;
 };
+
+type ProviderFailureDetail = {
+  provider: ChatProvider;
+  status: number | null;
+  reason: string;
+};
+
+class ChatProvidersFailedError extends Error {
+  constructor(readonly failures: ProviderFailureDetail[]) {
+    super("All configured chat providers failed.");
+    this.name = "ChatProvidersFailedError";
+  }
+}
 
 const envSchema = z.object({
   CORS_ORIGINS: z.string().optional(),
@@ -166,6 +213,7 @@ const envSchema = z.object({
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_CHAT_MODEL: z.string().optional(),
   DEEPSEEK_BASE_URL: z.string().optional(),
+  CHAT_GLOBAL_SYSTEM_PROMPT: z.string().optional(),
 });
 
 type AppEnv = z.infer<typeof envSchema>;
@@ -577,6 +625,52 @@ function fallbackChatAnswer(prompt: string): string {
   return `Balanced guidance: choose virtue for decisions (Stoicism), choose sustainable pleasure and friendship (Epicureanism), reduce attachment to outcomes (Buddhism), and avoid forcing what can be guided softly (Taoism). Apply one principle in the next 24 hours. Prompt: "${prompt}".`;
 }
 
+function fallbackThreadTitle(prompt: string): string {
+  const cleaned = prompt
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[?.!,;:]+$/g, "");
+
+  if (!cleaned) {
+    return "New conversation";
+  }
+
+  const words = cleaned.split(" ").filter(Boolean).slice(0, 7);
+  const title = words.join(" ").trim();
+  if (!title) {
+    return "New conversation";
+  }
+
+  return title.length > 120 ? title.slice(0, 120).trim() : title;
+}
+
+function composeEffectiveSystemPrompt(globalPrompt: string, customInstructions: string): string {
+  const trimmedCustom = customInstructions.trim();
+
+  if (!trimmedCustom) {
+    return globalPrompt;
+  }
+
+  return `${globalPrompt}
+
+User-specific customization (apply only if it does not conflict with safety or mission):
+${trimmedCustom}`.trim();
+}
+
+function normalizeGeneratedThreadTitle(rawTitle: string): string | null {
+  const stripped = rawTitle
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[?.!,;:]+$/g, "");
+
+  if (stripped.length < 3) {
+    return null;
+  }
+
+  return stripped.length > 120 ? stripped.slice(0, 120).trim() : stripped;
+}
+
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
 }
@@ -621,7 +715,11 @@ function createChatRuntimeConfig(env: AppEnv): ChatRuntimeConfig {
     .map((provider) => providerConfigs[provider])
     .filter((provider): provider is ChatProviderRuntime => provider !== null);
 
-  return { providers };
+  return {
+    providers,
+    globalSystemPrompt:
+      env.CHAT_GLOBAL_SYSTEM_PROMPT?.trim() || DEFAULT_CHAT_GLOBAL_SYSTEM_PROMPT,
+  };
 }
 
 type ChatCompletionPayload = {
@@ -657,7 +755,14 @@ function extractAssistantMessage(payload: ChatCompletionPayload): string | null 
 async function resolveProviderAnswer(
   prompt: string,
   provider: ChatProviderRuntime,
-): Promise<string | null> {
+  options?: {
+    systemPrompt?: string;
+    temperature?: number;
+  },
+): Promise<{
+  answer: string | null;
+  failure?: ProviderFailureDetail;
+}> {
   try {
     const response = await fetch(`${provider.baseUrl}/chat/completions`, {
       method: "POST",
@@ -670,15 +775,14 @@ async function resolveProviderAnswer(
         messages: [
           {
             role: "system",
-            content:
-              "You are a practical philosophy coach blending Stoicism, Epicureanism, Buddhism, and Taoism. Give concise, actionable guidance.",
+            content: options?.systemPrompt ?? DEFAULT_CHAT_GLOBAL_SYSTEM_PROMPT,
           },
           {
             role: "user",
             content: prompt,
           },
         ],
-        temperature: 0.6,
+        temperature: options?.temperature ?? 0.6,
       }),
     });
 
@@ -687,34 +791,92 @@ async function resolveProviderAnswer(
       console.warn(
         `[chat] Provider "${provider.provider}" failed with status ${response.status}. ${errorBody.slice(0, 300)}`,
       );
-      return null;
+      return {
+        answer: null,
+        failure: {
+          provider: provider.provider,
+          status: response.status,
+          reason: errorBody.slice(0, 300) || "Provider returned non-OK response",
+        },
+      };
     }
 
     const payload = (await response.json()) as ChatCompletionPayload;
-    return extractAssistantMessage(payload);
+    return { answer: extractAssistantMessage(payload) };
   } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error";
     console.warn(
       `[chat] Provider "${provider.provider}" request error: ${
         error instanceof Error ? error.message : "unknown error"
       }`,
     );
-    return null;
+    return {
+      answer: null,
+      failure: {
+        provider: provider.provider,
+        status: null,
+        reason: message,
+      },
+    };
   }
 }
 
-async function resolveChatAnswer(prompt: string, chatConfig: ChatRuntimeConfig): Promise<string> {
+async function resolveChatAnswer(
+  prompt: string,
+  chatConfig: ChatRuntimeConfig,
+  systemPrompt: string,
+): Promise<string> {
   if (chatConfig.providers.length === 0) {
     return fallbackChatAnswer(prompt);
   }
 
+  const failures: ProviderFailureDetail[] = [];
+
   for (const provider of chatConfig.providers) {
-    const answer = await resolveProviderAnswer(prompt, provider);
+    const { answer, failure } = await resolveProviderAnswer(prompt, provider, {
+      systemPrompt,
+    });
     if (answer) {
       return answer;
     }
+
+    if (failure) {
+      failures.push(failure);
+    }
   }
 
-  throw new Error("All configured chat providers failed.");
+  throw new ChatProvidersFailedError(failures);
+}
+
+async function resolveChatThreadTitle(
+  prompt: string,
+  answer: string,
+  chatConfig: ChatRuntimeConfig,
+): Promise<string> {
+  const fallback = fallbackThreadTitle(prompt);
+
+  if (chatConfig.providers.length === 0) {
+    return fallback;
+  }
+
+  const titlePrompt = `User prompt:\n${prompt}\n\nAssistant reply:\n${answer}\n\nGenerate the best short title for this conversation.`;
+
+  for (const provider of chatConfig.providers) {
+    const { answer: candidate } = await resolveProviderAnswer(titlePrompt, provider, {
+      systemPrompt: CHAT_TITLE_SYSTEM_PROMPT,
+      temperature: 0.2,
+    });
+    if (!candidate) {
+      continue;
+    }
+
+    const normalized = normalizeGeneratedThreadTitle(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return fallback;
 }
 
 const signupSchema = z
@@ -875,6 +1037,18 @@ const chatThreadPatchSchema = z.object({
   archived: z.boolean().optional(),
 });
 
+const chatThreadListQuerySchema = z.object({
+  scope: z.enum(["active", "archived", "all"]).optional().default("active"),
+});
+
+const chatPreferencesPatchSchema = z.object({
+  customInstructions: z.string().max(1500),
+});
+
+const adminChatEventsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).default(200),
+});
+
 function parseIdOrFail(request: Request, response: Response): number | null {
   const parsed = integerIdSchema.safeParse(request.params);
 
@@ -897,10 +1071,50 @@ function parseStatusOrFail(request: Request, response: Response): ContentStatus 
   return parsed.data.status;
 }
 
+function normalizeCustomInstructions(value: string): string {
+  return value.trim();
+}
+
 export function createApp() {
   const app = express();
   const env = envSchema.parse(process.env);
   const chatConfig = createChatRuntimeConfig(env);
+
+  async function resolveEffectiveSystemPromptForUser(userId: string): Promise<string> {
+    const preferences = getUserCompanionPreferences(userId);
+    const customInstructions = preferences?.customInstructions ?? "";
+    return composeEffectiveSystemPrompt(chatConfig.globalSystemPrompt, customInstructions);
+  }
+
+  function recordChatEvent(input: {
+    userId: string;
+    threadId?: string | null;
+    eventType:
+      | "thread_first_message_created"
+      | "thread_auto_titled"
+      | "thread_renamed"
+      | "thread_archived"
+      | "thread_restored"
+      | "thread_deleted"
+      | "message_provider_error";
+    payload?: Record<string, unknown>;
+  }): void {
+    try {
+      createChatEvent({
+        id: randomUUID(),
+        userId: input.userId,
+        threadId: input.threadId ?? null,
+        eventType: input.eventType,
+        payloadJson: JSON.stringify(input.payload ?? {}),
+      });
+    } catch (error) {
+      console.warn(
+        `[chat] Unable to persist chat event "${input.eventType}": ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      );
+    }
+  }
 
   const allowedOrigins = (env.CORS_ORIGINS ?? "http://localhost:3000")
     .split(",")
@@ -1616,6 +1830,7 @@ export function createApp() {
   });
 
   app.post("/api/v1/chat", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     const parsed = chatSchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -1624,7 +1839,7 @@ export function createApp() {
     }
 
     try {
-      assertWithinChatRateLimit((req as AuthenticatedRequest).authUser.id);
+      assertWithinChatRateLimit(authReq.authUser.id);
     } catch (error) {
       if (error instanceof Error) {
         res.status(429).json({ error: error.message });
@@ -1642,8 +1857,25 @@ export function createApp() {
 
     let answer = "";
     try {
-      answer = await resolveChatAnswer(parsed.data.prompt, chatConfig);
+      const effectiveSystemPrompt = await resolveEffectiveSystemPromptForUser(authReq.authUser.id);
+      answer = await resolveChatAnswer(parsed.data.prompt, chatConfig, effectiveSystemPrompt);
     } catch (error) {
+      if (error instanceof ChatProvidersFailedError) {
+        recordChatEvent({
+          userId: authReq.authUser.id,
+          eventType: "message_provider_error",
+          payload: {
+            route: "/api/v1/chat",
+            failures: error.failures,
+          },
+        });
+        res.status(502).json({
+          error:
+            "Unable to reach configured chat providers. Check CHAT_PROVIDER_ORDER and provider API keys/models.",
+        });
+        return;
+      }
+
       if (error instanceof Error) {
         res.status(502).json({
           error:
@@ -1659,7 +1891,15 @@ export function createApp() {
 
   app.get("/api/v1/chat/threads", requireAuth, (req, res) => {
     const authReq = req as AuthenticatedRequest;
-    res.json({ data: listChatThreadsByUser(authReq.authUser.id) });
+    const parsed = chatThreadListQuerySchema.safeParse(req.query);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    const scope = parsed.data.scope as ChatThreadScope;
+    res.json({ data: listChatThreadsByUser(authReq.authUser.id, scope) });
   });
 
   app.post("/api/v1/chat/threads", requireAuth, (req, res) => {
@@ -1698,6 +1938,12 @@ export function createApp() {
       return;
     }
 
+    const existing = getChatThreadByIdForUser(authReq.authUser.id, req.params.id);
+    if (!existing) {
+      res.status(404).json({ error: "Thread not found" });
+      return;
+    }
+
     const updated = updateChatThread(authReq.authUser.id, req.params.id, parsed.data);
 
     if (!updated) {
@@ -1705,11 +1951,51 @@ export function createApp() {
       return;
     }
 
+    if (
+      typeof parsed.data.title === "string" &&
+      parsed.data.title.trim() &&
+      parsed.data.title.trim() !== existing.title
+    ) {
+      recordChatEvent({
+        userId: authReq.authUser.id,
+        threadId: existing.id,
+        eventType: "thread_renamed",
+        payload: {
+          previousTitle: existing.title,
+          nextTitle: parsed.data.title.trim(),
+        },
+      });
+    }
+
+    if (parsed.data.archived === true && existing.archived === false) {
+      recordChatEvent({
+        userId: authReq.authUser.id,
+        threadId: existing.id,
+        eventType: "thread_archived",
+        payload: { threadId: existing.id },
+      });
+    }
+
+    if (parsed.data.archived === false && existing.archived === true) {
+      recordChatEvent({
+        userId: authReq.authUser.id,
+        threadId: existing.id,
+        eventType: "thread_restored",
+        payload: { threadId: existing.id },
+      });
+    }
+
     res.json({ data: { ok: true } });
   });
 
   app.delete("/api/v1/chat/threads/:id", requireAuth, (req, res) => {
     const authReq = req as AuthenticatedRequest;
+    const existing = getChatThreadByIdForUser(authReq.authUser.id, req.params.id);
+    if (!existing) {
+      res.status(404).json({ error: "Thread not found" });
+      return;
+    }
+
     const deleted = deleteChatThread(authReq.authUser.id, req.params.id);
 
     if (!deleted) {
@@ -1717,7 +2003,37 @@ export function createApp() {
       return;
     }
 
+    recordChatEvent({
+      userId: authReq.authUser.id,
+      eventType: "thread_deleted",
+      payload: { threadId: existing.id, title: existing.title },
+    });
+
     res.status(204).send();
+  });
+
+  app.get("/api/v1/chat/preferences", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const preferences = getUserCompanionPreferences(authReq.authUser.id);
+    res.json({
+      data: {
+        customInstructions: preferences?.customInstructions ?? "",
+      },
+    });
+  });
+
+  app.patch("/api/v1/chat/preferences", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = chatPreferencesPatchSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid chat preferences payload" });
+      return;
+    }
+
+    const customInstructions = normalizeCustomInstructions(parsed.data.customInstructions);
+    const updated = upsertUserCompanionPreferences(authReq.authUser.id, customInstructions);
+    res.json({ data: { customInstructions: updated.customInstructions } });
   });
 
   app.get("/api/v1/chat/threads/:id/messages", requireAuth, (req, res) => {
@@ -1748,6 +2064,11 @@ export function createApp() {
       return;
     }
 
+    if (thread.archived) {
+      res.status(400).json({ error: "Thread is archived. Restore it before sending new messages." });
+      return;
+    }
+
     try {
       assertWithinChatRateLimit(authReq.authUser.id);
     } catch (error) {
@@ -1765,6 +2086,10 @@ export function createApp() {
       return;
     }
 
+    const isUntitledThread = /^Thread\b/i.test(thread.title);
+    const existingMessages = listChatMessagesForThread(authReq.authUser.id, thread.id);
+    const isFirstMessage = (existingMessages?.length ?? 0) === 0;
+
     createChatMessage({
       id: randomUUID(),
       threadId: thread.id,
@@ -1772,10 +2097,37 @@ export function createApp() {
       content: parsed.data.prompt,
     });
 
+    if (isFirstMessage) {
+      recordChatEvent({
+        userId: authReq.authUser.id,
+        threadId: thread.id,
+        eventType: "thread_first_message_created",
+        payload: { threadId: thread.id },
+      });
+    }
+
     let answer = "";
     try {
-      answer = await resolveChatAnswer(parsed.data.prompt, chatConfig);
+      const effectiveSystemPrompt = await resolveEffectiveSystemPromptForUser(authReq.authUser.id);
+      answer = await resolveChatAnswer(parsed.data.prompt, chatConfig, effectiveSystemPrompt);
     } catch (error) {
+      if (error instanceof ChatProvidersFailedError) {
+        recordChatEvent({
+          userId: authReq.authUser.id,
+          threadId: thread.id,
+          eventType: "message_provider_error",
+          payload: {
+            route: "/api/v1/chat/threads/:id/messages",
+            failures: error.failures,
+          },
+        });
+        res.status(502).json({
+          error:
+            "Unable to reach configured chat providers. Check CHAT_PROVIDER_ORDER and provider API keys/models.",
+        });
+        return;
+      }
+
       if (error instanceof Error) {
         res.status(502).json({
           error:
@@ -1794,6 +2146,43 @@ export function createApp() {
     });
 
     res.status(201).json({ data: { answer } });
+
+    if (!isUntitledThread) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const generatedTitle = await resolveChatThreadTitle(parsed.data.prompt, answer, chatConfig);
+        if (!generatedTitle || generatedTitle === thread.title) {
+          return;
+        }
+
+        const updated = updateChatThread(authReq.authUser.id, thread.id, {
+          title: generatedTitle,
+        });
+
+        if (!updated) {
+          return;
+        }
+
+        recordChatEvent({
+          userId: authReq.authUser.id,
+          threadId: thread.id,
+          eventType: "thread_auto_titled",
+          payload: {
+            previousTitle: thread.title,
+            nextTitle: generatedTitle,
+          },
+        });
+      } catch (error) {
+        console.warn(
+          `[chat] Unable to auto-title thread "${thread.id}": ${
+            error instanceof Error ? error.message : "unknown error"
+          }`,
+        );
+      }
+    })();
   });
 
   app.get("/api/v1/dashboard/summary", requireAuth, (req, res) => {
@@ -1955,6 +2344,17 @@ export function createApp() {
     }
 
     res.json({ data: listAdminAuditLogs(parsed.data.limit) });
+  });
+
+  app.get("/api/v1/admin/chat/events", requireAuth, requireAdmin, (req, res) => {
+    const parsed = adminChatEventsQuerySchema.safeParse(req.query);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    res.json({ data: listChatEvents(parsed.data.limit) });
   });
 
   app.post("/api/v1/admin/content/lessons", requireAuth, requireAdmin, (req, res) => {

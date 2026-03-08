@@ -5,6 +5,7 @@ import {
   apiRevokeDevice,
   apiSecurityDeletePasskey,
   apiSecurityRenamePasskey,
+  apiSetChatPreferences,
   apiSetMfa,
   apiSetPasskeys,
   apiTotpDisable,
@@ -94,4 +95,12 @@ export async function disableTotpAction(): Promise<void> {
   const session = await requireSession();
   await apiTotpDisable(session.accessToken);
   revalidateSecurityViews();
+}
+
+export async function setCompanionPreferencesAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
+  const customInstructions = parseString(formData, "customInstructions").slice(0, 1500);
+  await apiSetChatPreferences(session.accessToken, customInstructions);
+  revalidateSecurityViews();
+  revalidatePath("/chat");
 }

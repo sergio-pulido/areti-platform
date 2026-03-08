@@ -2,14 +2,21 @@ import { NextResponse } from "next/server";
 import { getApiBaseUrl } from "@/lib/backend-api";
 import { getSessionToken } from "@/lib/auth/session";
 
-export async function GET() {
+export async function GET(request: Request) {
   const accessToken = await getSessionToken();
 
   if (!accessToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const response = await fetch(`${getApiBaseUrl()}/api/v1/chat/threads`, {
+  const requestUrl = new URL(request.url);
+  const scope = requestUrl.searchParams.get("scope");
+  const apiUrl = new URL(`${getApiBaseUrl()}/api/v1/chat/threads`);
+  if (scope) {
+    apiUrl.searchParams.set("scope", scope);
+  }
+
+  const response = await fetch(apiUrl, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${accessToken}`,

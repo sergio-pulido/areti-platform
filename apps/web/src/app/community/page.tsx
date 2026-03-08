@@ -19,7 +19,7 @@ export default async function CommunityPage() {
           <SurfaceCard key={circle.slug} title={circle.name} subtitle={circle.schedule}>
             <p className="text-sm text-night-200">{circle.focus}</p>
             <Link
-              href={`/dashboard/chat?prompt=${encodeURIComponent(`I want to join ${circle.name}. Help me write an intro and plan the first contribution.`)}`}
+              href={`/chat?prompt=${encodeURIComponent(`I want to join ${circle.name}. Help me write an intro and plan the first contribution.`)}`}
               className="mt-4 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/10 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20"
             >
               Request invite

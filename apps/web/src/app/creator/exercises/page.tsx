@@ -39,7 +39,7 @@ export default async function CreatorExercisesPage() {
             Open CMS
           </Link>
           <Link
-            href="/dashboard/practices"
+            href="/practices"
             className="inline-flex rounded-xl border border-night-700 bg-night-950 px-3 py-2 text-xs text-sand-100 hover:border-night-600"
           >
             Preview member experience

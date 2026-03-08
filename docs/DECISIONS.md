@@ -161,3 +161,45 @@
 - **Decision:** Auto-load `.env` from `apps/api` and monorepo root in API startup, and return explicit `502` errors when configured providers all fail.
 - **Why:** Improves local reliability and makes provider misconfiguration/outage visible instead of masking it as successful chat output.
 - **Tradeoff:** Chat no longer degrades to synthetic fallback when providers are configured but unavailable.
+
+## 2026-03-07 - Standalone Companion section IA
+- **Context:** Chat lived inside Personal navigation and mixed thread management into the main conversation surface.
+- **Decision:** Promote `/chat` into a dedicated top-level Companion section with its own sidebar and conversation-history controls.
+- **Why:** Gives chat a clear product identity, improves wayfinding, and keeps thread workflows consistent with section-based IA.
+- **Tradeoff:** Added client-state coordination between chat pane and sidebar via URL + lightweight browser events.
+
+## 2026-03-07 - Chat UX Wave 1 keeps non-streaming + active-only history
+- **Context:** Wave 1 prioritized IA and usability upgrades over transport-level response streaming and archive mailbox complexity.
+- **Decision:** Keep request/response chat transport, keep sidebar history focused on active threads, and defer SSE/archive tabs to later waves.
+- **Why:** Delivers immediate UX gains with lower implementation risk and no backend API expansion.
+- **Tradeoff:** No token-by-token response rendering and no archived-thread browsing UI in this iteration.
+
+## 2026-03-07 - Companion uses draft-first thread creation
+- **Context:** Creating a thread record from sidebar click caused premature DB writes and exposed management UI before the first message existed.
+- **Decision:** Treat `/chat` as the draft state; `New thread` clears selection back to `/chat`, and thread creation is deferred until first message send.
+- **Why:** Aligns behavior with user expectations and common AI chat products: drafting first, persisting only once a conversation starts.
+- **Tradeoff:** Requires URL/query-state coordination so intro UI, starters, and active-thread controls switch cleanly after first send.
+
+## 2026-03-07 - Auto-title untitled threads after first response
+- **Context:** Deferred thread creation produces temporary untitled/default thread names unless title generation occurs after first exchange.
+- **Decision:** Auto-generate a concise thread title for untitled threads right after the first assistant response and persist it via thread update.
+- **Why:** Produces meaningful history labels without forcing manual rename and better matches modern chat UX norms.
+- **Tradeoff:** Adds lightweight title-generation logic to the message write path and slight complexity in first-message handling.
+
+## 2026-03-08 - Global Companion doctrine prompt with user addendum
+- **Context:** Companion responses needed consistent philosophy-specialized behavior while still allowing personal customization.
+- **Decision:** Apply a fixed global Ataraxia system prompt first (env-overridable), then append optional user-level custom instructions from account preferences.
+- **Why:** Preserves product identity/safety constraints while enabling personal tone and coaching preferences.
+- **Tradeoff:** Adds a small preferences persistence surface and prompt-composition logic in chat request flow.
+
+## 2026-03-08 - Companion archived thread tabs in Wave 2
+- **Context:** Active-only history simplified Wave 1 but blocked practical archive/restore workflows.
+- **Decision:** Add Active/Archived tabs in Companion history, keep active as default, and support restore via thread details actions.
+- **Why:** Improves thread lifecycle management without introducing new routes or transport changes.
+- **Tradeoff:** Slightly more complex UI state between selected thread, tab scope, and detail actions.
+
+## 2026-03-08 - Persist chat lifecycle telemetry in first-party DB
+- **Context:** Operational visibility into thread/message lifecycle was limited to ad-hoc logs.
+- **Decision:** Persist chat events (`thread_first_message_created`, `thread_auto_titled`, rename/archive/restore/delete, provider failures) in `chat_events` and expose admin read API.
+- **Why:** Enables deterministic QA and operational review without external analytics dependency.
+- **Tradeoff:** Additional DB writes and retention considerations for telemetry growth over time.

@@ -247,6 +247,28 @@ export const chatMessages = sqliteTable("chat_messages", {
   createdAt: text("created_at").notNull(),
 });
 
+export const userCompanionPreferences = sqliteTable("user_companion_preferences", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  customInstructions: text("custom_instructions").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const chatEvents = sqliteTable("chat_events", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  threadId: text("thread_id").references(() => chatThreads.id, { onDelete: "set null" }),
+  eventType: text("event_type").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
 export const userTotpSecrets = sqliteTable("user_totp_secrets", {
   id: text("id").primaryKey(),
   userId: text("user_id")

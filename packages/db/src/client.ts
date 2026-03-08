@@ -7,6 +7,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import {
   adminAuditLogs,
+  chatEvents,
   chatMessages,
   chatThreads,
   communityChallenges,
@@ -24,6 +25,7 @@ import {
   practiceRoutines,
   refreshSessions,
   sessions,
+  userCompanionPreferences,
   userDevices,
   userNotifications,
   userTotpSecrets,
@@ -96,6 +98,34 @@ export type ChatMessageRecord = {
   createdAt: string;
 };
 
+export type ChatThreadScope = "active" | "archived" | "all";
+
+export type CompanionPreferencesRecord = {
+  id: string;
+  userId: string;
+  customInstructions: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ChatEventType =
+  | "thread_first_message_created"
+  | "thread_auto_titled"
+  | "thread_renamed"
+  | "thread_archived"
+  | "thread_restored"
+  | "thread_deleted"
+  | "message_provider_error";
+
+export type ChatEventRecord = {
+  id: string;
+  userId: string;
+  threadId: string | null;
+  eventType: ChatEventType;
+  payloadJson: string;
+  createdAt: string;
+};
+
 export type UserDeviceRecord = {
   id: string;
   userId: string;
@@ -150,7 +180,7 @@ function seedWelcomeNotifications(userId: string): void {
       userId,
       title: "Welcome to Ataraxia",
       body: "Start with one short reflection to ground your practice.",
-      href: "/dashboard/journal?title=First%20Reflection&mood=Grounded",
+      href: "/journal?title=First%20Reflection&mood=Grounded",
       readAt: null,
       createdAt: timestamp,
     },
@@ -159,7 +189,7 @@ function seedWelcomeNotifications(userId: string): void {
       userId,
       title: "Explore the Library",
       body: "Pick one lesson and apply it within 24 hours.",
-      href: "/dashboard/library",
+      href: "/library",
       readAt: null,
       createdAt: timestamp,
     },
@@ -267,6 +297,8 @@ const db = drizzle(sqlite, {
     userNotifications,
     chatThreads,
     chatMessages,
+    userCompanionPreferences,
+    chatEvents,
     journalEntries,
     contentPillars,
     contentHighlights,
@@ -1062,7 +1094,7 @@ export function createJournalEntry(input: {
       userId: input.userId,
       title: "Reflection saved",
       body: `Your entry "${input.title}" was stored successfully.`,
-      href: "/dashboard/journal",
+      href: "/journal",
       readAt: null,
       createdAt: timestamp,
     })
@@ -2031,13 +2063,19 @@ export function revokeUserDevice(userId: string, deviceId: string): boolean {
   return true;
 }
 
-export function listChatThreadsByUser(userId: string): ChatThreadRecord[] {
-  return db
-    .select()
-    .from(chatThreads)
-    .where(and(eq(chatThreads.userId, userId), eq(chatThreads.archived, false)))
-    .orderBy(desc(chatThreads.updatedAt))
-    .all();
+export function listChatThreadsByUser(
+  userId: string,
+  scope: ChatThreadScope = "active",
+): ChatThreadRecord[] {
+  const scopeFilter =
+    scope === "all"
+      ? eq(chatThreads.userId, userId)
+      : and(
+          eq(chatThreads.userId, userId),
+          eq(chatThreads.archived, scope === "archived"),
+        );
+
+  return db.select().from(chatThreads).where(scopeFilter).orderBy(desc(chatThreads.updatedAt)).all();
 }
 
 export function getChatThreadByIdForUser(
@@ -2156,6 +2194,85 @@ export function createChatMessage(input: {
       .where(eq(chatThreads.id, input.threadId))
       .run();
   });
+}
+
+export function getUserCompanionPreferences(userId: string): CompanionPreferencesRecord | null {
+  const existing = db
+    .select()
+    .from(userCompanionPreferences)
+    .where(eq(userCompanionPreferences.userId, userId))
+    .limit(1)
+    .get();
+
+  return existing ?? null;
+}
+
+export function upsertUserCompanionPreferences(
+  userId: string,
+  customInstructions: string,
+): CompanionPreferencesRecord {
+  const existing = getUserCompanionPreferences(userId);
+  const timestamp = nowIso();
+
+  if (existing) {
+    db.update(userCompanionPreferences)
+      .set({
+        customInstructions,
+        updatedAt: timestamp,
+      })
+      .where(eq(userCompanionPreferences.userId, userId))
+      .run();
+
+    return {
+      ...existing,
+      customInstructions,
+      updatedAt: timestamp,
+    };
+  }
+
+  const created: CompanionPreferencesRecord = {
+    id: cryptoRandomId(),
+    userId,
+    customInstructions,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+
+  db.insert(userCompanionPreferences).values(created).run();
+
+  return created;
+}
+
+export function createChatEvent(input: {
+  id: string;
+  userId: string;
+  threadId?: string | null;
+  eventType: ChatEventType;
+  payloadJson: string;
+}): void {
+  db.insert(chatEvents)
+    .values({
+      id: input.id,
+      userId: input.userId,
+      threadId: input.threadId ?? null,
+      eventType: input.eventType,
+      payloadJson: input.payloadJson,
+      createdAt: nowIso(),
+    })
+    .run();
+}
+
+export function listChatEvents(limit: number): ChatEventRecord[] {
+  return db
+    .select()
+    .from(chatEvents)
+    .orderBy(desc(chatEvents.createdAt))
+    .limit(limit)
+    .all()
+    .map((row) => ({
+      ...row,
+      eventType: row.eventType as ChatEventType,
+    }));
 }
 
 export function createAdminAuditLog(input: {

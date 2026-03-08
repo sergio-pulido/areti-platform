@@ -3,7 +3,7 @@
 Monorepo for a Stoic + Epicurean philosophy platform with a separated frontend, backend API, and shared DB/ORM package.
 
 ## Workspace Structure
-- `apps/web`: Next.js frontend (auth UI, dashboard, chatbot UI, legal pages, admin CMS)
+- `apps/web`: Next.js frontend (auth UI, sectioned app shell, Companion chat UI, legal pages, admin CMS)
 - `apps/api`: Express REST API (auth/session/journal/content/admin)
 - `packages/db`: Shared SQLite + Drizzle ORM schema/query/migration package
 
@@ -40,6 +40,12 @@ Monorepo for a Stoic + Epicurean philosophy platform with a separated frontend, 
 
 ### Chat
 - `POST /api/v1/chat`
+- `GET /api/v1/chat/threads`
+- `POST /api/v1/chat/threads`
+- `PATCH /api/v1/chat/threads/:id`
+- `DELETE /api/v1/chat/threads/:id`
+- `GET /api/v1/chat/threads/:id/messages`
+- `POST /api/v1/chat/threads/:id/messages`
 
 ### User Data
 - `GET /api/v1/dashboard/summary`
@@ -148,8 +154,14 @@ Services:
 - `OPENAI_API_KEY` (OpenAI key for chat provider fallback)
 - `OPENAI_CHAT_MODEL` (default: `gpt-4.1-mini`)
 - `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
+- `CHAT_GLOBAL_SYSTEM_PROMPT` (optional override for Ataraxia global Companion doctrine/system prompt)
 
 Chat provider keys are read by `apps/api` from process environment on startup.
 
 For `docker compose`, put the chat env vars in a repo-root `.env` file.
 For local `npm run dev`, the API now auto-loads `.env` from `apps/api/.env` and repo-root `.env`.
+
+Companion prompt behavior:
+- A fixed Ataraxia global system prompt is always applied first.
+- Users can add account-level custom Companion instructions in `/account/settings` under **Companion preferences**.
+- User instructions are appended after the global prompt and cannot override safety/mission constraints.

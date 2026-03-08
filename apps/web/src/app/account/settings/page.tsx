@@ -4,21 +4,28 @@ import {
   deletePasskeyAction,
   renamePasskeyAction,
   revokeDeviceAction,
+  setCompanionPreferencesAction,
   setPasskeyEnabledAction,
 } from "@/actions/security";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { PasskeyManager } from "@/components/dashboard/passkey-manager";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { TotpManager } from "@/components/dashboard/totp-manager";
-import { apiDevices, apiSecurityPasskeys, apiSecuritySettings } from "@/lib/backend-api";
+import {
+  apiChatPreferences,
+  apiDevices,
+  apiSecurityPasskeys,
+  apiSecuritySettings,
+} from "@/lib/backend-api";
 import { requireSession } from "@/lib/auth/session";
 
 export default async function SettingsPage() {
   const session = await requireSession();
-  const [security, passkeys, devices] = await Promise.all([
+  const [security, passkeys, devices, companionPreferences] = await Promise.all([
     apiSecuritySettings(session.accessToken),
     apiSecurityPasskeys(session.accessToken),
     apiDevices(session.accessToken),
+    apiChatPreferences(session.accessToken),
   ]);
 
   return (
@@ -178,6 +185,50 @@ export default async function SettingsPage() {
               Cookie Policy
             </Link>
           </div>
+        </SurfaceCard>
+
+        <SurfaceCard
+          title="Companion preferences"
+          subtitle="Customize how your personal Companion responds"
+        >
+          <form action={setCompanionPreferencesAction} className="space-y-3">
+            <label htmlFor="customInstructions" className="text-sm text-sand-200">
+              Personal instructions
+            </label>
+            <textarea
+              id="customInstructions"
+              name="customInstructions"
+              defaultValue={companionPreferences.customInstructions}
+              maxLength={1500}
+              rows={6}
+              className="w-full rounded-xl border border-night-700 bg-night-950 px-3 py-2 text-sm text-sand-100 placeholder:text-night-300 focus:border-sage-300 focus:outline-none"
+              placeholder="Example: Keep answers concise, challenge my blind spots, and end with one practical action."
+            />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-night-300">
+                This addendum is applied after Ataraxia&apos;s global philosophy prompt.
+              </p>
+              <p className="text-xs text-night-300">
+                {companionPreferences.customInstructions.length}/1500
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                className="rounded-lg border border-night-600 bg-night-900 px-3 py-1.5 text-xs text-sand-100 hover:border-sage-300"
+              >
+                Save preferences
+              </button>
+              <button
+                type="submit"
+                name="customInstructions"
+                value=""
+                className="rounded-lg border border-night-700 bg-night-950 px-3 py-1.5 text-xs text-night-200 hover:border-night-500"
+              >
+                Reset to default
+              </button>
+            </div>
+          </form>
         </SurfaceCard>
       </div>
     </div>

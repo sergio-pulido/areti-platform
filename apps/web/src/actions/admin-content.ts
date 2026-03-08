@@ -102,8 +102,8 @@ function revalidateCms(): void {
   revalidatePath("/creator/cms");
   revalidatePath("/creator");
   revalidatePath("/");
-  revalidatePath("/dashboard/library");
-  revalidatePath("/dashboard/practices");
+  revalidatePath("/library");
+  revalidatePath("/practices");
   revalidatePath("/community");
   revalidatePath("/community/challenges");
   revalidatePath("/community/resources");

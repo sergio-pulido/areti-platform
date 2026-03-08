@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { CurrentUser } from "@/lib/auth/session";
+import { CompanionSidenav } from "@/components/layout/companion-sidenav";
 import {
   canAccessCreator,
   getNavSectionById,
@@ -21,6 +22,10 @@ export function DashboardSidenav({ user }: DashboardSidenavProps) {
     !canAccessCreator(user.role) && detectedSection.id === "creator"
       ? getNavSectionById("personal")
       : detectedSection;
+
+  if (activeSection.id === "companion") {
+    return <CompanionSidenav user={user} />;
+  }
 
   return (
     <aside className="hidden w-80 shrink-0 border-r border-night-800/70 bg-night-950/90 p-6 lg:flex lg:flex-col lg:gap-8">

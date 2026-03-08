@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { LibraryArticleCard } from "@/components/dashboard/library-article-card";
+import { Badge } from "@/components/ui/badge";
 import { requireSession } from "@/lib/auth/session";
 import { fetchLibraryLessons } from "@/lib/content-api";
 
@@ -15,7 +16,7 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
   const isAdmin = session.user.role === "ADMIN";
 
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader
         eyebrow="Library"
         title="Philosophy Knowledge Hub"
@@ -32,7 +33,12 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
         }
       />
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="muted">{filteredLessons.length} lessons</Badge>
+        {params.q ? <Badge variant="default">Query: {params.q}</Badge> : null}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3" aria-label="Library articles">
         {filteredLessons.map((lesson) => (
           <LibraryArticleCard key={lesson.slug} lesson={lesson} />
         ))}

@@ -1,35 +1,31 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Archive, List, Pencil, RotateCcw, Trash2, X } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ChatComposer } from "@/components/chat/chat-composer";
+import { ChatConversation } from "@/components/chat/chat-conversation";
+import { ChatEmptyState } from "@/components/chat/chat-empty-state";
+import { CHAT_THREADS_INVALIDATE_EVENT, emitChatThreadsInvalidated } from "@/components/chat/events";
+import { parseJsonOrThrow } from "@/components/chat/request";
+import { ThreadListPanel } from "@/components/chat/thread-list-panel";
+import { deriveThreadTopic } from "@/components/chat/topic";
+import type { ChatMessage, ChatThread } from "@/components/chat/types";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 
-type Message = {
-  id: string;
-  threadId: string;
-  role: "user" | "assistant";
-  content: string;
-  createdAt: string;
-};
-
-type Thread = {
-  id: string;
-  userId: string;
-  title: string;
-  archived: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+const WELCOME_MESSAGE = "I am your Socratic companion. Ask one practical question to start.";
 
 type ChatSimulatorProps = {
   initialPrompt?: string;
   initialThreadId?: string;
 };
 
-const WELCOME_MESSAGE = "I am your Socratic companion. Ask one practical question to start.";
-
-function syntheticAssistantMessage(threadId: string): Message {
+function syntheticAssistantMessage(threadId: string): ChatMessage {
   return {
-    id: "welcome",
+    id: `welcome-${threadId}`,
     threadId,
     role: "assistant",
     content: WELCOME_MESSAGE,
@@ -37,28 +33,28 @@ function syntheticAssistantMessage(threadId: string): Message {
   };
 }
 
-async function parseJsonOrThrow<T>(response: Response): Promise<T> {
-  const payload = (await response.json().catch(() => ({}))) as { data?: T; error?: string };
-
-  if (!response.ok) {
-    throw new Error(payload.error ?? "Request failed");
-  }
-
-  if (payload.data === undefined) {
-    throw new Error("Missing response payload.");
-  }
-
-  return payload.data;
+function threadDateLabel(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorProps) {
   const router = useRouter();
-  const [threads, setThreads] = useState<Thread[]>([]);
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(initialThreadId ?? null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeThreadId = searchParams.get("thread") ?? initialThreadId ?? null;
+  const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mobileThreadsOpen, setMobileThreadsOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
   const consumedPromptRef = useRef<string | null>(null);
 
   const activeThread = useMemo(
@@ -66,65 +62,118 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
     [threads, activeThreadId],
   );
 
-  async function loadThreadsAndSelect(): Promise<void> {
-    const loadedThreads = await parseJsonOrThrow<Thread[]>(
-      await fetch("/api/chat/threads", { method: "GET", cache: "no-store" }),
+  function setThreadInUrl(threadId: string | null): void {
+    const next = new URLSearchParams(searchParams.toString());
+
+    if (threadId) {
+      next.set("thread", threadId);
+    } else {
+      next.delete("thread");
+    }
+    next.delete("prompt");
+
+    const suffix = next.toString();
+    router.replace(suffix ? `${pathname}?${suffix}` : pathname);
+  }
+
+  async function createThreadOnServer(): Promise<ChatThread> {
+    return parseJsonOrThrow<ChatThread>(
+      await fetch("/api/chat/threads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  }
+
+  async function loadThreads(): Promise<ChatThread[]> {
+    const loaded = await parseJsonOrThrow<ChatThread[]>(
+      await fetch("/api/chat/threads?scope=all", { method: "GET", cache: "no-store" }),
     );
 
-    if (loadedThreads.length === 0) {
-      const created = await parseJsonOrThrow<Thread>(
-        await fetch("/api/chat/threads", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: "New Thread" }),
-        }),
-      );
-      setThreads([created]);
-      setActiveThreadId(created.id);
-      return;
+    setThreads(loaded);
+
+    if (activeThreadId && !loaded.some((thread) => thread.id === activeThreadId)) {
+      setThreadInUrl(null);
+      setMessages([]);
     }
 
-    setThreads(loadedThreads);
-    if (!activeThreadId || !loadedThreads.some((item) => item.id === activeThreadId)) {
-      setActiveThreadId(initialThreadId && loadedThreads.some((t) => t.id === initialThreadId) ? initialThreadId : loadedThreads[0]?.id ?? null);
-    }
+    return loaded;
   }
 
   async function loadMessages(threadId: string): Promise<void> {
-    const loadedMessages = await parseJsonOrThrow<Message[]>(
+    const loadedMessages = await parseJsonOrThrow<ChatMessage[]>(
       await fetch(`/api/chat/threads/${threadId}/messages`, { method: "GET", cache: "no-store" }),
     );
-    setMessages(
-      loadedMessages.length > 0 ? loadedMessages : [syntheticAssistantMessage(threadId)],
-    );
+
+    setMessages(loadedMessages.length > 0 ? loadedMessages : [syntheticAssistantMessage(threadId)]);
   }
 
-  async function createThread(): Promise<void> {
+  async function sendPrompt(prompt: string): Promise<void> {
+    const nextPrompt = prompt.trim();
+    if (!nextPrompt || activeThread?.archived) {
+      return;
+    }
+
     setPending(true);
     setError(null);
 
+    let threadId = activeThreadId;
+
     try {
-      const created = await parseJsonOrThrow<Thread>(
-        await fetch("/api/chat/threads", {
+      if (!threadId) {
+        const created = await createThreadOnServer();
+        setThreads((prev) => [created, ...prev]);
+        threadId = created.id;
+        setThreadInUrl(threadId);
+        emitChatThreadsInvalidated();
+      }
+
+      const resolvedThreadId = threadId;
+      if (!resolvedThreadId) {
+        throw new Error("Unable to create thread.");
+      }
+
+      const nowIso = new Date().toISOString();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `tmp-user-${Date.now()}`,
+          threadId: resolvedThreadId,
+          role: "user",
+          content: nextPrompt,
+          createdAt: nowIso,
+        },
+      ]);
+      setInput("");
+
+      await parseJsonOrThrow<{ answer: string }>(
+        await fetch(`/api/chat/threads/${resolvedThreadId}/messages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: `Thread ${threads.length + 1}` }),
+          body: JSON.stringify({ prompt: nextPrompt }),
         }),
       );
-      setThreads((prev) => [created, ...prev]);
-      setActiveThreadId(created.id);
-      setMessages([syntheticAssistantMessage(created.id)]);
-      router.replace(`/dashboard/chat?thread=${created.id}`);
+
+      await Promise.all([loadMessages(resolvedThreadId), loadThreads()]);
+      emitChatThreadsInvalidated();
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Unable to create thread.");
+      setError(caughtError instanceof Error ? caughtError.message : "Unable to send prompt.");
+      if (threadId) {
+        await loadMessages(threadId).catch(() => undefined);
+      }
     } finally {
       setPending(false);
     }
   }
 
-  async function renameThread(threadId: string): Promise<void> {
-    const nextTitle = window.prompt("Thread title");
+  async function renameActiveThread(): Promise<void> {
+    if (!activeThread) {
+      return;
+    }
+
+    const nextTitle = renameValue.trim();
     if (!nextTitle) {
+      setError("Thread title cannot be empty.");
       return;
     }
 
@@ -133,17 +182,20 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
 
     try {
       await parseJsonOrThrow<{ ok: true }>(
-        await fetch(`/api/chat/threads/${threadId}`, {
+        await fetch(`/api/chat/threads/${activeThread.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: nextTitle.trim() }),
+          body: JSON.stringify({ title: nextTitle }),
         }),
       );
       setThreads((prev) =>
         prev.map((thread) =>
-          thread.id === threadId ? { ...thread, title: nextTitle.trim() } : thread,
+          thread.id === activeThread.id ? { ...thread, title: nextTitle } : thread,
         ),
       );
+      setRenaming(false);
+      setRenameValue("");
+      emitChatThreadsInvalidated();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to rename thread.");
     } finally {
@@ -151,224 +203,262 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
     }
   }
 
-  async function archiveThread(threadId: string): Promise<void> {
-    setPending(true);
-    setError(null);
-
-    try {
-      await parseJsonOrThrow<{ ok: true }>(
-        await fetch(`/api/chat/threads/${threadId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ archived: true }),
-        }),
-      );
-      const nextThreads = threads.filter((thread) => thread.id !== threadId);
-      setThreads(nextThreads);
-      const nextActive = nextThreads[0]?.id ?? null;
-      setActiveThreadId(nextActive);
-      if (nextActive) {
-        router.replace(`/dashboard/chat?thread=${nextActive}`);
-      } else {
-        await createThread();
-      }
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Unable to archive thread.");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function deleteThread(threadId: string): Promise<void> {
-    setPending(true);
-    setError(null);
-
-    try {
-      await parseJsonOrThrow<{ ok: true }>(
-        await fetch(`/api/chat/threads/${threadId}`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-      const nextThreads = threads.filter((thread) => thread.id !== threadId);
-      setThreads(nextThreads);
-      const nextActive = nextThreads[0]?.id ?? null;
-      setActiveThreadId(nextActive);
-      if (nextActive) {
-        router.replace(`/dashboard/chat?thread=${nextActive}`);
-      } else {
-        await createThread();
-      }
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Unable to delete thread.");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function sendPrompt(prompt: string): Promise<void> {
-    if (!activeThreadId || !prompt) {
+  async function updateOrDeleteActiveThread(mode: "archive" | "restore" | "delete"): Promise<void> {
+    if (!activeThread) {
       return;
     }
 
     setPending(true);
     setError(null);
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `tmp-user-${Date.now()}`,
-        threadId: activeThreadId,
-        role: "user",
-        content: prompt,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-    setInput("");
+
+    const nextThreadId = threads.find((thread) => thread.id !== activeThread.id)?.id ?? null;
 
     try {
-      const payload = await parseJsonOrThrow<{ answer: string }>(
-        await fetch(`/api/chat/threads/${activeThreadId}/messages`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
-        }),
-      );
-
-      await loadMessages(activeThreadId);
-      if (!payload.answer) {
-        throw new Error("No response from assistant.");
+      if (mode === "archive" || mode === "restore") {
+        await parseJsonOrThrow<{ ok: true }>(
+          await fetch(`/api/chat/threads/${activeThread.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ archived: mode === "archive" }),
+          }),
+        );
+      } else {
+        await parseJsonOrThrow<{ ok: true }>(
+          await fetch(`/api/chat/threads/${activeThread.id}`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
       }
-      await loadThreadsAndSelect();
+
+      setRenaming(false);
+      setRenameValue("");
+      if (mode === "delete") {
+        setThreadInUrl(nextThreadId);
+        setMessages([]);
+        await loadThreads();
+        if (nextThreadId) {
+          await loadMessages(nextThreadId).catch(() => undefined);
+        }
+      } else {
+        await loadThreads();
+        await loadMessages(activeThread.id).catch(() => undefined);
+      }
+      emitChatThreadsInvalidated();
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Unable to send prompt.");
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : `Unable to ${
+              mode === "archive" ? "archive" : mode === "restore" ? "restore" : "delete"
+            } thread.`,
+      );
     } finally {
       setPending(false);
     }
   }
 
   useEffect(() => {
-    void loadThreadsAndSelect().catch((caughtError) => {
-      setError(caughtError instanceof Error ? caughtError.message : "Unable to load chat.");
+    void loadThreads().catch((caughtError) => {
+      setError(caughtError instanceof Error ? caughtError.message : "Unable to load threads.");
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!activeThreadId) {
+      setMessages([]);
+      setRenaming(false);
+      setRenameValue("");
       return;
     }
 
     void loadMessages(activeThreadId).catch((caughtError) => {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to load messages.");
     });
-    router.replace(`/dashboard/chat?thread=${activeThreadId}`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeThreadId]);
 
   useEffect(() => {
-    if (!initialPrompt || !activeThreadId || consumedPromptRef.current === initialPrompt) {
+    function handleThreadInvalidation(): void {
+      void loadThreads().catch((caughtError) => {
+        setError(caughtError instanceof Error ? caughtError.message : "Unable to refresh threads.");
+      });
+      if (activeThreadId) {
+        void loadMessages(activeThreadId).catch(() => undefined);
+      }
+    }
+
+    window.addEventListener(CHAT_THREADS_INVALIDATE_EVENT, handleThreadInvalidation);
+    return () => window.removeEventListener(CHAT_THREADS_INVALIDATE_EVENT, handleThreadInvalidation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeThreadId, pathname, searchParams.toString()]);
+
+  useEffect(() => {
+    if (!initialPrompt || consumedPromptRef.current === initialPrompt) {
       return;
     }
 
     consumedPromptRef.current = initialPrompt;
     void sendPrompt(initialPrompt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialPrompt, activeThreadId]);
+  }, [initialPrompt]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await sendPrompt(input.trim());
-  }
+  const providerError = error?.includes("configured chat providers")
+    ? "Companion provider is temporarily unavailable. Verify API keys/provider status and retry."
+    : null;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-      <div className="rounded-3xl border border-night-800 bg-night-900/70 p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-xs uppercase tracking-[0.2em] text-night-300">Threads</p>
-          <button
-            type="button"
-            onClick={createThread}
-            className="rounded-lg border border-night-700 px-2 py-1 text-xs text-sand-100 hover:border-night-500"
-          >
-            New
-          </button>
-        </div>
-        <div className="space-y-2">
-          {threads.map((thread) => (
-            <div
-              key={thread.id}
-              className={`rounded-xl border p-2 ${
-                thread.id === activeThreadId
-                  ? "border-sage-300/50 bg-sage-500/10"
-                  : "border-night-700 bg-night-950/70"
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => setActiveThreadId(thread.id)}
-                className="w-full text-left text-sm text-sand-100"
+    <div className="space-y-4">
+      <div className="flex items-center justify-between lg:hidden">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setMobileThreadsOpen(true)}
+          aria-label="Open threads"
+        >
+          <List size={14} />
+          Threads
+        </Button>
+      </div>
+
+      {mobileThreadsOpen ? (
+        <div className="fixed inset-0 z-30 bg-night-950/85 p-4 lg:hidden">
+          <div className="mx-auto flex h-full max-w-lg flex-col gap-3 rounded-[var(--radius-2xl)] border border-night-700 bg-night-900 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-sand-100">Conversations</p>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close threads"
+                onClick={() => setMobileThreadsOpen(false)}
               >
-                {thread.title}
-              </button>
-              <div className="mt-2 flex gap-1 text-[10px] text-night-300">
-                <button type="button" onClick={() => renameThread(thread.id)} className="rounded border border-night-700 px-1.5 py-0.5 hover:border-night-500">
-                  Rename
-                </button>
-                <button type="button" onClick={() => archiveThread(thread.id)} className="rounded border border-night-700 px-1.5 py-0.5 hover:border-night-500">
-                  Archive
-                </button>
-                <button type="button" onClick={() => deleteThread(thread.id)} className="rounded border border-rose-400/40 px-1.5 py-0.5 text-rose-200 hover:bg-rose-500/10">
-                  Delete
-                </button>
+                <X size={16} />
+              </Button>
+            </div>
+            <ThreadListPanel
+              className="flex-1"
+              onSelectThread={() => setMobileThreadsOpen(false)}
+              showHeading={false}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {activeThread ? (
+        <Card variant="default" className="rounded-[var(--radius-xl)] p-4">
+          {renaming ? (
+            <div className="space-y-2">
+              <label htmlFor="thread-rename" className="text-xs uppercase tracking-[0.15em] text-night-300">
+                Rename thread
+              </label>
+              <Input
+                id="thread-rename"
+                value={renameValue}
+                onChange={(event) => setRenameValue(event.target.value)}
+                maxLength={120}
+                aria-label="Rename thread title"
+              />
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="primary" onClick={() => void renameActiveThread()} disabled={pending}>
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setRenaming(false);
+                    setRenameValue("");
+                  }}
+                  disabled={pending}
+                >
+                  Cancel
+                </Button>
               </div>
             </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-3xl border border-night-800 bg-night-900/70 p-5">
-        <div className="h-[420px] space-y-3 overflow-y-auto rounded-2xl border border-night-800/80 bg-night-950/70 p-4">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                message.role === "assistant"
-                  ? "bg-night-900 text-sand-100"
-                  : "ml-auto bg-sage-500/20 text-sage-100"
-              }`}
-            >
-              {message.content}
+          ) : (
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-sand-100">{activeThread.title}</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <Badge variant="muted">{threadDateLabel(activeThread.updatedAt)}</Badge>
+                  <Badge variant="success">{deriveThreadTopic(activeThread.title)}</Badge>
+                  <Badge variant={activeThread.archived ? "muted" : "success"}>
+                    {activeThread.archived ? "Archived" : "Active"}
+                  </Badge>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setRenaming(true);
+                    setRenameValue(activeThread.title);
+                  }}
+                  disabled={pending}
+                >
+                  <Pencil size={12} />
+                  Rename
+                </Button>
+                {activeThread.archived ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void updateOrDeleteActiveThread("restore")}
+                    disabled={pending}
+                  >
+                    <RotateCcw size={12} />
+                    Restore
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void updateOrDeleteActiveThread("archive")}
+                    disabled={pending}
+                  >
+                    <Archive size={12} />
+                    Archive
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => void updateOrDeleteActiveThread("delete")}
+                  disabled={pending}
+                >
+                  <Trash2 size={12} />
+                  Delete
+                </Button>
+              </div>
             </div>
-          ))}
-          {pending ? (
-            <div className="max-w-[90%] rounded-2xl bg-night-900 px-4 py-3 text-sm text-night-200">
-              Thinking through first principles...
-            </div>
-          ) : null}
-        </div>
+          )}
+        </Card>
+      ) : null}
 
-        <form onSubmit={handleSubmit} className="mt-4 flex gap-3">
-          <label htmlFor="chat-prompt" className="sr-only">
-            Chat prompt
-          </label>
-          <input
-            id="chat-prompt"
-            type="text"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask about anxiety, habits, ambition, love, purpose..."
-            className="flex-1 rounded-xl border border-night-700 bg-night-950 px-4 py-3 text-sm text-sand-100 placeholder:text-night-300 focus:border-sage-300 focus:outline-none"
-          />
-          <button
-            type="submit"
-            disabled={pending || !activeThread}
-            className="rounded-xl border border-sand-100 bg-sand-100 px-4 py-3 text-sm font-medium text-night-950 transition hover:bg-sand-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Send
-          </button>
-        </form>
-        {error ? <p className="mt-2 text-xs text-amber-300">{error}</p> : null}
-      </div>
+      {activeThread ? <ChatConversation messages={messages} pending={pending} /> : <ChatEmptyState />}
+
+      <ChatComposer
+        value={input}
+        pending={pending}
+        disabled={activeThread?.archived ?? false}
+        onChange={setInput}
+        onSend={() => {
+          void sendPrompt(input);
+        }}
+      />
+
+      {!activeThread ? (
+        <p className="text-xs text-night-300">Your first message will create a new thread automatically.</p>
+      ) : null}
+      {activeThread?.archived ? (
+        <p className="text-xs text-night-300">
+          This thread is archived. Restore it to continue sending messages.
+        </p>
+      ) : null}
+
+      {providerError ? <p className="text-xs text-amber-200">{providerError}</p> : null}
+      {error && !providerError ? <p className="text-xs text-amber-300">{error}</p> : null}
     </div>
   );
 }

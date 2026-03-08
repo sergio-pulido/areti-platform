@@ -29,6 +29,13 @@
       "when": 1772817488919,
       "tag": "0003_unknown_lord_tyger",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1772962368909,
+      "tag": "0004_careful_guardsmen",
+      "breakpoints": true
     }
   ]
 }

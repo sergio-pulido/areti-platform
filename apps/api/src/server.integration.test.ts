@@ -135,14 +135,30 @@ describe("API integration", () => {
   });
 
   it("supports persisted chat threads and messages", async () => {
+    const defaultPreferences = await request(app)
+      .get("/api/v1/chat/preferences")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(defaultPreferences.status).toBe(200);
+    expect(defaultPreferences.body.data.customInstructions).toBe("");
+
+    const updatePreferences = await request(app)
+      .patch("/api/v1/chat/preferences")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ customInstructions: "Keep responses concise and practical." });
+
+    expect(updatePreferences.status).toBe(200);
+    expect(updatePreferences.body.data.customInstructions).toContain("concise");
+
     const createdThread = await request(app)
       .post("/api/v1/chat/threads")
       .set("Authorization", `Bearer ${adminToken}`)
-      .send({ title: "Integration Thread" });
+      .send({});
 
     expect(createdThread.status).toBe(201);
     const threadId = createdThread.body.data.id as string;
     expect(typeof threadId).toBe("string");
+    expect((createdThread.body.data.title as string).startsWith("Thread")).toBe(true);
 
     const sendMessage = await request(app)
       .post(`/api/v1/chat/threads/${threadId}/messages`)
@@ -159,6 +175,67 @@ describe("API integration", () => {
     expect(messages.status).toBe(200);
     expect(Array.isArray(messages.body.data)).toBe(true);
     expect(messages.body.data.length).toBeGreaterThanOrEqual(2);
+
+    let autoTitledThread: { id: string; title: string } | undefined;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const threads = await request(app)
+        .get("/api/v1/chat/threads")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      autoTitledThread = threads.body.data.find(
+        (thread: { id: string; title: string }) => thread.id === threadId,
+      );
+
+      if (autoTitledThread && !autoTitledThread.title.startsWith("Thread")) {
+        break;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(autoTitledThread).toBeDefined();
+    expect(autoTitledThread?.title.startsWith("Thread")).toBe(false);
+
+    const archive = await request(app)
+      .patch(`/api/v1/chat/threads/${threadId}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ archived: true });
+
+    expect(archive.status).toBe(200);
+
+    const activeThreads = await request(app)
+      .get("/api/v1/chat/threads?scope=active")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(activeThreads.status).toBe(200);
+    expect(
+      activeThreads.body.data.some((thread: { id: string }) => thread.id === threadId),
+    ).toBe(false);
+
+    const archivedThreads = await request(app)
+      .get("/api/v1/chat/threads?scope=archived")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(archivedThreads.status).toBe(200);
+    expect(
+      archivedThreads.body.data.some((thread: { id: string }) => thread.id === threadId),
+    ).toBe(true);
+
+    const restore = await request(app)
+      .patch(`/api/v1/chat/threads/${threadId}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ archived: false });
+
+    expect(restore.status).toBe(200);
+
+    const chatEvents = await request(app)
+      .get("/api/v1/admin/chat/events?limit=200")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(chatEvents.status).toBe(200);
+    const eventTypes = chatEvents.body.data.map((event: { eventType: string }) => event.eventType);
+    expect(eventTypes).toContain("thread_first_message_created");
+    expect(eventTypes).toContain("thread_auto_titled");
+    expect(eventTypes).toContain("thread_archived");
+    expect(eventTypes).toContain("thread_restored");
   });
 
   it("keeps draft lesson private until published", async () => {

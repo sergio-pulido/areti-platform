@@ -1,15 +1,22 @@
 import type { ReactNode } from "react";
+import { cn } from "@/lib/cn";
 
 type PageHeaderProps = {
   eyebrow?: string;
   title: string;
   description: string;
   actions?: ReactNode;
+  className?: string;
 };
 
-export function PageHeader({ eyebrow, title, description, actions }: PageHeaderProps) {
+export function PageHeader({ eyebrow, title, description, actions, className }: PageHeaderProps) {
   return (
-    <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <div
+      className={cn(
+        "mb-6 flex animate-fade-in-up flex-col gap-4 md:flex-row md:items-end md:justify-between",
+        className,
+      )}
+    >
       <div>
         {eyebrow ? (
           <p className="text-xs uppercase tracking-[0.3em] text-sage-200/85">{eyebrow}</p>

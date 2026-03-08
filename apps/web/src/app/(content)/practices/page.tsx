@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { PracticeProtocolCard } from "@/components/dashboard/practice-protocol-card";
+import { Badge } from "@/components/ui/badge";
 import { requireSession } from "@/lib/auth/session";
 import { fetchPracticeRoutines } from "@/lib/content-api";
 
@@ -10,7 +11,7 @@ export default async function PracticesPage() {
   const isAdmin = session.user.role === "ADMIN";
 
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader
         eyebrow="Practices"
         title="Your Daily Protocols"
@@ -27,7 +28,11 @@ export default async function PracticesPage() {
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="flex items-center gap-2">
+        <Badge variant="muted">{routines.length} protocols</Badge>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2" aria-label="Practice protocols">
         {routines.map((routine) => (
           <PracticeProtocolCard key={routine.slug} routine={routine} />
         ))}

@@ -7,7 +7,7 @@ import {
 } from "@/actions/notifications";
 import type { CurrentUser } from "@/lib/auth/session";
 import { apiNotifications } from "@/lib/backend-api";
-import { canAccessCreator, getTopbarSectionsForRole } from "@/lib/navigation";
+import { getTopbarSectionsForRole } from "@/lib/navigation";
 
 type DashboardTopnavProps = {
   user: CurrentUser;
@@ -25,7 +25,6 @@ function initials(name: string): string {
 
 export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProps) {
   const topbarSections = getTopbarSectionsForRole(user.role);
-  const showCreator = canAccessCreator(user.role);
 
   let notifications: Awaited<ReturnType<typeof apiNotifications>> = {
     items: [],
@@ -56,7 +55,7 @@ export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProp
           </div>
 
           <div className="hidden flex-1 lg:block">
-            <form className="relative max-w-md" action="/dashboard/library" method="get">
+            <form className="relative max-w-md" action="/library" method="get">
               <label htmlFor="dashboard-search" className="sr-only">
                 Search lessons, quotes, and practices
               </label>
@@ -73,7 +72,7 @@ export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProp
 
           <div className="flex items-center gap-2">
             <Link
-              href="/dashboard/journal"
+              href="/journal"
               className="inline-flex items-center gap-2 rounded-xl border border-night-700 bg-night-900/80 px-3 py-2 text-xs text-sand-200 hover:border-night-600"
             >
               <Plus size={14} />
@@ -153,10 +152,10 @@ export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProp
               <div className="absolute right-0 mt-2 w-64 rounded-xl border border-night-700 bg-night-900/95 p-2 shadow-2xl">
                 <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Quick Actions</p>
                 <div className="mt-1 flex flex-col text-sm">
-                  <Link href="/dashboard/journal" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                  <Link href="/journal" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                     Capture a reflection
                   </Link>
-                  <Link href="/dashboard/practices" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                  <Link href="/practices" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                     Start a practice
                   </Link>
                   <Link href="/community/challenges" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
@@ -167,11 +166,11 @@ export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProp
             </details>
 
             <Link
-              href="/dashboard/chat"
+              href="/chat"
               className="hidden items-center gap-2 rounded-xl border border-sage-400/40 bg-sage-500/15 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20 sm:inline-flex"
             >
               <Sparkles size={14} />
-              AI Assist
+              Companion
             </Link>
 
             <details className="relative">
@@ -186,6 +185,21 @@ export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProp
                   <p className="text-xs text-night-300">{user.email}</p>
                 </div>
                 <div className="my-1 border-t border-night-700" />
+                <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Sections</p>
+                <div className="flex flex-col text-sm">
+                  {topbarSections.map((section) => (
+                    <Link
+                      key={section.id}
+                      href={section.href}
+                      aria-label={`Open ${section.label.toLowerCase()} section`}
+                      className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
+                    >
+                      {section.label}
+                    </Link>
+                  ))}
+                </div>
+                <div className="my-1 border-t border-night-700" />
+                <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Account</p>
                 <div className="flex flex-col text-sm">
                   <Link
                     href="/account"
@@ -194,22 +208,6 @@ export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProp
                   >
                     Account
                   </Link>
-                  <Link
-                    href="/community"
-                    aria-label="Open community section"
-                    className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
-                  >
-                    Community
-                  </Link>
-                  {showCreator ? (
-                    <Link
-                      href="/creator"
-                      aria-label="Open creator section"
-                      className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
-                    >
-                      Creator Studio
-                    </Link>
-                  ) : null}
                   <Link href="/account/settings" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                     Security Settings
                   </Link>
@@ -231,32 +229,6 @@ export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProp
                 </form>
               </div>
             </details>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <p className="px-1 text-[10px] uppercase tracking-[0.25em] text-night-300">Sections</p>
-          <div className="hidden gap-2 overflow-x-auto pb-1 lg:flex">
-            {topbarSections.map((section) => (
-              <Link
-                key={section.id}
-                href={section.href}
-                className="whitespace-nowrap rounded-xl border border-night-700 bg-night-900/70 px-3 py-1.5 text-xs text-sand-200 hover:border-night-600"
-              >
-                {section.label}
-              </Link>
-            ))}
-          </div>
-          <div className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
-            {topbarSections.map((section) => (
-              <Link
-                key={section.id}
-                href={section.href}
-                className="whitespace-nowrap rounded-xl border border-night-700 bg-night-900/70 px-3 py-1.5 text-xs text-sand-200"
-              >
-                {section.label}
-              </Link>
-            ))}
           </div>
         </div>
       </div>

@@ -19,7 +19,7 @@ export default async function CommunityEventsPage() {
           <SurfaceCard key={event.slug} title={event.title} subtitle={event.schedule}>
             <p className="text-sm text-night-200">{event.summary}</p>
             <Link
-              href={`/dashboard/journal?title=${encodeURIComponent(`Event Plan: ${event.title}`)}&mood=Focused`}
+              href={`/journal?title=${encodeURIComponent(`Event Plan: ${event.title}`)}&mood=Focused`}
               className="mt-4 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/10 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20"
             >
               Save plan

@@ -47,7 +47,7 @@ export async function createJournalEntry(
   }
 
   revalidatePath("/dashboard");
-  revalidatePath("/dashboard/journal");
+  revalidatePath("/journal");
 
   return {};
 }

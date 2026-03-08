@@ -21,14 +21,14 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "rm -f ./data/ataraxia.e2e.db && ATARAXIA_DB_PATH=./data/ataraxia.e2e.db npm run db:seed:library-practices && ATARAXIA_DB_PATH=./data/ataraxia.e2e.db API_PORT=43101 CORS_ORIGINS=http://localhost:43100 npm run dev:api",
+        "E2E_DB_PATH=$(pwd)/data/ataraxia.e2e.db && rm -f \"$E2E_DB_PATH\" && ATARAXIA_DB_PATH=\"$E2E_DB_PATH\" npm run db:seed:library-practices && ATARAXIA_DB_PATH=\"$E2E_DB_PATH\" API_PORT=43101 CORS_ORIGINS=http://localhost:43100 npm run dev:api",
       port: 43101,
       reuseExistingServer: false,
       timeout: 120000,
     },
     {
       command:
-        "rm -f ./apps/web/.next/dev/lock && API_BASE_URL=http://localhost:43101 NEXT_PUBLIC_API_BASE_URL=http://localhost:43101 npm run dev --workspace @ataraxia/web -- --port 43100",
+        "rm -rf ./apps/web/.next && API_BASE_URL=http://localhost:43101 NEXT_PUBLIC_API_BASE_URL=http://localhost:43101 npm run dev --workspace @ataraxia/web -- --port 43100",
       port: 43100,
       reuseExistingServer: false,
       timeout: 120000,

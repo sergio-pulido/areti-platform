@@ -4,6 +4,27 @@
   --font-sans: var(--font-body);
   --font-title: var(--font-title);
 
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.5rem;
+
+  --shadow-ui-soft: 0 10px 40px rgba(0, 0, 0, 0.24);
+  --shadow-ui-elevated: 0 18px 60px rgba(0, 0, 0, 0.32);
+
+  --motion-fast: 180ms;
+  --motion-medium: 320ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --focus-ring-color: color-mix(in srgb, var(--color-sage-300) 82%, white 18%);
+
   --color-night-950: #14110f;
   --color-night-900: #201a16;
   --color-night-800: #32281f;
@@ -23,6 +44,15 @@
   --color-sage-300: #a6c8a0;
   --color-sage-200: #d2e6cf;
   --color-sage-100: #eef7ec;
+
+  --color-surface-strong: color-mix(in srgb, var(--color-night-900) 88%, transparent);
+  --color-surface-muted: color-mix(in srgb, var(--color-night-950) 82%, transparent);
+  --color-surface-accent: color-mix(in srgb, var(--color-sage-500) 12%, var(--color-night-900));
+  --color-border-strong: color-mix(in srgb, var(--color-night-700) 80%, transparent);
+  --color-border-muted: color-mix(in srgb, var(--color-night-700) 52%, transparent);
+  --color-text-strong: var(--color-sand-100);
+  --color-text-muted: var(--color-night-200);
+  --color-text-subtle: var(--color-night-300);
 }
 
 :root {
@@ -47,7 +77,7 @@ body {
 }
 
 :where(a, button, input, select, textarea, summary):focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--color-sage-300) 82%, white 18%);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
 
@@ -64,4 +94,15 @@ body {
 
 @utility animate-fade-in-up {
   animation: fade-in-up 0.45s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
