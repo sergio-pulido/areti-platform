@@ -64,6 +64,7 @@ export const dashboardNavSections: NavSection[] = [
       },
       {
         href: "/library",
+        // Product copy option: consider "Lessons" once content taxonomy is fully lesson-first.
         label: "Library",
         icon: BookOpen,
         description: "Curated readings",

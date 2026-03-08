@@ -28,7 +28,7 @@ export function DashboardSidenav({ user }: DashboardSidenavProps) {
   }
 
   return (
-    <aside className="hidden w-80 shrink-0 border-r border-night-800/70 bg-night-950/90 p-6 lg:flex lg:flex-col lg:gap-8">
+    <aside className="hidden w-80 shrink-0 border-r border-night-700/70 bg-night-950/90 p-6 lg:flex lg:flex-col lg:gap-9">
       {activeSection.id === "account" ? null : (
         <div>
           <Link href="/dashboard" className="inline-block">
@@ -40,12 +40,12 @@ export function DashboardSidenav({ user }: DashboardSidenavProps) {
         </div>
       )}
 
-      <nav className="flex-1 space-y-4 overflow-y-auto pr-1">
-        <section className="space-y-2">
+      <nav className="flex-1 space-y-5 overflow-y-auto pr-1">
+        <section className="space-y-3">
           <div className="px-2">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-night-300">{activeSection.label}</p>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-night-200">{activeSection.label}</p>
             {activeSection.id === "account" ? null : (
-              <p className="mt-1 text-xs text-night-400">{activeSection.description}</p>
+              <p className="mt-1 text-xs text-night-300">{activeSection.description}</p>
             )}
           </div>
 
@@ -78,13 +78,13 @@ export function DashboardSidenav({ user }: DashboardSidenavProps) {
                     href={item.href}
                     className={`group flex items-center gap-3 rounded-xl border px-3 py-2 transition ${
                       isActive
-                        ? "border-sage-300/80 bg-sage-500/10"
-                        : "border-transparent hover:border-night-700 hover:bg-night-900/60"
+                        ? "border-sage-300/90 bg-sage-500/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                        : "border-transparent hover:border-night-600 hover:bg-night-900/60"
                     }`}
                   >
                     <span
                       className={`rounded-lg p-1.5 ${
-                        isActive ? "bg-sage-400/25 text-sage-100" : "bg-night-900 text-night-200"
+                        isActive ? "bg-sage-400/30 text-sage-100" : "bg-night-900 text-night-100"
                       }`}
                     >
                       <Icon size={16} />
@@ -95,7 +95,7 @@ export function DashboardSidenav({ user }: DashboardSidenavProps) {
               })}
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {activeSection.items.map((item) => {
                 const Icon = item.icon;
                 const isActive = isNavItemActive(pathname, item);
@@ -126,13 +126,13 @@ export function DashboardSidenav({ user }: DashboardSidenavProps) {
                     href={item.href}
                     className={`group flex items-start gap-3 rounded-2xl border px-3 py-3 transition ${
                       isActive
-                        ? "border-sage-300/80 bg-sage-500/10"
-                        : "border-transparent hover:border-night-700 hover:bg-night-900/60"
+                        ? "border-sage-300/90 bg-sage-500/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                        : "border-transparent hover:border-night-600 hover:bg-night-900/60"
                     }`}
                   >
                     <span
                       className={`mt-0.5 rounded-lg p-1.5 ${
-                        isActive ? "bg-sage-400/25 text-sage-100" : "bg-night-900 text-night-200"
+                        isActive ? "bg-sage-400/30 text-sage-100" : "bg-night-900 text-night-100"
                       }`}
                     >
                       <Icon size={16} />

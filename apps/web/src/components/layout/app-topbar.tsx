@@ -128,14 +128,14 @@ export async function AppTopbar({ user, accessToken, guestAuthSwitch }: AppTopba
         <div className="hidden flex-1 lg:block">
           <form className="relative max-w-md" action="/library" method="get">
             <label htmlFor="dashboard-search" className="sr-only">
-              Search lessons, quotes, and practices
+              Search lessons, practices, reflections, or jump to Companion
             </label>
             <Search className="pointer-events-none absolute left-3 top-2.5 text-night-200" size={16} />
             <input
               id="dashboard-search"
               type="search"
               name="q"
-              placeholder="Search lessons, quotes, practices..."
+              placeholder="Search lessons, practices, reflections, or jump..."
               className="w-full rounded-xl border border-night-700 bg-night-900/70 py-2 pl-9 pr-4 text-sm text-sand-100 placeholder:text-night-300 focus:border-sage-300 focus:outline-none"
             />
           </form>
@@ -281,14 +281,14 @@ export async function AppTopbar({ user, accessToken, guestAuthSwitch }: AppTopba
                       <p className="text-sm font-semibold text-sand-100">Search</p>
                       <form action="/library" method="get" className="mt-3">
                         <label htmlFor="mobile-dashboard-search" className="sr-only">
-                          Search lessons, quotes, and practices
+                          Search lessons, practices, reflections, or jump to Companion
                         </label>
                         <input
                           id="mobile-dashboard-search"
                           type="search"
                           name="q"
                           autoFocus
-                          placeholder="Search lessons, quotes, practices..."
+                          placeholder="Search lessons, practices, reflections, or jump..."
                           className="w-full rounded-xl border border-night-700 bg-night-950 py-2 px-3 text-sm text-sand-100 placeholder:text-night-300 focus:border-sage-300 focus:outline-none"
                         />
                         <button

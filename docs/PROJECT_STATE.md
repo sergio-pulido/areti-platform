@@ -3,6 +3,7 @@
 ## Current Status
 - Monorepo architecture is active with frontend (`apps/web`), backend (`apps/api`), and shared DB/ORM (`packages/db`).
 - Canonical section routing is active (`/dashboard` overview, standalone personal tools at `/chat`, `/journal`, `/library`, `/practices`, plus `/community/*`, `/creator/*`, `/account/*`) with contextual sidebars and topbar section entry.
+- Dashboard home (`/dashboard`) is now action-first: dominant "next step" hero, "Today for you" shortcut actions, continuity resume list, structured reflections, contextual Companion panel, lightweight progress signals, and conditional-only account nudges.
 - Chat now operates as a dedicated top-level Companion section with section-specific sidebar controls (new thread + active thread history).
 - Companion now uses draft-first thread creation: clicking `New thread` returns to `/chat` draft mode, and a DB thread is created only when the first message is sent.
 - First-message chat flow now auto-titles untitled threads after assistant response, then persists that title in thread history.
@@ -101,7 +102,8 @@
   - Simplified signup contract in UI to `email + password + acceptLegal`, with live password criteria checklist and show/hide password controls on both sign-in and signup.
   - Added `/auth/verify-email` flow and enforced onboarding completion routing before secured shell access.
   - Added global cookie consent banner with acceptance persistence and app-route gate redirect behavior.
-  - Replaced page-specific headers with a shared AppTopbar (guest + authenticated variants with mobile action handling).
+- Replaced page-specific headers with a shared AppTopbar (guest + authenticated variants with mobile action handling).
+- Updated topbar search language toward command-palette intent ("search or jump"), including desktop and mobile search prompts.
   - Moved secured-shell topbar out of content column so it spans full page width on authenticated routes.
   - Refocused account sidenav on profile/settings only and canonicalized policy links to `/legal/*`.
   - Upgraded `/account` to a richer account overview with security/device/notification status and common account actions.
@@ -122,7 +124,8 @@
 - Deferred routes exist but are intentionally hidden from account navigation until promoted to core scope.
   - Split account settings responsibilities across focused pages while preserving existing security actions and notification actions.
   - Replaced placeholder account forms with persisted forms for profile/contact/professional/settings/password/danger/notifications.
-  - Removed redundant sidebar user cards from personal and companion side navigation.
+- Removed redundant sidebar user cards from personal and companion side navigation.
+- Increased sidebar active-state contrast and spacing for clearer section wayfinding in the secured shell.
   - Account settings now include:
     - TOTP manager
     - passkey inventory with rename/revoke

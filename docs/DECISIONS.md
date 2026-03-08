@@ -258,6 +258,12 @@
 - **Why:** Preserves architectural coherence, minimizes unnecessary endpoints, and keeps implementation aligned with existing backend ownership and schema patterns.
 - **Tradeoff:** Deferred sections stay intentionally disabled/visible (“Coming soon”) until product scope promotes them.
 
+## 2026-03-08 - Dashboard shifted from stats-first to action-first daily hub
+- **Context:** The dashboard looked premium but prioritized passive metrics over immediate user action, reducing fast time-to-value on return visits.
+- **Decision:** Redesign `/dashboard` around a dominant next-step recommendation, actionable daily shortcuts, continuity/resume content, structured reflections, contextual Companion prompts, lightweight practical progress, and conditional account nudges.
+- **Why:** Aligns homepage behavior with retention and daily engagement goals by answering "what should I do now?" in under 10 seconds.
+- **Tradeoff:** Some progress signals are currently heuristic/mocked until deeper lesson/practice progress APIs are available.
+
 ## 2026-03-08 - Consolidate profile UX for personal-use product fit
 - **Context:** Splitting profile into main/extra/contact/professional tabs reflected a copied enterprise/community pattern and did not match this app’s personal-use scope.
 - **Decision:** Collapse account identity editing into a single `/account/profile` tab and remove extra/professional profile sections from account navigation (legacy routes redirect to profile).
