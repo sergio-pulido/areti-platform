@@ -208,13 +208,13 @@ export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProp
                   >
                     Account
                   </Link>
-                  <Link href="/account/settings" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
-                    Security Settings
+                  <Link href="/account/security" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                    Security
                   </Link>
-                  <Link href="/account/privacy" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                  <Link href="/legal/privacy" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                     Privacy Policy
                   </Link>
-                  <Link href="/account/terms" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                  <Link href="/legal/terms" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                     Terms
                   </Link>
                 </div>

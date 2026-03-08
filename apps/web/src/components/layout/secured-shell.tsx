@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { requireSession, type SessionContext } from "@/lib/auth/session";
+import { requireOnboardedSession, type SessionContext } from "@/lib/auth/session";
 import { DashboardSidenav } from "@/components/layout/dashboard-sidenav";
-import { DashboardTopnav } from "@/components/layout/dashboard-topnav";
+import { AppTopbar } from "@/components/layout/app-topbar";
 
 type SecuredShellProps = {
   children: ReactNode;
@@ -9,18 +9,16 @@ type SecuredShellProps = {
 };
 
 export async function SecuredShell({ children, session: providedSession }: SecuredShellProps) {
-  const session = providedSession ?? (await requireSession());
+  const session = providedSession ?? (await requireOnboardedSession());
   const user = session.user;
 
   return (
     <div className="min-h-screen bg-night-950 text-sand-100">
-      <div className="mx-auto flex min-h-screen max-w-[1600px]">
+      <AppTopbar user={user} accessToken={session.accessToken} />
+      <div className="flex min-h-[calc(100vh-56px)] w-full">
         <DashboardSidenav user={user} />
 
-        <div className="flex min-h-screen w-full flex-col">
-          <DashboardTopnav user={user} accessToken={session.accessToken} />
-          <main className="flex-1 px-4 py-6 lg:px-8">{children}</main>
-        </div>
+        <main className="flex-1 px-4 py-6 lg:px-8">{children}</main>
       </div>
     </div>
   );

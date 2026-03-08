@@ -97,6 +97,50 @@ export function SignupForm() {
         ) : null}
       </div>
 
+      <div className="space-y-1">
+        <label className="flex items-start gap-2 text-sm text-sand-200">
+          <input
+            type="checkbox"
+            name="acceptTerms"
+            value="true"
+            required
+            className="mt-1 h-4 w-4 rounded border-night-600 bg-night-900 text-sage-300"
+          />
+          <span>
+            I accept the{" "}
+            <Link href="/legal/terms" className="text-sage-200 hover:text-sage-100">
+              Terms and Conditions
+            </Link>
+            .
+          </span>
+        </label>
+        {state.fieldErrors?.acceptTerms?.[0] ? (
+          <p className="text-xs text-amber-300">{state.fieldErrors.acceptTerms[0]}</p>
+        ) : null}
+      </div>
+
+      <div className="space-y-1">
+        <label className="flex items-start gap-2 text-sm text-sand-200">
+          <input
+            type="checkbox"
+            name="acceptPrivacy"
+            value="true"
+            required
+            className="mt-1 h-4 w-4 rounded border-night-600 bg-night-900 text-sage-300"
+          />
+          <span>
+            I accept the{" "}
+            <Link href="/legal/privacy" className="text-sage-200 hover:text-sage-100">
+              Privacy Policy
+            </Link>
+            .
+          </span>
+        </label>
+        {state.fieldErrors?.acceptPrivacy?.[0] ? (
+          <p className="text-xs text-amber-300">{state.fieldErrors.acceptPrivacy[0]}</p>
+        ) : null}
+      </div>
+
       {state.error ? <p className="text-sm text-amber-300">{state.error}</p> : null}
 
       <SubmitButton />

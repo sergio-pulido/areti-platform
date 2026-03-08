@@ -18,6 +18,8 @@ export type CurrentUser = {
   name: string;
   email: string;
   role: "MEMBER" | "ADMIN";
+  emailVerifiedAt: string | null;
+  onboardingCompletedAt: string | null;
 };
 
 type SessionTokens = {
@@ -248,4 +250,14 @@ export async function requireSession(): Promise<SessionContext> {
 export async function requireUser(): Promise<CurrentUser> {
   const session = await requireSession();
   return session.user;
+}
+
+export async function requireOnboardedSession(): Promise<SessionContext> {
+  const session = await requireSession();
+
+  if (!session.user.onboardingCompletedAt) {
+    redirect("/onboarding");
+  }
+
+  return session;
 }

@@ -24,6 +24,8 @@ Monorepo for a Stoic + Epicurean philosophy platform with a separated frontend, 
 
 ### Auth
 - `POST /api/v1/auth/signup`
+- `POST /api/v1/auth/verify-email`
+- `POST /api/v1/auth/resend-verification`
 - `POST /api/v1/auth/signin`
 - `POST /api/v1/auth/refresh`
 - `POST /api/v1/auth/passkey/options`
@@ -48,6 +50,8 @@ Monorepo for a Stoic + Epicurean philosophy platform with a separated frontend, 
 - `POST /api/v1/chat/threads/:id/messages`
 
 ### User Data
+- `GET /api/v1/onboarding`
+- `PUT /api/v1/onboarding`
 - `GET /api/v1/dashboard/summary`
 - `GET /api/v1/journal?limit=...`
 - `POST /api/v1/journal`
@@ -155,6 +159,9 @@ Services:
 - `OPENAI_CHAT_MODEL` (default: `gpt-4.1-mini`)
 - `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
 - `CHAT_GLOBAL_SYSTEM_PROMPT` (optional override for Ataraxia global Companion doctrine/system prompt)
+- `WEB_APP_URL` (canonical web origin used in verification links)
+- `RESEND_API_KEY` (Resend API key for verification email delivery)
+- `RESEND_FROM_EMAIL` (verified sender identity for Resend email delivery)
 
 Chat provider keys are read by `apps/api` from process environment on startup.
 
@@ -163,5 +170,6 @@ For local `npm run dev`, the API now auto-loads `.env` from `apps/api/.env` and 
 
 Companion prompt behavior:
 - A fixed Ataraxia global system prompt is always applied first.
+- Onboarding profile context is injected before user custom instructions.
 - Users can add account-level custom Companion instructions in `/account/settings` under **Companion preferences**.
 - User instructions are appended after the global prompt and cannot override safety/mission constraints.

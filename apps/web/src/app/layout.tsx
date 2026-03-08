@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, Space_Grotesk } from "next/font/google";
+import { CookieConsentBanner } from "@/components/legal/cookie-consent-banner";
 import "./globals.css";
 
 const titleFont = Cormorant_Garamond({
@@ -27,7 +28,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${titleFont.variable} ${bodyFont.variable} antialiased`}>{children}</body>
+      <body className={`${titleFont.variable} ${bodyFont.variable} antialiased`}>
+        {children}
+        <CookieConsentBanner />
+      </body>
     </html>
   );
 }

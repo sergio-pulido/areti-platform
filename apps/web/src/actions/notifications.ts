@@ -23,6 +23,7 @@ function revalidateShell(): void {
   revalidatePath("/community");
   revalidatePath("/creator");
   revalidatePath("/account");
+  revalidatePath("/account/notifications");
 }
 
 export async function markNotificationReadAction(formData: FormData): Promise<void> {

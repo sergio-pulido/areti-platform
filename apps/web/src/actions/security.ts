@@ -32,6 +32,8 @@ function parseString(formData: FormData, key: string): string {
 }
 
 function revalidateSecurityViews(): void {
+  revalidatePath("/account/security");
+  revalidatePath("/account/sessions");
   revalidatePath("/account/settings");
   revalidatePath("/account");
 }

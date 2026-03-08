@@ -11,6 +11,7 @@ const testDbPath = path.join(repoRoot, "data", "ataraxia.integration.db");
 let app: import("express").Express;
 let adminToken = "";
 let adminRefreshToken = "";
+const adminEmail = "admin@example.com";
 
 beforeAll(async () => {
   mkdirSync(path.dirname(testDbPath), { recursive: true });
@@ -32,21 +33,52 @@ afterAll(() => {
 });
 
 describe("API integration", () => {
-  it("signs up first user as admin and returns auth token pair", async () => {
+  it("requires legal consent during signup", async () => {
     const response = await request(app).post("/api/v1/auth/signup").send({
       name: "Admin User",
-      email: "admin@example.com",
+      email: adminEmail,
       password: "StrongPass123",
       confirmPassword: "StrongPass123",
     });
 
-    expect(response.status).toBe(201);
-    expect(response.body.data.user.role).toBe("ADMIN");
-    expect(typeof response.body.data.accessToken).toBe("string");
-    expect(typeof response.body.data.refreshToken).toBe("string");
+    expect(response.status).toBe(400);
+  });
 
-    adminToken = response.body.data.accessToken;
-    adminRefreshToken = response.body.data.refreshToken;
+  it("signs up with verification-required response, blocks signin until verified, then verifies and returns auth token pair", async () => {
+    const response = await request(app).post("/api/v1/auth/signup").send({
+      name: "Admin User",
+      email: adminEmail,
+      password: "StrongPass123",
+      confirmPassword: "StrongPass123",
+      acceptTerms: true,
+      acceptPrivacy: true,
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.verificationRequired).toBe(true);
+    expect(typeof response.body.data.debugVerificationCode).toBe("string");
+    expect(typeof response.body.data.debugVerificationToken).toBe("string");
+
+    const blockedSignin = await request(app).post("/api/v1/auth/signin").send({
+      email: adminEmail,
+      password: "StrongPass123",
+    });
+    expect(blockedSignin.status).toBe(401);
+    expect(blockedSignin.body.error).toBe("EMAIL_NOT_VERIFIED");
+
+    const verification = await request(app).post("/api/v1/auth/verify-email").send({
+      token: "stale_token_value_which_is_long_enough",
+      email: adminEmail,
+      code: response.body.data.debugVerificationCode,
+    });
+
+    expect(verification.status).toBe(200);
+    expect(verification.body.data.user.role).toBe("ADMIN");
+    expect(typeof verification.body.data.accessToken).toBe("string");
+    expect(typeof verification.body.data.refreshToken).toBe("string");
+
+    adminToken = verification.body.data.accessToken;
+    adminRefreshToken = verification.body.data.refreshToken;
   });
 
   it("rotates refresh token and invalidates previous refresh session", async () => {
@@ -68,9 +100,92 @@ describe("API integration", () => {
     adminRefreshToken = refreshed.body.data.refreshToken;
   });
 
+  it("supports onboarding read/write and completion metadata", async () => {
+    const initial = await request(app)
+      .get("/api/v1/onboarding")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(initial.status).toBe(200);
+    expect(initial.body.data.profile).toBeNull();
+    expect(initial.body.data.onboardingCompletedAt).toBeNull();
+
+    const saved = await request(app)
+      .put("/api/v1/onboarding")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        primaryObjective: "Calm anxiety",
+        biggestDifficulty: "Overthinking",
+        mainNeed: "Clarity",
+        dailyTimeCommitment: "10 min",
+        coachingStyle: "Direct",
+        contemplativeExperience: "New",
+        preferredPracticeFormat: "Mixed",
+        successDefinition30d: "Greater inner calm",
+        notes: "Need focused weekday routines.",
+      });
+
+    expect(saved.status).toBe(200);
+    expect(saved.body.data.profile.primaryObjective).toBe("Calm anxiety");
+    expect(typeof saved.body.data.onboardingCompletedAt).toBe("string");
+
+    const me = await request(app)
+      .get("/api/v1/auth/me")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(me.status).toBe(200);
+    expect(typeof me.body.data.user.onboardingCompletedAt).toBe("string");
+    expect(typeof me.body.data.profile.id).toBe("string");
+    expect(typeof me.body.data.preferences.id).toBe("string");
+    expect(typeof me.body.data.preferences.language).toBe("string");
+  });
+
+  it("patches account profile and preferences with persistence", async () => {
+    const patchMe = await request(app)
+      .patch("/api/v1/auth/me")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        name: "Admin Updated",
+        profile: {
+          username: "admin_updated",
+          summary: "Focused on practical stoicism.",
+          phone: "+1 555 123 4567",
+          city: "New York",
+          country: "US",
+          socialLinks: [
+            { label: "Website", url: "https://example.com" },
+            { label: "LinkedIn", url: "https://linkedin.com/in/example" },
+          ],
+        },
+        preferences: {
+          language: "es",
+          timezone: "Europe/Madrid",
+          profileVisibility: "contacts",
+          showEmail: true,
+          showPhone: true,
+          allowContact: false,
+        },
+      });
+
+    expect(patchMe.status).toBe(200);
+    expect(patchMe.body.data.user.name).toBe("Admin Updated");
+    expect(patchMe.body.data.profile.username).toBe("admin_updated");
+    expect(patchMe.body.data.profile.city).toBe("New York");
+    expect(patchMe.body.data.preferences.language).toBe("es");
+    expect(patchMe.body.data.preferences.profileVisibility).toBe("contacts");
+    expect(patchMe.body.data.preferences.allowContact).toBe(false);
+
+    const meAfterPatch = await request(app)
+      .get("/api/v1/auth/me")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(meAfterPatch.status).toBe(200);
+    expect(meAfterPatch.body.data.user.name).toBe("Admin Updated");
+    expect(meAfterPatch.body.data.profile.username).toBe("admin_updated");
+    expect(meAfterPatch.body.data.profile.city).toBe("New York");
+    expect(meAfterPatch.body.data.preferences.timezone).toBe("Europe/Madrid");
+  });
+
   it("exposes passkey option endpoints with expected auth boundaries", async () => {
     const unauthenticatedPasskeyOptions = await request(app).post("/api/v1/auth/passkey/options").send({
-      email: "admin@example.com",
+      email: adminEmail,
     });
 
     expect(unauthenticatedPasskeyOptions.status).toBe(401);
@@ -132,6 +247,149 @@ describe("API integration", () => {
       .send({});
 
     expect(readAll.status).toBe(200);
+  });
+
+  it("supports notification preferences read/write roundtrip", async () => {
+    const initial = await request(app)
+      .get("/api/v1/notifications/preferences")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(initial.status).toBe(200);
+    expect(typeof initial.body.data.emailChallenges).toBe("boolean");
+    expect(typeof initial.body.data.pushUpdates).toBe("boolean");
+
+    const updated = await request(app)
+      .patch("/api/v1/notifications/preferences")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        emailChallenges: false,
+        emailEvents: true,
+        emailUpdates: false,
+        emailMarketing: true,
+        pushChallenges: false,
+        pushEvents: true,
+        pushUpdates: false,
+        digest: "weekly",
+      });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.data.emailChallenges).toBe(false);
+    expect(updated.body.data.pushUpdates).toBe(false);
+    expect(updated.body.data.digest).toBe("weekly");
+
+    const after = await request(app)
+      .get("/api/v1/notifications/preferences")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(after.status).toBe(200);
+    expect(after.body.data.emailChallenges).toBe(false);
+    expect(after.body.data.pushUpdates).toBe(false);
+    expect(after.body.data.digest).toBe("weekly");
+  });
+
+  it("validates and updates password through change-password endpoint", async () => {
+    const wrongCurrent = await request(app)
+      .post("/api/v1/auth/change-password")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        oldPassword: "WrongPass123",
+        newPassword: "NewStrongPass123",
+        confirmPassword: "NewStrongPass123",
+      });
+
+    expect(wrongCurrent.status).toBe(401);
+
+    const weakOrMismatched = await request(app)
+      .post("/api/v1/auth/change-password")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        oldPassword: "StrongPass123",
+        newPassword: "weak",
+        confirmPassword: "different",
+      });
+
+    expect(weakOrMismatched.status).toBe(400);
+
+    const changed = await request(app)
+      .post("/api/v1/auth/change-password")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        oldPassword: "StrongPass123",
+        newPassword: "StrongPass456",
+        confirmPassword: "StrongPass456",
+      });
+
+    expect(changed.status).toBe(200);
+
+    const oldSignin = await request(app).post("/api/v1/auth/signin").send({
+      email: adminEmail,
+      password: "StrongPass123",
+    });
+    expect(oldSignin.status).toBe(401);
+
+    const newSignin = await request(app).post("/api/v1/auth/signin").send({
+      email: adminEmail,
+      password: "StrongPass456",
+    });
+    expect(newSignin.status).toBe(200);
+    expect(typeof newSignin.body.data.accessToken).toBe("string");
+  });
+
+  it("deletes account with confirmation and blocks future authentication", async () => {
+    const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const email = `delete+${unique}@example.com`;
+
+    const signup = await request(app).post("/api/v1/auth/signup").send({
+      name: "Delete Me",
+      email,
+      password: "DeletePass123",
+      confirmPassword: "DeletePass123",
+      acceptTerms: true,
+      acceptPrivacy: true,
+    });
+
+    expect(signup.status).toBe(201);
+    const code = signup.body.data.debugVerificationCode as string;
+
+    const verify = await request(app).post("/api/v1/auth/verify-email").send({
+      email,
+      code,
+    });
+
+    expect(verify.status).toBe(200);
+    const token = verify.body.data.accessToken as string;
+
+    const wrongDelete = await request(app)
+      .post("/api/v1/auth/delete")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        emailConfirm: email,
+        passwordConfirm: "WrongDeletePass",
+      });
+
+    expect(wrongDelete.status).toBe(401);
+
+    const deleteResult = await request(app)
+      .post("/api/v1/auth/delete")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        emailConfirm: email,
+        passwordConfirm: "DeletePass123",
+      });
+
+    expect(deleteResult.status).toBe(200);
+    expect(deleteResult.body.data.deleted).toBe(true);
+
+    const meAfterDelete = await request(app)
+      .get("/api/v1/auth/me")
+      .set("Authorization", `Bearer ${token}`);
+    expect(meAfterDelete.status).toBe(401);
+
+    const signinAfterDelete = await request(app).post("/api/v1/auth/signin").send({
+      email,
+      password: "DeletePass123",
+    });
+    expect(signinAfterDelete.status).toBe(401);
   });
 
   it("supports persisted chat threads and messages", async () => {

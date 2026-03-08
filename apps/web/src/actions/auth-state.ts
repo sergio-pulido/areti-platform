@@ -4,6 +4,7 @@ export type AuthActionState = {
   mfaRequired?: boolean;
   mfaChallengeId?: string;
   email?: string;
+  unverifiedEmail?: string;
   fieldErrors?: Record<string, string[]>;
 };
 

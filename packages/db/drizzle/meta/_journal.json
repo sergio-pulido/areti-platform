@@ -36,6 +36,27 @@
       "when": 1772962368909,
       "tag": "0004_careful_guardsmen",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1773025200000,
+      "tag": "0005_brisk_lionheart",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1773029400000,
+      "tag": "0006_still_account_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1773030600000,
+      "tag": "0007_steady_account_profile_cleanup",
+      "breakpoints": true
     }
   ]
 }

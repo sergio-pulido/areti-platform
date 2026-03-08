@@ -16,6 +16,10 @@ async function openUserMenu(page: Page): Promise<void> {
 
 async function signupAndGoDashboard(page: Page): Promise<void> {
   await page.goto("/auth/signup");
+  const cookieAccept = page.getByRole("button", { name: "Accept cookies" });
+  if (await cookieAccept.count()) {
+    await cookieAccept.first().click();
+  }
 
   const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const email = `user+${uniqueId}@example.com`;
@@ -24,9 +28,30 @@ async function signupAndGoDashboard(page: Page): Promise<void> {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill("StrongPass123");
   await page.getByLabel("Confirm Password").fill("StrongPass123");
+  await page
+    .getByRole("checkbox", { name: /I accept the Terms and Conditions/i })
+    .check();
+  await page
+    .getByRole("checkbox", { name: /I accept the Privacy Policy/i })
+    .check();
 
   await page.getByRole("button", { name: "Create Account" }).click();
+  await expectUrl(page, /\/auth\/verify-email/);
+  await page.getByRole("button", { name: "Verify Email" }).click();
+  await expectUrl(page, /\/onboarding/);
 
+  await page.getByLabel("Primary objective").selectOption("Calm anxiety");
+  await page.getByLabel("Current biggest difficulty").selectOption("Overthinking");
+  await page.getByLabel("Main need right now").selectOption("Clarity");
+  await page.getByLabel("Daily time available").selectOption("10 min");
+  await page.getByLabel("Preferred coaching style").selectOption("Direct");
+  await page
+    .getByLabel("Experience with contemplative practice")
+    .selectOption("New");
+  await page.getByLabel("Preferred practice format").selectOption("Mixed");
+  await page.getByLabel("30-day success definition").selectOption("Greater inner calm");
+
+  await page.getByRole("button", { name: "Continue to dashboard" }).click();
   await expectUrl(page, /\/dashboard/);
 }
 
@@ -61,6 +86,14 @@ test("landing loads API content and signup reaches dashboard", async ({ page }) 
   } else {
     await expect(page.getByRole("link", { name: "Open creator section" })).toHaveCount(0);
   }
+});
+
+test("cookie consent gate redirects protected routes until accepted", async ({ page }) => {
+  await page.goto("/dashboard");
+  await expectUrl(page, /\/legal\/cookies\?next=/);
+  await page.getByRole("button", { name: "Accept cookies" }).click();
+  await page.goto("/dashboard");
+  await expectUrl(page, /\/auth\/signin/);
 });
 
 test("dashboard CTAs remain clickable and route to actionable flows", async ({ page }) => {
@@ -182,4 +215,113 @@ test("section sidebars are isolated across personal, community, and account sect
     await expect(page.getByRole("link", { name: "Open creator section" })).toHaveCount(0);
     await expect(sidebar.getByRole("link", { name: "CMS" })).toHaveCount(0);
   }
+});
+
+test("account settings and profile fields persist after save", async ({ page }) => {
+  await signupAndGoDashboard(page);
+
+  await page.goto("/account/settings");
+  await page.getByLabel("Language").selectOption("es");
+  await page.getByLabel("Timezone").fill("America/New_York");
+  await page.getByLabel("Profile visibility").selectOption("contacts");
+  await page.getByRole("checkbox", { name: "Show email on profile" }).check();
+  await page.getByRole("checkbox", { name: "Show phone on profile" }).check();
+  await page.getByRole("checkbox", { name: "Allow direct contact requests" }).uncheck();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page).toHaveURL(/\/account\/settings\?saved=1/, { timeout: 15000 });
+  await page.goto("/account/settings");
+  await expect(page.getByLabel("Timezone")).toHaveValue("America/New_York");
+  await expect(page.getByLabel("Profile visibility")).toHaveValue("contacts");
+
+  await page.goto("/account/profile");
+  await page.getByLabel("Name", { exact: true }).fill("Persisted Name");
+  await page.getByLabel("Username").fill("persisted_user");
+  await page.getByLabel("Summary").fill("Profile persistence check.");
+  await page.getByLabel("Phone").fill("+1 555 444 3333");
+  await page.getByLabel("City").fill("Barcelona");
+  await page.getByLabel("Country").fill("ES");
+  await page.getByLabel("Website").fill("https://example.com");
+  await page.getByRole("button", { name: "Save profile" }).click();
+  await expect(page).toHaveURL(/\/account\/profile\?saved=1/, { timeout: 15000 });
+  await page.goto("/account/profile");
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Persisted Name");
+  await expect(page.getByLabel("Username")).toHaveValue("persisted_user");
+  await expect(page.getByLabel("Phone")).toHaveValue("+1 555 444 3333");
+  await expect(page.getByLabel("City")).toHaveValue("Barcelona");
+});
+
+test("coming soon account tabs are hidden", async ({ page }) => {
+  await signupAndGoDashboard(page);
+  await page.goto("/account");
+
+  const sidebar = page.locator("aside");
+  await expect(sidebar.getByText(/Feedback/i)).toHaveCount(0);
+  await expect(sidebar.getByText(/Likes/i)).toHaveCount(0);
+  await expect(sidebar.getByText(/Favourites/i)).toHaveCount(0);
+  await expect(sidebar.getByText(/Comments/i)).toHaveCount(0);
+  await expect(sidebar.getByText(/Documents/i)).toHaveCount(0);
+  await expect(sidebar.getByText(/Coming soon/i)).toHaveCount(0);
+});
+
+test("account password flow validates failure and success", async ({ page }) => {
+  const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const email = `password+${uniqueId}@example.com`;
+  const oldPassword = "StrongPass123";
+  const newPassword = "StrongPass456";
+
+  await page.goto("/auth/signup");
+  const cookieAccept = page.getByRole("button", { name: "Accept cookies" });
+  if (await cookieAccept.count()) {
+    await cookieAccept.first().click();
+  }
+
+  await page.getByLabel("Name").fill("Password User");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password", { exact: true }).fill(oldPassword);
+  await page.getByLabel("Confirm Password").fill(oldPassword);
+  await page.getByRole("checkbox", { name: /I accept the Terms and Conditions/i }).check();
+  await page.getByRole("checkbox", { name: /I accept the Privacy Policy/i }).check();
+  await page.getByRole("button", { name: "Create Account" }).click();
+  await expectUrl(page, /\/auth\/verify-email/);
+  await page.getByRole("button", { name: "Verify Email" }).click();
+  await expectUrl(page, /\/onboarding/);
+
+  await page.getByLabel("Primary objective").selectOption("Calm anxiety");
+  await page.getByLabel("Current biggest difficulty").selectOption("Overthinking");
+  await page.getByLabel("Main need right now").selectOption("Clarity");
+  await page.getByLabel("Daily time available").selectOption("10 min");
+  await page.getByLabel("Preferred coaching style").selectOption("Direct");
+  await page.getByLabel("Experience with contemplative practice").selectOption("New");
+  await page.getByLabel("Preferred practice format").selectOption("Mixed");
+  await page.getByLabel("30-day success definition").selectOption("Greater inner calm");
+  await page.getByRole("button", { name: "Continue to dashboard" }).click();
+  await expectUrl(page, /\/dashboard/);
+
+  await page.goto("/account/password");
+  await page.getByLabel("Current password").fill("wrong-pass");
+  await page.getByLabel("New password", { exact: true }).fill(newPassword);
+  await page.getByLabel("Confirm new password").fill(newPassword);
+  await page.getByRole("button", { name: "Update password" }).click();
+  await expect(page).toHaveURL(/\/account\/password\?error=/, { timeout: 15000 });
+
+  await page.goto("/account/password");
+  await page.getByLabel("Current password").fill(oldPassword);
+  await page.getByLabel("New password", { exact: true }).fill(newPassword);
+  await page.getByLabel("Confirm new password").fill(newPassword);
+  await page.getByRole("button", { name: "Update password" }).click();
+  await expect(page).toHaveURL(/\/account\/password\?saved=1/, { timeout: 15000 });
+
+  await page.getByLabel("Open user menu").click();
+  await page.getByRole("button", { name: "Logout" }).click();
+  await expectUrl(page, /\/$/);
+  await page.goto("/auth/signin");
+
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(oldPassword);
+  await page.getByRole("button", { name: "Sign In", exact: true }).click();
+  await expect(page.getByText("Invalid email or password.")).toBeVisible();
+
+  await page.getByLabel("Password").fill(newPassword);
+  await page.getByRole("button", { name: "Sign In", exact: true }).click();
+  await expectUrl(page, /\/dashboard/);
 });

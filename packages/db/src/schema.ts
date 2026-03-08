@@ -1,7 +1,8 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export type UserRole = "MEMBER" | "ADMIN";
 export type ContentStatus = "DRAFT" | "PUBLISHED";
+export type LegalPolicyType = "TERMS" | "PRIVACY";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -11,6 +12,124 @@ export const users = sqliteTable("users", {
   role: text("role").$type<UserRole>().notNull().default("MEMBER"),
   mfaEnabled: integer("mfa_enabled", { mode: "boolean" }).notNull().default(false),
   passkeyEnabled: integer("passkey_enabled", { mode: "boolean" }).notNull().default(false),
+  emailVerifiedAt: text("email_verified_at"),
+  onboardingCompletedAt: text("onboarding_completed_at"),
+  deletedAt: text("deleted_at"),
+  anonymizedAt: text("anonymized_at"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const userProfiles = sqliteTable("user_profiles", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  username: text("username"),
+  summary: text("summary").notNull().default(""),
+  phone: text("phone").notNull().default(""),
+  city: text("city").notNull().default(""),
+  country: text("country").notNull().default(""),
+  socialLinksJson: text("social_links_json").notNull().default("[]"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const userPreferences = sqliteTable("user_preferences", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  language: text("language").notNull().default("en"),
+  timezone: text("timezone").notNull().default("UTC"),
+  profileVisibility: text("profile_visibility").notNull().default("private"),
+  showEmail: integer("show_email", { mode: "boolean" }).notNull().default(false),
+  showPhone: integer("show_phone", { mode: "boolean" }).notNull().default(false),
+  allowContact: integer("allow_contact", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const userNotificationPreferences = sqliteTable("user_notification_preferences", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  emailChallenges: integer("email_challenges", { mode: "boolean" }).notNull().default(true),
+  emailEvents: integer("email_events", { mode: "boolean" }).notNull().default(true),
+  emailUpdates: integer("email_updates", { mode: "boolean" }).notNull().default(true),
+  emailMarketing: integer("email_marketing", { mode: "boolean" }).notNull().default(false),
+  pushChallenges: integer("push_challenges", { mode: "boolean" }).notNull().default(true),
+  pushEvents: integer("push_events", { mode: "boolean" }).notNull().default(false),
+  pushUpdates: integer("push_updates", { mode: "boolean" }).notNull().default(true),
+  digest: text("digest").notNull().default("immediate"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const userDeletionAudit = sqliteTable("user_deletion_audit", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  reason: text("reason").notNull(),
+  deletedAt: text("deleted_at").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const userLegalConsents = sqliteTable(
+  "user_legal_consents",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    policyType: text("policy_type").$type<LegalPolicyType>().notNull(),
+    policyVersion: text("policy_version").notNull(),
+    acceptedAt: text("accepted_at").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => ({
+    userPolicyVersionUnique: uniqueIndex("user_legal_consents_user_policy_version_unique").on(
+      table.userId,
+      table.policyType,
+      table.policyVersion,
+    ),
+  }),
+);
+
+export const emailVerificationChallenges = sqliteTable("email_verification_challenges", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull(),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at").notNull(),
+  consumedAt: text("consumed_at"),
+  lastSentAt: text("last_sent_at").notNull(),
+  sendCount: integer("send_count").notNull().default(1),
+});
+
+export const userOnboardingProfiles = sqliteTable("user_onboarding_profiles", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  primaryObjective: text("primary_objective").notNull(),
+  biggestDifficulty: text("biggest_difficulty").notNull(),
+  mainNeed: text("main_need").notNull(),
+  dailyTimeCommitment: text("daily_time_commitment").notNull(),
+  coachingStyle: text("coaching_style").notNull(),
+  contemplativeExperience: text("contemplative_experience").notNull(),
+  preferredPracticeFormat: text("preferred_practice_format").notNull(),
+  successDefinition30d: text("success_definition_30d").notNull(),
+  notes: text("notes"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

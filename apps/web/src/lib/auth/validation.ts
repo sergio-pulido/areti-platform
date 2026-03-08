@@ -24,10 +24,20 @@ export const signupSchema = z
     email: baseEmail,
     password: basePassword,
     confirmPassword: z.string(),
+    acceptTerms: z.boolean(),
+    acceptPrivacy: z.boolean(),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match",
     path: ["confirmPassword"],
+  })
+  .refine((data) => data.acceptTerms, {
+    message: "You must accept the Terms of Service",
+    path: ["acceptTerms"],
+  })
+  .refine((data) => data.acceptPrivacy, {
+    message: "You must accept the Privacy Policy",
+    path: ["acceptPrivacy"],
   });
 
 export const signinSchema = z.object({

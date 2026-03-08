@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { and, asc, count, desc, eq, gt, isNull, like, lt, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, isNotNull, isNull, like, lt, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import {
@@ -12,12 +12,14 @@ import {
   chatThreads,
   communityChallenges,
   communityCircles,
+  userDeletionAudit,
   communityEvents,
   communityExperts,
   communityResources,
   contentHighlights,
   contentPillars,
   creatorVideos,
+  emailVerificationChallenges,
   journalEntries,
   libraryLessons,
   mfaChallenges,
@@ -25,12 +27,18 @@ import {
   practiceRoutines,
   refreshSessions,
   sessions,
+  userNotificationPreferences,
+  userPreferences,
+  userProfiles,
+  userLegalConsents,
   userCompanionPreferences,
   userDevices,
   userNotifications,
+  userOnboardingProfiles,
   userTotpSecrets,
   users,
   type ContentStatus,
+  type LegalPolicyType,
   type UserRole,
 } from "./schema.js";
 import {
@@ -51,6 +59,36 @@ export type CurrentUser = {
   name: string;
   email: string;
   role: UserRole;
+  emailVerifiedAt: string | null;
+  onboardingCompletedAt: string | null;
+};
+
+export type EmailVerificationChallengeRecord = {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  codeHash: string;
+  expiresAt: string;
+  createdAt: string;
+  consumedAt: string | null;
+  lastSentAt: string;
+  sendCount: number;
+};
+
+export type OnboardingProfileRecord = {
+  id: string;
+  userId: string;
+  primaryObjective: string;
+  biggestDifficulty: string;
+  mainNeed: string;
+  dailyTimeCommitment: string;
+  coachingStyle: string;
+  contemplativeExperience: string;
+  preferredPracticeFormat: string;
+  successDefinition30d: string;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type SecuritySettings = {
@@ -143,6 +181,63 @@ export type RefreshSessionContext = {
   deviceId: string | null;
 };
 
+export type UserAuthRecord = {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  role: UserRole;
+  mfaEnabled: boolean;
+  passkeyEnabled: boolean;
+  emailVerifiedAt: string | null;
+  onboardingCompletedAt: string | null;
+  deletedAt: string | null;
+  anonymizedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UserProfileRecord = {
+  id: string;
+  userId: string;
+  username: string | null;
+  summary: string;
+  phone: string;
+  city: string;
+  country: string;
+  socialLinks: Array<{ label: string; url: string }>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UserPreferencesRecord = {
+  id: string;
+  userId: string;
+  language: string;
+  timezone: string;
+  profileVisibility: "public" | "private" | "contacts";
+  showEmail: boolean;
+  showPhone: boolean;
+  allowContact: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UserNotificationPreferencesRecord = {
+  id: string;
+  userId: string;
+  emailChallenges: boolean;
+  emailEvents: boolean;
+  emailUpdates: boolean;
+  emailMarketing: boolean;
+  pushChallenges: boolean;
+  pushEvents: boolean;
+  pushUpdates: boolean;
+  digest: "immediate" | "daily" | "weekly";
+  createdAt: string;
+  updatedAt: string;
+};
+
 const globalForDb = globalThis as unknown as {
   sqlite?: Database.Database;
   migrated?: boolean;
@@ -170,6 +265,95 @@ function parseTransports(transports: string | null): string[] {
 
   return [];
 }
+
+function parseSocialLinks(socialLinksJson: string): Array<{ label: string; url: string }> {
+  try {
+    const parsed = JSON.parse(socialLinksJson) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== "object") {
+          return null;
+        }
+        const record = item as { label?: unknown; url?: unknown };
+        const label = typeof record.label === "string" ? record.label.trim() : "";
+        const url = typeof record.url === "string" ? record.url.trim() : "";
+        if (!label || !url) {
+          return null;
+        }
+        return { label, url };
+      })
+      .filter((value): value is { label: string; url: string } => Boolean(value));
+  } catch {
+    return [];
+  }
+}
+
+function normalizeSocialLinks(
+  socialLinks: Array<{ label: string; url: string }>,
+): Array<{ label: string; url: string }> {
+  return socialLinks
+    .map((item) => ({
+      label: item.label.trim(),
+      url: item.url.trim(),
+    }))
+    .filter((item) => item.label.length > 0 && item.url.length > 0);
+}
+
+function stringifySocialLinks(socialLinks: Array<{ label: string; url: string }>): string {
+  return JSON.stringify(normalizeSocialLinks(socialLinks));
+}
+
+function normalizeProfileVisibility(value: string): "public" | "private" | "contacts" {
+  if (value === "public" || value === "contacts" || value === "private") {
+    return value;
+  }
+
+  return "private";
+}
+
+function normalizeNotificationDigest(value: string): "immediate" | "daily" | "weekly" {
+  if (value === "daily" || value === "weekly" || value === "immediate") {
+    return value;
+  }
+
+  return "immediate";
+}
+
+const defaultUserPreferences: Omit<UserPreferencesRecord, "id" | "userId" | "createdAt" | "updatedAt"> = {
+  language: "en",
+  timezone: "UTC",
+  profileVisibility: "private",
+  showEmail: false,
+  showPhone: false,
+  allowContact: true,
+};
+
+const defaultNotificationPreferences: Omit<
+  UserNotificationPreferencesRecord,
+  "id" | "userId" | "createdAt" | "updatedAt"
+> = {
+  emailChallenges: true,
+  emailEvents: true,
+  emailUpdates: true,
+  emailMarketing: false,
+  pushChallenges: true,
+  pushEvents: false,
+  pushUpdates: true,
+  digest: "immediate",
+};
+
+const defaultUserProfile: Omit<UserProfileRecord, "id" | "userId" | "createdAt" | "updatedAt"> = {
+  username: null,
+  summary: "",
+  phone: "",
+  city: "",
+  country: "",
+  socialLinks: [],
+};
 
 function seedWelcomeNotifications(userId: string): void {
   const timestamp = nowIso();
@@ -287,6 +471,13 @@ if (!globalForDb.sqlite) {
 const db = drizzle(sqlite, {
   schema: {
     users,
+    userProfiles,
+    userPreferences,
+    userNotificationPreferences,
+    userDeletionAudit,
+    userLegalConsents,
+    emailVerificationChallenges,
+    userOnboardingProfiles,
     userDevices,
     sessions,
     refreshSessions,
@@ -533,7 +724,20 @@ if (!globalForDb.seeded) {
 }
 
 export function countUsers(): number {
-  const row = db.select({ count: count() }).from(users).get();
+  const row = db
+    .select({ count: count() })
+    .from(users)
+    .where(isNull(users.deletedAt))
+    .get();
+  return row?.count ?? 0;
+}
+
+export function countVerifiedUsers(): number {
+  const row = db
+    .select({ count: count() })
+    .from(users)
+    .where(and(isNotNull(users.emailVerifiedAt), isNull(users.deletedAt)))
+    .get();
   return row?.count ?? 0;
 }
 
@@ -548,9 +752,11 @@ export function getUserById(userId: string): CurrentUser | null {
       name: users.name,
       email: users.email,
       role: users.role,
+      emailVerifiedAt: users.emailVerifiedAt,
+      onboardingCompletedAt: users.onboardingCompletedAt,
     })
     .from(users)
-    .where(eq(users.id, userId))
+    .where(and(eq(users.id, userId), isNull(users.deletedAt)))
     .limit(1)
     .get();
 
@@ -575,6 +781,57 @@ export function createUser(input: {
       role: input.role,
       mfaEnabled: false,
       passkeyEnabled: false,
+      emailVerifiedAt: null,
+      onboardingCompletedAt: null,
+      deletedAt: null,
+      anonymizedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+
+  db.insert(userProfiles)
+    .values({
+      id: cryptoRandomId(),
+      userId: input.id,
+      username: null,
+      summary: "",
+      phone: "",
+      city: "",
+      country: "",
+      socialLinksJson: "[]",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+
+  db.insert(userPreferences)
+    .values({
+      id: cryptoRandomId(),
+      userId: input.id,
+      language: defaultUserPreferences.language,
+      timezone: defaultUserPreferences.timezone,
+      profileVisibility: defaultUserPreferences.profileVisibility,
+      showEmail: defaultUserPreferences.showEmail,
+      showPhone: defaultUserPreferences.showPhone,
+      allowContact: defaultUserPreferences.allowContact,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+
+  db.insert(userNotificationPreferences)
+    .values({
+      id: cryptoRandomId(),
+      userId: input.id,
+      emailChallenges: defaultNotificationPreferences.emailChallenges,
+      emailEvents: defaultNotificationPreferences.emailEvents,
+      emailUpdates: defaultNotificationPreferences.emailUpdates,
+      emailMarketing: defaultNotificationPreferences.emailMarketing,
+      pushChallenges: defaultNotificationPreferences.pushChallenges,
+      pushEvents: defaultNotificationPreferences.pushEvents,
+      pushUpdates: defaultNotificationPreferences.pushUpdates,
+      digest: defaultNotificationPreferences.digest,
       createdAt: timestamp,
       updatedAt: timestamp,
     })
@@ -583,6 +840,680 @@ export function createUser(input: {
   seedWelcomeNotifications(input.id);
 
   return getUserById(input.id);
+}
+
+export function setUserRole(userId: string, role: UserRole): void {
+  db.update(users)
+    .set({
+      role,
+      updatedAt: nowIso(),
+    })
+    .where(eq(users.id, userId))
+    .run();
+}
+
+export function markUserEmailVerified(userId: string): CurrentUser | null {
+  const timestamp = nowIso();
+
+  db.update(users)
+    .set({
+      emailVerifiedAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .where(eq(users.id, userId))
+    .run();
+
+  return getUserById(userId);
+}
+
+export function markUserOnboardingCompleted(userId: string): CurrentUser | null {
+  const timestamp = nowIso();
+
+  db.update(users)
+    .set({
+      onboardingCompletedAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .where(eq(users.id, userId))
+    .run();
+
+  return getUserById(userId);
+}
+
+export function getUserAuthById(userId: string): UserAuthRecord | null {
+  const user = db.select().from(users).where(eq(users.id, userId)).limit(1).get();
+  return user ?? null;
+}
+
+export function updateUserPasswordHash(userId: string, passwordHash: string): boolean {
+  const updated = db
+    .update(users)
+    .set({
+      passwordHash,
+      updatedAt: nowIso(),
+    })
+    .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+    .run();
+
+  return updated.changes > 0;
+}
+
+export function updateUserName(userId: string, name: string): CurrentUser | null {
+  db.update(users)
+    .set({
+      name,
+      updatedAt: nowIso(),
+    })
+    .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+    .run();
+
+  return getUserById(userId);
+}
+
+export function getUserProfileByUserId(userId: string): UserProfileRecord {
+  let profile = db
+    .select()
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId))
+    .limit(1)
+    .get();
+
+  if (!profile) {
+    const timestamp = nowIso();
+    db.insert(userProfiles)
+      .values({
+        id: cryptoRandomId(),
+        userId,
+        username: defaultUserProfile.username,
+        summary: defaultUserProfile.summary,
+        phone: defaultUserProfile.phone,
+        city: defaultUserProfile.city,
+        country: defaultUserProfile.country,
+        socialLinksJson: stringifySocialLinks(defaultUserProfile.socialLinks),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
+
+    profile = db
+      .select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1)
+      .get();
+  }
+
+  if (!profile) {
+    throw new Error("Failed to load user profile.");
+  }
+
+  return {
+    id: profile.id,
+    userId: profile.userId,
+    username: profile.username,
+    summary: profile.summary,
+    phone: profile.phone,
+    city: profile.city,
+    country: profile.country,
+    socialLinks: parseSocialLinks(profile.socialLinksJson),
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt,
+  };
+}
+
+export function upsertUserProfile(
+  userId: string,
+  input: {
+    username?: string | null;
+    summary?: string;
+    phone?: string;
+    city?: string;
+    country?: string;
+    socialLinks?: Array<{ label: string; url: string }>;
+  },
+): UserProfileRecord {
+  const current = getUserProfileByUserId(userId);
+  const timestamp = nowIso();
+
+  db.update(userProfiles)
+    .set({
+      username: input.username === undefined ? current.username : input.username,
+      summary: input.summary ?? current.summary,
+      phone: input.phone ?? current.phone,
+      city: input.city ?? current.city,
+      country: input.country ?? current.country,
+      socialLinksJson: input.socialLinks
+        ? stringifySocialLinks(input.socialLinks)
+        : stringifySocialLinks(current.socialLinks),
+      updatedAt: timestamp,
+    })
+    .where(eq(userProfiles.userId, userId))
+    .run();
+
+  return getUserProfileByUserId(userId);
+}
+
+export function getUserPreferencesByUserId(userId: string): UserPreferencesRecord {
+  let preferences = db
+    .select()
+    .from(userPreferences)
+    .where(eq(userPreferences.userId, userId))
+    .limit(1)
+    .get();
+
+  if (!preferences) {
+    const timestamp = nowIso();
+    db.insert(userPreferences)
+      .values({
+        id: cryptoRandomId(),
+        userId,
+        language: defaultUserPreferences.language,
+        timezone: defaultUserPreferences.timezone,
+        profileVisibility: defaultUserPreferences.profileVisibility,
+        showEmail: defaultUserPreferences.showEmail,
+        showPhone: defaultUserPreferences.showPhone,
+        allowContact: defaultUserPreferences.allowContact,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
+
+    preferences = db
+      .select()
+      .from(userPreferences)
+      .where(eq(userPreferences.userId, userId))
+      .limit(1)
+      .get();
+  }
+
+  if (!preferences) {
+    throw new Error("Failed to load user preferences.");
+  }
+
+  return {
+    id: preferences.id,
+    userId: preferences.userId,
+    language: preferences.language,
+    timezone: preferences.timezone,
+    profileVisibility: normalizeProfileVisibility(preferences.profileVisibility),
+    showEmail: preferences.showEmail,
+    showPhone: preferences.showPhone,
+    allowContact: preferences.allowContact,
+    createdAt: preferences.createdAt,
+    updatedAt: preferences.updatedAt,
+  };
+}
+
+export function upsertUserPreferences(
+  userId: string,
+  input: Partial<Pick<UserPreferencesRecord, "language" | "timezone" | "profileVisibility" | "showEmail" | "showPhone" | "allowContact">>,
+): UserPreferencesRecord {
+  const current = getUserPreferencesByUserId(userId);
+
+  db.update(userPreferences)
+    .set({
+      language: input.language ?? current.language,
+      timezone: input.timezone ?? current.timezone,
+      profileVisibility: input.profileVisibility ?? current.profileVisibility,
+      showEmail: input.showEmail ?? current.showEmail,
+      showPhone: input.showPhone ?? current.showPhone,
+      allowContact: input.allowContact ?? current.allowContact,
+      updatedAt: nowIso(),
+    })
+    .where(eq(userPreferences.userId, userId))
+    .run();
+
+  return getUserPreferencesByUserId(userId);
+}
+
+export function getUserNotificationPreferencesByUserId(userId: string): UserNotificationPreferencesRecord {
+  let preferences = db
+    .select()
+    .from(userNotificationPreferences)
+    .where(eq(userNotificationPreferences.userId, userId))
+    .limit(1)
+    .get();
+
+  if (!preferences) {
+    const timestamp = nowIso();
+    db.insert(userNotificationPreferences)
+      .values({
+        id: cryptoRandomId(),
+        userId,
+        emailChallenges: defaultNotificationPreferences.emailChallenges,
+        emailEvents: defaultNotificationPreferences.emailEvents,
+        emailUpdates: defaultNotificationPreferences.emailUpdates,
+        emailMarketing: defaultNotificationPreferences.emailMarketing,
+        pushChallenges: defaultNotificationPreferences.pushChallenges,
+        pushEvents: defaultNotificationPreferences.pushEvents,
+        pushUpdates: defaultNotificationPreferences.pushUpdates,
+        digest: defaultNotificationPreferences.digest,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
+
+    preferences = db
+      .select()
+      .from(userNotificationPreferences)
+      .where(eq(userNotificationPreferences.userId, userId))
+      .limit(1)
+      .get();
+  }
+
+  if (!preferences) {
+    throw new Error("Failed to load user notification preferences.");
+  }
+
+  return {
+    id: preferences.id,
+    userId: preferences.userId,
+    emailChallenges: preferences.emailChallenges,
+    emailEvents: preferences.emailEvents,
+    emailUpdates: preferences.emailUpdates,
+    emailMarketing: preferences.emailMarketing,
+    pushChallenges: preferences.pushChallenges,
+    pushEvents: preferences.pushEvents,
+    pushUpdates: preferences.pushUpdates,
+    digest: normalizeNotificationDigest(preferences.digest),
+    createdAt: preferences.createdAt,
+    updatedAt: preferences.updatedAt,
+  };
+}
+
+export function upsertUserNotificationPreferences(
+  userId: string,
+  input: Partial<
+    Pick<
+      UserNotificationPreferencesRecord,
+      | "emailChallenges"
+      | "emailEvents"
+      | "emailUpdates"
+      | "emailMarketing"
+      | "pushChallenges"
+      | "pushEvents"
+      | "pushUpdates"
+      | "digest"
+    >
+  >,
+): UserNotificationPreferencesRecord {
+  const current = getUserNotificationPreferencesByUserId(userId);
+
+  db.update(userNotificationPreferences)
+    .set({
+      emailChallenges: input.emailChallenges ?? current.emailChallenges,
+      emailEvents: input.emailEvents ?? current.emailEvents,
+      emailUpdates: input.emailUpdates ?? current.emailUpdates,
+      emailMarketing: input.emailMarketing ?? current.emailMarketing,
+      pushChallenges: input.pushChallenges ?? current.pushChallenges,
+      pushEvents: input.pushEvents ?? current.pushEvents,
+      pushUpdates: input.pushUpdates ?? current.pushUpdates,
+      digest: input.digest ?? current.digest,
+      updatedAt: nowIso(),
+    })
+    .where(eq(userNotificationPreferences.userId, userId))
+    .run();
+
+  return getUserNotificationPreferencesByUserId(userId);
+}
+
+export function deleteSessionsByUserId(userId: string): number {
+  const deleted = db.delete(sessions).where(eq(sessions.userId, userId)).run();
+  return deleted.changes ?? 0;
+}
+
+export function deleteRefreshSessionsByUserId(userId: string): number {
+  const deleted = db.delete(refreshSessions).where(eq(refreshSessions.userId, userId)).run();
+  return deleted.changes ?? 0;
+}
+
+export function softDeleteUserAndAnonymize(input: { userId: string; reason: string }): boolean {
+  const existing = db
+    .select({
+      id: users.id,
+      deletedAt: users.deletedAt,
+    })
+    .from(users)
+    .where(eq(users.id, input.userId))
+    .limit(1)
+    .get();
+
+  if (!existing || existing.deletedAt) {
+    return false;
+  }
+
+  const timestamp = nowIso();
+  const alias = input.userId.slice(0, 12);
+  const anonymizedName = `Deleted User ${alias}`;
+  const anonymizedEmail = `deleted+${alias}@deleted.ataraxia.local`;
+
+  db.transaction(() => {
+    db.update(users)
+      .set({
+        name: anonymizedName,
+        email: anonymizedEmail,
+        passwordHash: `deleted:${cryptoRandomId()}`,
+        mfaEnabled: false,
+        passkeyEnabled: false,
+        emailVerifiedAt: null,
+        deletedAt: timestamp,
+        anonymizedAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .where(eq(users.id, input.userId))
+      .run();
+
+    db.update(userProfiles)
+      .set({
+        username: null,
+        summary: "",
+        phone: "",
+        city: "",
+        country: "",
+        socialLinksJson: "[]",
+        updatedAt: timestamp,
+      })
+      .where(eq(userProfiles.userId, input.userId))
+      .run();
+
+    db.update(userDevices)
+      .set({
+        revokedAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .where(and(eq(userDevices.userId, input.userId), isNull(userDevices.revokedAt)))
+      .run();
+
+    db.delete(sessions).where(eq(sessions.userId, input.userId)).run();
+    db.delete(refreshSessions).where(eq(refreshSessions.userId, input.userId)).run();
+    db.delete(passkeyCredentials).where(eq(passkeyCredentials.userId, input.userId)).run();
+    db.delete(userTotpSecrets).where(eq(userTotpSecrets.userId, input.userId)).run();
+    db.delete(mfaChallenges).where(eq(mfaChallenges.userId, input.userId)).run();
+    db.delete(emailVerificationChallenges)
+      .where(eq(emailVerificationChallenges.userId, input.userId))
+      .run();
+
+    db.insert(userDeletionAudit)
+      .values({
+        id: cryptoRandomId(),
+        userId: input.userId,
+        reason: input.reason,
+        deletedAt: timestamp,
+        createdAt: timestamp,
+      })
+      .run();
+  });
+
+  return true;
+}
+
+export function createUserLegalConsent(input: {
+  id: string;
+  userId: string;
+  policyType: LegalPolicyType;
+  policyVersion: string;
+  acceptedAt: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}): void {
+  db.insert(userLegalConsents)
+    .values({
+      id: input.id,
+      userId: input.userId,
+      policyType: input.policyType,
+      policyVersion: input.policyVersion,
+      acceptedAt: input.acceptedAt,
+      ipAddress: input.ipAddress ?? null,
+      userAgent: input.userAgent ?? null,
+      createdAt: nowIso(),
+    })
+    .run();
+}
+
+export function createEmailVerificationChallenge(input: {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  codeHash: string;
+  expiresAt: string;
+}): EmailVerificationChallengeRecord {
+  db
+    .delete(emailVerificationChallenges)
+    .where(
+      and(
+        eq(emailVerificationChallenges.userId, input.userId),
+        isNull(emailVerificationChallenges.consumedAt),
+      ),
+    )
+    .run();
+
+  const timestamp = nowIso();
+
+  db.insert(emailVerificationChallenges)
+    .values({
+      id: input.id,
+      userId: input.userId,
+      tokenHash: input.tokenHash,
+      codeHash: input.codeHash,
+      expiresAt: input.expiresAt,
+      createdAt: timestamp,
+      consumedAt: null,
+      lastSentAt: timestamp,
+      sendCount: 1,
+    })
+    .run();
+
+  const created = db
+    .select()
+    .from(emailVerificationChallenges)
+    .where(eq(emailVerificationChallenges.id, input.id))
+    .limit(1)
+    .get();
+
+  if (!created) {
+    throw new Error("Failed to create email verification challenge.");
+  }
+
+  return created;
+}
+
+export function getActiveEmailVerificationChallengeByTokenHash(
+  tokenHash: string,
+): EmailVerificationChallengeRecord | null {
+  const existing = db
+    .select()
+    .from(emailVerificationChallenges)
+    .where(
+      and(
+        eq(emailVerificationChallenges.tokenHash, tokenHash),
+        isNull(emailVerificationChallenges.consumedAt),
+        gt(emailVerificationChallenges.expiresAt, nowIso()),
+      ),
+    )
+    .limit(1)
+    .get();
+
+  return existing ?? null;
+}
+
+export function getActiveEmailVerificationChallengeByCodeHash(
+  userId: string,
+  codeHash: string,
+): EmailVerificationChallengeRecord | null {
+  const existing = db
+    .select()
+    .from(emailVerificationChallenges)
+    .where(
+      and(
+        eq(emailVerificationChallenges.userId, userId),
+        eq(emailVerificationChallenges.codeHash, codeHash),
+        isNull(emailVerificationChallenges.consumedAt),
+        gt(emailVerificationChallenges.expiresAt, nowIso()),
+      ),
+    )
+    .orderBy(desc(emailVerificationChallenges.createdAt))
+    .limit(1)
+    .get();
+
+  return existing ?? null;
+}
+
+export function getLatestEmailVerificationChallengeByUserId(
+  userId: string,
+): EmailVerificationChallengeRecord | null {
+  const existing = db
+    .select()
+    .from(emailVerificationChallenges)
+    .where(
+      and(
+        eq(emailVerificationChallenges.userId, userId),
+        isNull(emailVerificationChallenges.consumedAt),
+      ),
+    )
+    .orderBy(desc(emailVerificationChallenges.createdAt))
+    .limit(1)
+    .get();
+
+  return existing ?? null;
+}
+
+export function replaceEmailVerificationChallenge(input: {
+  challengeId: string;
+  tokenHash: string;
+  codeHash: string;
+  expiresAt: string;
+}): EmailVerificationChallengeRecord | null {
+  const existing = db
+    .select({ sendCount: emailVerificationChallenges.sendCount })
+    .from(emailVerificationChallenges)
+    .where(eq(emailVerificationChallenges.id, input.challengeId))
+    .limit(1)
+    .get();
+
+  if (!existing) {
+    return null;
+  }
+
+  db.update(emailVerificationChallenges)
+    .set({
+      tokenHash: input.tokenHash,
+      codeHash: input.codeHash,
+      expiresAt: input.expiresAt,
+      consumedAt: null,
+      lastSentAt: nowIso(),
+      sendCount: existing.sendCount + 1,
+    })
+    .where(eq(emailVerificationChallenges.id, input.challengeId))
+    .run();
+
+  return (
+    db
+      .select()
+      .from(emailVerificationChallenges)
+      .where(eq(emailVerificationChallenges.id, input.challengeId))
+      .limit(1)
+      .get() ?? null
+  );
+}
+
+export function consumeEmailVerificationChallenge(challengeId: string): boolean {
+  const timestamp = nowIso();
+
+  const updated = db
+    .update(emailVerificationChallenges)
+    .set({ consumedAt: timestamp })
+    .where(
+      and(
+        eq(emailVerificationChallenges.id, challengeId),
+        isNull(emailVerificationChallenges.consumedAt),
+      ),
+    )
+    .run();
+
+  return updated.changes > 0;
+}
+
+export function getUserOnboardingProfile(userId: string): OnboardingProfileRecord | null {
+  const existing = db
+    .select()
+    .from(userOnboardingProfiles)
+    .where(eq(userOnboardingProfiles.userId, userId))
+    .limit(1)
+    .get();
+
+  return existing ?? null;
+}
+
+export function upsertUserOnboardingProfile(input: {
+  id: string;
+  userId: string;
+  primaryObjective: string;
+  biggestDifficulty: string;
+  mainNeed: string;
+  dailyTimeCommitment: string;
+  coachingStyle: string;
+  contemplativeExperience: string;
+  preferredPracticeFormat: string;
+  successDefinition30d: string;
+  notes?: string | null;
+}): OnboardingProfileRecord {
+  const existing = db
+    .select({ id: userOnboardingProfiles.id })
+    .from(userOnboardingProfiles)
+    .where(eq(userOnboardingProfiles.userId, input.userId))
+    .limit(1)
+    .get();
+
+  const timestamp = nowIso();
+
+  if (existing) {
+    db.update(userOnboardingProfiles)
+      .set({
+        primaryObjective: input.primaryObjective,
+        biggestDifficulty: input.biggestDifficulty,
+        mainNeed: input.mainNeed,
+        dailyTimeCommitment: input.dailyTimeCommitment,
+        coachingStyle: input.coachingStyle,
+        contemplativeExperience: input.contemplativeExperience,
+        preferredPracticeFormat: input.preferredPracticeFormat,
+        successDefinition30d: input.successDefinition30d,
+        notes: input.notes ?? null,
+        updatedAt: timestamp,
+      })
+      .where(eq(userOnboardingProfiles.userId, input.userId))
+      .run();
+  } else {
+    db.insert(userOnboardingProfiles)
+      .values({
+        id: input.id,
+        userId: input.userId,
+        primaryObjective: input.primaryObjective,
+        biggestDifficulty: input.biggestDifficulty,
+        mainNeed: input.mainNeed,
+        dailyTimeCommitment: input.dailyTimeCommitment,
+        coachingStyle: input.coachingStyle,
+        contemplativeExperience: input.contemplativeExperience,
+        preferredPracticeFormat: input.preferredPracticeFormat,
+        successDefinition30d: input.successDefinition30d,
+        notes: input.notes ?? null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
+  }
+
+  const profile = db
+    .select()
+    .from(userOnboardingProfiles)
+    .where(eq(userOnboardingProfiles.userId, input.userId))
+    .limit(1)
+    .get();
+
+  if (!profile) {
+    throw new Error("Failed to upsert user onboarding profile.");
+  }
+
+  return profile;
 }
 
 export function createSession(input: {
@@ -622,10 +1553,14 @@ export function getSessionUserByTokenHash(tokenHash: string): CurrentUser | null
       userName: users.name,
       userEmail: users.email,
       userRole: users.role,
+      userEmailVerifiedAt: users.emailVerifiedAt,
+      userOnboardingCompletedAt: users.onboardingCompletedAt,
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, nowIso())))
+    .where(
+      and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, nowIso()), isNull(users.deletedAt)),
+    )
     .limit(1)
     .get();
 
@@ -638,6 +1573,8 @@ export function getSessionUserByTokenHash(tokenHash: string): CurrentUser | null
     name: joined.userName,
     email: joined.userEmail,
     role: joined.userRole,
+    emailVerifiedAt: joined.userEmailVerifiedAt,
+    onboardingCompletedAt: joined.userOnboardingCompletedAt,
   };
 }
 
@@ -679,11 +1616,19 @@ export function getRefreshSessionContextByTokenHash(tokenHash: string): RefreshS
       userName: users.name,
       userEmail: users.email,
       userRole: users.role,
+      userEmailVerifiedAt: users.emailVerifiedAt,
+      userOnboardingCompletedAt: users.onboardingCompletedAt,
       deviceId: refreshSessions.deviceId,
     })
     .from(refreshSessions)
     .innerJoin(users, eq(refreshSessions.userId, users.id))
-    .where(and(eq(refreshSessions.tokenHash, tokenHash), gt(refreshSessions.expiresAt, nowIso())))
+    .where(
+      and(
+        eq(refreshSessions.tokenHash, tokenHash),
+        gt(refreshSessions.expiresAt, nowIso()),
+        isNull(users.deletedAt),
+      ),
+    )
     .limit(1)
     .get();
 
@@ -697,6 +1642,8 @@ export function getRefreshSessionContextByTokenHash(tokenHash: string): RefreshS
       name: joined.userName,
       email: joined.userEmail,
       role: joined.userRole,
+      emailVerifiedAt: joined.userEmailVerifiedAt,
+      onboardingCompletedAt: joined.userOnboardingCompletedAt,
     },
     deviceId: joined.deviceId,
   };
@@ -1954,7 +2901,8 @@ export function getSessionDeviceByTokenHash(tokenHash: string): {
       deviceId: sessions.deviceId,
     })
     .from(sessions)
-    .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, nowIso())))
+    .innerJoin(users, eq(sessions.userId, users.id))
+    .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, nowIso()), isNull(users.deletedAt)))
     .limit(1)
     .get();
 

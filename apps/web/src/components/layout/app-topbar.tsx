@@ -27,7 +27,7 @@ export async function AppTopbar({ user, accessToken }: AppTopbarProps) {
   if (!user || !accessToken) {
     return (
       <header className="sticky top-0 z-40 border-b border-night-800/80 bg-night-950/95 px-4 py-2 backdrop-blur lg:px-8">
-        <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-3">
+        <div className="flex w-full items-center justify-between gap-3">
           <Link href="/" className="font-title text-xl text-sand-100">
             Ataraxia
           </Link>
@@ -76,7 +76,7 @@ export async function AppTopbar({ user, accessToken }: AppTopbarProps) {
 
   return (
     <header className="sticky top-0 z-40 border-b border-night-800/80 bg-night-950/95 px-4 py-2 backdrop-blur lg:px-8">
-      <div className="mx-auto flex w-full max-w-[1600px] items-center gap-3">
+      <div className="flex w-full items-center gap-3">
         <div className="flex items-center gap-2">
           <details className="relative lg:hidden">
             <summary
@@ -311,13 +311,13 @@ export async function AppTopbar({ user, accessToken }: AppTopbarProps) {
                 >
                   Account
                 </Link>
-                <Link href="/account/settings" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
-                  Security Settings
+                <Link href="/account/security" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                  Security
                 </Link>
-                <Link href="/account/privacy" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                <Link href="/legal/privacy" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                   Privacy Policy
                 </Link>
-                <Link href="/account/terms" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                <Link href="/legal/terms" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                   Terms
                 </Link>
               </div>

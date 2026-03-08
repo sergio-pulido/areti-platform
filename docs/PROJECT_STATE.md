@@ -11,6 +11,20 @@
 - Chat telemetry is now persisted (`chat_events`) and exposed to admins via API for lifecycle observability.
 - Community and creator domains are now fully API-backed across pages and CMS.
 - Notifications are persisted and wired to topbar bell with unread/read-all/read-one behavior.
+- Signup now requires mandatory Terms/Privacy acceptance, stores auditable legal consent records, and defers session creation until email verification.
+- Auth now supports verification-link + 6-digit-code flows via Resend (`/api/v1/auth/verify-email`, `/api/v1/auth/resend-verification`) with first-verified-user admin promotion.
+- Required onboarding is now enforced before app access (`/onboarding`) and persisted for personalization and prompt shaping.
+- Cookie consent is now enforced for app routes via route middleware/proxy redirect to `/legal/cookies?next=...`.
+- A unified thin topbar component now spans secured, auth, legal, and landing surfaces with mobile action consolidation.
+- Secured-shell pages now render the topbar as a true full-width global header above the sidebar/content frame.
+- Account IA now keeps legal policy pages in `/legal/*`; account navigation focuses on profile + settings.
+- Account domain is now platform-native and API-backed for core lifecycle flows (`/auth/me` patch, password change, account deletion, notification preferences).
+- Account root (`/account`) now provides a full account-overview dashboard (identity, security snapshot, typical actions, activity pulse).
+- Account section now exposes a product-fit core tab set with grouped sidenav headings: Home, Profile, Settings, Security, Password, Sessions, Danger Zone, Notifications.
+- Account profile/contact/professional/settings/password/danger/notifications pages now persist real data against backend APIs.
+- Account IA has been simplified for this product purpose: profile data is consolidated under a single `/account/profile` tab (no split main/extra/professional model in nav).
+- Deferred account sections are currently hidden from sidenav while implementation is deferred.
+- Security controls are now split across dedicated routes (`/account/security`, `/account/sessions`, `/account/danger`) and preferences remain under `/account/settings`.
 - Security settings now include production-ready TOTP enrollment/verification/removal, passkey lifecycle controls, and device/session revocation.
 - Chat is productized with persisted threads/messages and user controls (create/switch/rename/archive/delete).
 - Chat provider runtime now supports ordered fallback (`deepseek,openai` by default) with provider-specific key/model/base-url env wiring.
@@ -28,6 +42,10 @@
   - Added session-refresh linkage to device identity and passkey lifecycle fields.
   - Added `user_companion_preferences` and `chat_events` tables for user prompt customization and chat telemetry.
   - Added `content` and `protocol` fields to library/practice tables for full detail rendering.
+  - Added `email_verified_at` and `onboarding_completed_at` user lifecycle columns.
+  - Added `deleted_at` and `anonymized_at` user lifecycle columns.
+  - Added `user_legal_consents`, `email_verification_challenges`, and `user_onboarding_profiles` tables.
+  - Added `user_profiles`, `user_preferences`, `user_notification_preferences`, and `user_deletion_audit` for account-domain persistence.
   - Switched library/practice seed loading to explicit command-run seeding (`db:seed:library-practices`).
 - API:
   - Added content endpoints:
@@ -39,6 +57,17 @@
     - `/api/v1/content/library/:slug`
     - `/api/v1/content/practices/:slug`
   - Added admin CRUD/status endpoints under `/api/v1/admin/content/*` for all new content types.
+  - Added auth verification/compliance endpoints:
+    - `POST /api/v1/auth/verify-email`
+    - `POST /api/v1/auth/resend-verification`
+    - `GET /api/v1/onboarding`
+    - `PUT /api/v1/onboarding`
+  - Added account-domain endpoints:
+    - `PATCH /api/v1/auth/me`
+    - `POST /api/v1/auth/change-password`
+    - `POST /api/v1/auth/delete`
+    - `GET /api/v1/notifications/preferences`
+    - `PATCH /api/v1/notifications/preferences`
   - Added notifications endpoints:
     - `GET /api/v1/notifications`
     - `PATCH /api/v1/notifications/:id/read`
@@ -58,10 +87,28 @@
     - `DELETE /api/v1/security/mfa/totp`
     - `GET/DELETE /api/v1/security/devices*`
   - Added chat rate limiting and API env validation.
+  - Added Resend delivery integration for account verification with environment-based enforcement (`WEB_APP_URL`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`).
 - Web:
   - Community and creator pages now consume backend content APIs (no hardcoded arrays).
   - Creator root (`/creator`) now renders actionable overview page (no redirect).
   - Topbar bell now consumes notifications API; quick actions remains separate icon/control.
+  - Added mandatory signup legal checkboxes for Terms and Privacy acceptance.
+  - Added `/auth/verify-email` flow and enforced onboarding completion routing before secured shell access.
+  - Added global cookie consent banner with acceptance persistence and app-route gate redirect behavior.
+  - Replaced page-specific headers with a shared AppTopbar (guest + authenticated variants with mobile action handling).
+  - Moved secured-shell topbar out of content column so it spans full page width on authenticated routes.
+  - Refocused account sidenav on profile/settings only and canonicalized policy links to `/legal/*`.
+  - Upgraded `/account` to a richer account overview with security/device/notification status and common account actions.
+- Expanded account IA into grouped core navigation:
+  - Account: `/account`
+  - Profile: `/account/profile`
+  - Preferences: `/account/settings`
+  - Security: `/account/security`, `/account/password`, `/account/sessions`, `/account/danger`
+  - Communication: `/account/notifications`
+- Deferred routes exist but are intentionally hidden from account navigation until promoted to core scope.
+  - Split account settings responsibilities across focused pages while preserving existing security actions and notification actions.
+  - Replaced placeholder account forms with persisted forms for profile/contact/professional/settings/password/danger/notifications.
+  - Removed redundant sidebar user cards from personal and companion side navigation.
   - Account settings now include:
     - TOTP manager
     - passkey inventory with rename/revoke
@@ -79,8 +126,11 @@
     - `/practices/new`
   - Added proxy routes for thread chat and TOTP flows in Next route handlers.
 - Testing/CI:
-  - Expanded API integration tests for notifications, thread chat persistence, and challenge publish lifecycle.
+  - Expanded API integration tests for verification-required signup/signin gating and onboarding completion lifecycle.
   - Added accessibility smoke e2e checks for core secured routes.
+  - Added API integration coverage for account patch persistence, notification preferences persistence, password-change validation/success, and delete-account lifecycle blocking re-auth.
+  - Added web e2e coverage for account data persistence, disabled account tabs behavior, and password-change flow.
+  - Updated e2e/a11y signup helpers for legal consent, email verification, onboarding completion, and cookie gate behavior.
   - Added GitHub Actions CI workflow and `npm run ci` aggregate command.
 
 ## Known Gaps

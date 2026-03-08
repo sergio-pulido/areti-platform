@@ -1,45 +1,21 @@
 import Link from "next/link";
 import { ArrowRight, ShieldCheck, Sparkles, Swords } from "lucide-react";
-import { getCurrentUser } from "@/lib/auth/session";
+import { AppTopbar } from "@/components/layout/app-topbar";
+import { getCurrentUser, getSessionToken } from "@/lib/auth/session";
 import { fetchLandingContent } from "@/lib/content-api";
 
 export default async function Home() {
-  const [user, landingContent] = await Promise.all([getCurrentUser(), fetchLandingContent()]);
+  const [user, accessToken, landingContent] = await Promise.all([
+    getCurrentUser(),
+    getSessionToken(),
+    fetchLandingContent(),
+  ]);
 
   return (
     <div className="min-h-screen bg-night-950 text-sand-100">
+      <AppTopbar user={user} accessToken={accessToken ?? undefined} />
       <div className="relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(181,214,167,0.15),transparent_35%),radial-gradient(circle_at_75%_15%,rgba(232,216,188,0.12),transparent_35%),radial-gradient(circle_at_75%_80%,rgba(127,96,71,0.2),transparent_50%)]" />
-
-        <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-6 py-6 lg:px-12">
-          <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-sage-200/90">Ataraxia Platform</p>
-            <h1 className="font-title text-2xl text-sand-100">Stoic Garden</h1>
-          </div>
-
-          <nav className="flex items-center gap-2">
-            <Link
-              href="/legal/privacy"
-              className="rounded-xl border border-night-700 px-4 py-2 text-sm text-sand-200 hover:border-night-500"
-            >
-              Privacy
-            </Link>
-            {!user ? (
-              <Link
-                href="/auth/signin"
-                className="rounded-xl border border-night-700 px-4 py-2 text-sm text-sand-200 hover:border-night-500"
-              >
-                Sign in
-              </Link>
-            ) : null}
-            <Link
-              href={user ? "/dashboard" : "/auth/signup"}
-              className="rounded-xl border border-sand-100 bg-sand-100 px-4 py-2 text-sm font-semibold text-night-950 hover:bg-sand-50"
-            >
-              {user ? "Open dashboard" : "Get started"}
-            </Link>
-          </nav>
-        </header>
 
         <main className="relative z-10 mx-auto max-w-7xl px-6 pb-16 pt-6 lg:px-12 lg:pb-24 lg:pt-10">
           <section className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:gap-10">

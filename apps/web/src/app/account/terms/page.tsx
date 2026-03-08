@@ -1,1 +1,5 @@
-export { default } from "@/app/legal/terms/page";
+import { redirect } from "next/navigation";
+
+export default function AccountTermsAliasPage() {
+  redirect("/legal/terms");
+}

@@ -1,15 +1,46 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createSession, deleteCurrentSession } from "@/lib/auth/session";
-import { signinSchema, signupSchema } from "@/lib/auth/validation";
+import { redirect } from "next/navigation";
 import type { AuthActionState } from "@/actions/auth-state";
-import { apiSignin, apiSignup, isApiHttpError } from "@/lib/backend-api";
+import { createSession, deleteCurrentSession, requireSession } from "@/lib/auth/session";
+import { onboardingSchema } from "@/lib/onboarding";
+import { signinSchema, signupSchema } from "@/lib/auth/validation";
+import {
+  apiResendVerification,
+  apiSignin,
+  apiSignup,
+  apiUpsertOnboarding,
+  apiVerifyEmail,
+  isApiHttpError,
+} from "@/lib/backend-api";
+
+export type EmailVerificationActionState = {
+  error?: string;
+  info?: string;
+  email?: string;
+  code?: string;
+  fieldErrors?: Record<string, string[]>;
+};
+
+export type OnboardingActionState = {
+  error?: string;
+  fieldErrors?: Record<string, string[]>;
+};
 
 function getString(formData: FormData, key: string): string {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
+}
+
+function getBoolean(formData: FormData, key: string): boolean {
+  const value = formData.get(key);
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true" || normalized === "on" || normalized === "1";
 }
 
 function validateSigninMfaInput(
@@ -61,6 +92,8 @@ export async function signupAction(
     email: getString(formData, "email"),
     password: getString(formData, "password"),
     confirmPassword: getString(formData, "confirmPassword"),
+    acceptTerms: getBoolean(formData, "acceptTerms"),
+    acceptPrivacy: getBoolean(formData, "acceptPrivacy"),
   };
 
   const parsed = signupSchema.safeParse(input);
@@ -72,12 +105,10 @@ export async function signupAction(
     };
   }
 
+  let result: Awaited<ReturnType<typeof apiSignup>>;
+
   try {
-    const result = await apiSignup(parsed.data);
-    await createSession({
-      accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
-    });
+    result = await apiSignup(parsed.data);
   } catch (error) {
     if (error instanceof Error) {
       return { error: error.message };
@@ -86,9 +117,96 @@ export async function signupAction(
     throw error;
   }
 
+  const search = new URLSearchParams({ email: result.email });
+
+  if (result.debugVerificationToken) {
+    search.set("token", result.debugVerificationToken);
+  }
+
+  redirect(`/auth/verify-email?${search.toString()}`);
+}
+
+export async function verifyEmailAction(
+  _prevState: EmailVerificationActionState,
+  formData: FormData,
+): Promise<EmailVerificationActionState> {
+  const token = getString(formData, "token").trim();
+  const email = getString(formData, "email").trim().toLowerCase();
+  const code = getString(formData, "code").trim();
+  const hasCodePayload = Boolean(email) && /^\d{6}$/.test(code);
+
+  if (!token && !hasCodePayload) {
+    return {
+      error: "Enter the 6-digit verification code.",
+      email,
+      code,
+      fieldErrors: {
+        code: ["Verification code must be exactly 6 digits."],
+      },
+    };
+  }
+
+  try {
+    const result = await apiVerifyEmail(
+      hasCodePayload ? { email, code } : { token, email: email || undefined },
+    );
+    await createSession({
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      return {
+        error: error.message,
+        email,
+        code,
+      };
+    }
+
+    throw error;
+  }
+
   revalidatePath("/");
   revalidatePath("/dashboard");
-  redirect("/dashboard");
+  redirect("/onboarding");
+}
+
+export async function resendVerificationAction(
+  _prevState: EmailVerificationActionState,
+  formData: FormData,
+): Promise<EmailVerificationActionState> {
+  const email = getString(formData, "email").trim().toLowerCase();
+
+  if (!email) {
+    return {
+      error: "Enter your email to resend verification.",
+      fieldErrors: {
+        email: ["Email is required."],
+      },
+    };
+  }
+
+  try {
+    const result = await apiResendVerification(email);
+
+    if (result.alreadyVerified) {
+      return {
+        info: "This account is already verified. You can sign in now.",
+        email,
+      };
+    }
+
+    return {
+      info: "Verification email sent. Check your inbox.",
+      email,
+    };
+  } catch (error) {
+    if (error instanceof Error) {
+      return { error: error.message, email };
+    }
+
+    throw error;
+  }
 }
 
 export async function signinAction(
@@ -154,6 +272,14 @@ export async function signinAction(
       };
     }
 
+    if (isApiHttpError(error) && error.code === "EMAIL_NOT_VERIFIED") {
+      return {
+        error: "Email not verified. Check your inbox or request a new verification email.",
+        email,
+        unverifiedEmail: email,
+      };
+    }
+
     if (error instanceof Error) {
       return {
         error: error.message,
@@ -172,6 +298,55 @@ export async function signinAction(
 
   revalidatePath("/");
   revalidatePath("/dashboard");
+  redirect("/dashboard");
+}
+
+export async function saveOnboardingAction(
+  _prevState: OnboardingActionState,
+  formData: FormData,
+): Promise<OnboardingActionState> {
+  const session = await requireSession();
+
+  const input = {
+    primaryObjective: getString(formData, "primaryObjective"),
+    biggestDifficulty: getString(formData, "biggestDifficulty"),
+    mainNeed: getString(formData, "mainNeed"),
+    dailyTimeCommitment: getString(formData, "dailyTimeCommitment"),
+    coachingStyle: getString(formData, "coachingStyle"),
+    contemplativeExperience: getString(formData, "contemplativeExperience"),
+    preferredPracticeFormat: getString(formData, "preferredPracticeFormat"),
+    successDefinition30d: getString(formData, "successDefinition30d"),
+    notes: getString(formData, "notes"),
+  };
+
+  const parsed = onboardingSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      error: "Please complete all required onboarding fields.",
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    };
+  }
+
+  try {
+    await apiUpsertOnboarding(session.accessToken, parsed.data);
+  } catch (error) {
+    if (error instanceof Error) {
+      return { error: error.message };
+    }
+
+    throw error;
+  }
+
+  revalidatePath("/");
+  revalidatePath("/dashboard");
+  revalidatePath("/account/settings");
+
+  const redirectTo = getString(formData, "redirectTo").trim();
+  if (redirectTo.startsWith("/")) {
+    redirect(redirectTo);
+  }
+
   redirect("/dashboard");
 }
 

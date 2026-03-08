@@ -16,11 +16,13 @@ import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import {
+  consumeEmailVerificationChallenge,
+  countVerifiedUsers,
   countJournalEntriesByUser,
-  countUsers,
   createAdminAuditLog,
   createChatEvent,
   createChatMessage,
+  createEmailVerificationChallenge,
   createChatThread,
   createCommunity,
   createCommunityChallenge,
@@ -37,6 +39,7 @@ import {
   createPractice,
   createRefreshSession,
   createSession,
+  createUserLegalConsent,
   createUser,
   deleteChatThread,
   deleteCommunity,
@@ -62,7 +65,10 @@ import {
   getCommunityExperts,
   getCommunityResources,
   getCreatorVideos,
+  getActiveEmailVerificationChallengeByCodeHash,
+  getActiveEmailVerificationChallengeByTokenHash,
   getLandingContent,
+  getLatestEmailVerificationChallengeByUserId,
   getLibraryLessonBySlug,
   getLibraryLessons,
   getPasskeyCredentialByCredentialId,
@@ -72,6 +78,11 @@ import {
   getSecuritySettingsByUserId,
   getSessionDeviceByTokenHash,
   getSessionUserByTokenHash,
+  getUserAuthById,
+  getUserNotificationPreferencesByUserId,
+  getUserPreferencesByUserId,
+  getUserProfileByUserId,
+  getUserOnboardingProfile,
   getUserCompanionPreferences,
   getUserTotpSecret,
   getUserByEmail,
@@ -87,7 +98,10 @@ import {
   listUserDevicesByUserId,
   markAllNotificationsRead,
   markNotificationRead,
+  markUserEmailVerified,
+  markUserOnboardingCompleted,
   markUserTotpVerified,
+  replaceEmailVerificationChallenge,
   renamePasskeyCredentialById,
   revokeUserDevice,
   rotateRefreshSessionByTokenHash,
@@ -101,8 +115,10 @@ import {
   setLessonStatus,
   setPillarStatus,
   setPracticeStatus,
+  setUserRole,
   setUserMfaEnabled,
   setUserPasskeyEnabled,
+  softDeleteUserAndAnonymize,
   updateChatThread,
   updateCommunity,
   updateCommunityChallenge,
@@ -116,12 +132,19 @@ import {
   updatePasskeyCredentialCounter,
   updatePillar,
   updatePractice,
+  updateUserName,
+  updateUserPasswordHash,
+  upsertUserNotificationPreferences,
   upsertUserDevice,
   upsertUserCompanionPreferences,
+  upsertUserOnboardingProfile,
+  upsertUserPreferences,
+  upsertUserProfile,
   upsertUserTotpSecret,
   type ChatThreadScope,
   type ContentStatus,
   type CurrentUser,
+  type OnboardingProfileRecord,
 } from "@ataraxia/db";
 
 const ACCESS_SESSION_TTL_MINUTES = 20;
@@ -168,6 +191,11 @@ const CHAT_TITLE_SYSTEM_PROMPT =
 const TOTP_DIGITS = 6;
 const TOTP_STEP_SECONDS = 30;
 const TOTP_WINDOW_STEPS = 1;
+const EMAIL_VERIFICATION_CODE_DIGITS = 6;
+const EMAIL_VERIFICATION_TTL_MINUTES = 30;
+const EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS = 45;
+const TERMS_POLICY_VERSION = "2026-03-01";
+const PRIVACY_POLICY_VERSION = "2026-03-01";
 
 type AuthenticatedRequest = Request & {
   authUser: CurrentUser;
@@ -214,6 +242,9 @@ const envSchema = z.object({
   DEEPSEEK_CHAT_MODEL: z.string().optional(),
   DEEPSEEK_BASE_URL: z.string().optional(),
   CHAT_GLOBAL_SYSTEM_PROMPT: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM_EMAIL: z.string().optional(),
+  WEB_APP_URL: z.string().optional(),
 });
 
 type AppEnv = z.infer<typeof envSchema>;
@@ -485,6 +516,35 @@ function createOpaqueToken(): string {
   return randomBytes(32).toString("hex");
 }
 
+function createEmailVerificationCode(): string {
+  const upperBound = 10 ** EMAIL_VERIFICATION_CODE_DIGITS;
+  const numeric = Math.floor(Math.random() * upperBound);
+  return numeric.toString().padStart(EMAIL_VERIFICATION_CODE_DIGITS, "0");
+}
+
+function formatOnboardingContext(profile: OnboardingProfileRecord | null): string {
+  if (!profile) {
+    return "";
+  }
+
+  const lines = [
+    `Primary objective: ${profile.primaryObjective}`,
+    `Biggest difficulty: ${profile.biggestDifficulty}`,
+    `Main need: ${profile.mainNeed}`,
+    `Daily time commitment: ${profile.dailyTimeCommitment}`,
+    `Preferred coaching style: ${profile.coachingStyle}`,
+    `Contemplative experience: ${profile.contemplativeExperience}`,
+    `Preferred practice format: ${profile.preferredPracticeFormat}`,
+    `30-day success definition: ${profile.successDefinition30d}`,
+  ];
+
+  if (profile.notes?.trim()) {
+    lines.push(`Additional context: ${profile.notes.trim()}`);
+  }
+
+  return lines.join("\n");
+}
+
 function getIpAddress(request: Request): string {
   const forwardedFor = request.headers["x-forwarded-for"];
 
@@ -644,17 +704,28 @@ function fallbackThreadTitle(prompt: string): string {
   return title.length > 120 ? title.slice(0, 120).trim() : title;
 }
 
-function composeEffectiveSystemPrompt(globalPrompt: string, customInstructions: string): string {
+function composeEffectiveSystemPrompt(
+  globalPrompt: string,
+  customInstructions: string,
+  onboardingContext: string,
+): string {
   const trimmedCustom = customInstructions.trim();
+  const trimmedOnboardingContext = onboardingContext.trim();
+  const sections = [globalPrompt];
 
-  if (!trimmedCustom) {
-    return globalPrompt;
+  if (trimmedOnboardingContext) {
+    sections.push(`
+User onboarding profile context:
+${trimmedOnboardingContext}`.trim());
   }
 
-  return `${globalPrompt}
-
+  if (trimmedCustom) {
+    sections.push(`
 User-specific customization (apply only if it does not conflict with safety or mission):
-${trimmedCustom}`.trim();
+${trimmedCustom}`.trim());
+  }
+
+  return sections.join("\n\n").trim();
 }
 
 function normalizeGeneratedThreadTitle(rawTitle: string): string | null {
@@ -672,6 +743,10 @@ function normalizeGeneratedThreadTitle(rawTitle: string): string | null {
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "");
+}
+
+function normalizeWebAppUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
 }
 
@@ -890,21 +965,116 @@ const signupSchema = z
       .regex(/[A-Z]/)
       .regex(/\d/),
     confirmPassword: z.string(),
+    acceptTerms: z.literal(true),
+    acceptPrivacy: z.literal(true),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match",
     path: ["confirmPassword"],
   });
 
+const verifyEmailSchema = z
+  .object({
+    token: z.string().trim().min(16).optional(),
+    email: z.string().trim().toLowerCase().email().max(120).optional(),
+    code: z.string().trim().regex(/^\d{6}$/).optional(),
+  })
+  .refine(
+    (data) =>
+      Boolean(data.token) ||
+      (typeof data.email === "string" &&
+        data.email.length > 0 &&
+        typeof data.code === "string" &&
+        data.code.length > 0),
+    {
+      message: "Provide either token or email + code.",
+    },
+  );
+
+const resendVerificationSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(120),
+});
+
 const signinSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(120),
   password: z.string().min(1),
-  mfaChallengeId: z.string().uuid().optional(),
+  mfaChallengeId: z.union([z.literal("totp"), z.string().uuid()]).optional(),
   mfaCode: z.string().trim().length(6).optional(),
 });
 
 const refreshSchema = z.object({
   refreshToken: z.string().min(16),
+});
+
+const accountProfilePatchSchema = z.object({
+  username: z
+    .string()
+    .trim()
+    .min(3)
+    .max(40)
+    .regex(/^[a-zA-Z0-9_-]+$/)
+    .nullable()
+    .optional(),
+  summary: z.string().trim().max(2000).optional(),
+  phone: z.string().trim().max(40).optional(),
+  city: z.string().trim().max(80).optional(),
+  country: z.string().trim().max(80).optional(),
+  socialLinks: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(40),
+        url: z.string().trim().url().max(300),
+      }),
+    )
+    .max(20)
+    .optional(),
+});
+
+const accountPreferencesPatchSchema = z.object({
+  language: z.string().trim().min(2).max(16).optional(),
+  timezone: z.string().trim().min(2).max(80).optional(),
+  profileVisibility: z.enum(["public", "private", "contacts"]).optional(),
+  showEmail: z.boolean().optional(),
+  showPhone: z.boolean().optional(),
+  allowContact: z.boolean().optional(),
+});
+
+const authMePatchSchema = z.object({
+  name: z.string().trim().min(2).max(80).optional(),
+  profile: accountProfilePatchSchema.optional(),
+  preferences: accountPreferencesPatchSchema.optional(),
+});
+
+const changePasswordSchema = z
+  .object({
+    oldPassword: z.string().min(1),
+    newPassword: z
+      .string()
+      .min(PASSWORD_MIN_LENGTH)
+      .regex(/[a-z]/)
+      .regex(/[A-Z]/)
+      .regex(/\d/),
+    confirmPassword: z.string().min(1),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords do not match.",
+  });
+
+const deleteAccountSchema = z.object({
+  emailConfirm: z.string().trim().toLowerCase().email().max(120),
+  passwordConfirm: z.string().min(1),
+});
+
+const notificationPreferencesPatchSchema = z.object({
+  emailChallenges: z.boolean().optional(),
+  emailEvents: z.boolean().optional(),
+  emailUpdates: z.boolean().optional(),
+  emailMarketing: z.boolean().optional(),
+  pushChallenges: z.boolean().optional(),
+  pushEvents: z.boolean().optional(),
+  pushUpdates: z.boolean().optional(),
+  digest: z.enum(["immediate", "daily", "weekly"]).optional(),
 });
 
 const passkeyAuthOptionsSchema = z.object({
@@ -1045,6 +1215,44 @@ const chatPreferencesPatchSchema = z.object({
   customInstructions: z.string().max(1500),
 });
 
+const onboardingSchema = z.object({
+  primaryObjective: z
+    .enum([
+      "Calm anxiety",
+      "Build discipline",
+      "Better decisions",
+      "Improve relationships",
+      "Meaning & purpose",
+    ]),
+  biggestDifficulty: z
+    .enum([
+      "Overthinking",
+      "Procrastination",
+      "Emotional reactivity",
+      "Lack of consistency",
+      "Burnout",
+    ]),
+  mainNeed: z.enum(["Clarity", "Stability", "Motivation", "Accountability", "Better habits"]),
+  dailyTimeCommitment: z.enum(["5 min", "10 min", "20 min", "30+ min"]),
+  coachingStyle: z.enum(["Direct", "Gentle", "Question-led", "Structured step-by-step"]),
+  contemplativeExperience: z.enum(["New", "Some experience", "Advanced"]),
+  preferredPracticeFormat: z.enum([
+    "Journaling",
+    "Breath-grounding",
+    "Reflection prompts",
+    "Action plans",
+    "Mixed",
+  ]),
+  successDefinition30d: z.enum([
+    "Less reactivity",
+    "Consistent routine",
+    "Better focus",
+    "Better relationships",
+    "Greater inner calm",
+  ]),
+  notes: z.string().trim().max(500).optional().default(""),
+});
+
 const adminChatEventsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).default(200),
 });
@@ -1081,9 +1289,15 @@ export function createApp() {
   const chatConfig = createChatRuntimeConfig(env);
 
   async function resolveEffectiveSystemPromptForUser(userId: string): Promise<string> {
+    const onboardingProfile = getUserOnboardingProfile(userId);
+    const onboardingContext = formatOnboardingContext(onboardingProfile);
     const preferences = getUserCompanionPreferences(userId);
     const customInstructions = preferences?.customInstructions ?? "";
-    return composeEffectiveSystemPrompt(chatConfig.globalSystemPrompt, customInstructions);
+    return composeEffectiveSystemPrompt(
+      chatConfig.globalSystemPrompt,
+      customInstructions,
+      onboardingContext,
+    );
   }
 
   function recordChatEvent(input: {
@@ -1120,6 +1334,21 @@ export function createApp() {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+  const webAppUrl = normalizeWebAppUrl(env.WEB_APP_URL ?? allowedOrigins[0] ?? "http://localhost:3000");
+  const resendApiKey = env.RESEND_API_KEY?.trim() ?? "";
+  const resendFromEmail = env.RESEND_FROM_EMAIL?.trim() ?? "";
+  const isResendConfigured = resendApiKey.length > 0 && resendFromEmail.length > 0;
+
+  if (process.env.NODE_ENV === "production") {
+    if (!env.WEB_APP_URL?.trim()) {
+      throw new Error("WEB_APP_URL is required in production.");
+    }
+
+    if (!isResendConfigured) {
+      throw new Error("RESEND_API_KEY and RESEND_FROM_EMAIL are required in production.");
+    }
+  }
+
   const passkeyRpId = env.PASSKEY_RP_ID ?? "localhost";
   const passkeyRpName = env.PASSKEY_RP_NAME ?? "Ataraxia";
   const passkeyExpectedOrigins = (
@@ -1130,6 +1359,52 @@ export function createApp() {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+
+  async function sendVerificationEmail(input: {
+    email: string;
+    name: string;
+    token: string;
+    code: string;
+  }): Promise<void> {
+    if (process.env.NODE_ENV === "test") {
+      return;
+    }
+
+    if (!isResendConfigured) {
+      console.warn("[auth] RESEND_API_KEY or RESEND_FROM_EMAIL missing; skipping verification email delivery.");
+      return;
+    }
+
+    const verifyUrl = `${webAppUrl}/auth/verify-email?token=${encodeURIComponent(input.token)}&email=${encodeURIComponent(input.email)}`;
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: resendFromEmail,
+        to: input.email,
+        subject: "Verify your Ataraxia account",
+        html: `
+          <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.5; color: #1f2937;">
+            <h2 style="margin: 0 0 12px;">Verify your email</h2>
+            <p>Hello ${input.name || "there"},</p>
+            <p>Use this verification code:</p>
+            <p style="font-size: 28px; letter-spacing: 6px; font-weight: 700; margin: 8px 0 16px;">${input.code}</p>
+            <p>Or click this secure link:</p>
+            <p><a href="${verifyUrl}" style="color: #0f766e;">Verify email</a></p>
+            <p style="font-size: 12px; color: #6b7280;">This link and code expire in ${EMAIL_VERIFICATION_TTL_MINUTES} minutes.</p>
+          </div>
+        `.trim(),
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+      throw new Error(payload?.message ?? "Failed to send verification email.");
+    }
+  }
 
   app.use(
     cors({
@@ -1168,8 +1443,6 @@ export function createApp() {
       return;
     }
 
-    const role = countUsers() === 0 ? "ADMIN" : "MEMBER";
-
     const created = createUser({
       id: randomUUID(),
       name: parsed.data.name,
@@ -1180,7 +1453,7 @@ export function createApp() {
         timeCost: 3,
         parallelism: 1,
       }),
-      role,
+      role: "MEMBER",
     });
 
     if (!created) {
@@ -1188,23 +1461,268 @@ export function createApp() {
       return;
     }
 
+    const acceptedAt = new Date().toISOString();
+    const consentContext = buildDeviceContext(req);
+
+    createUserLegalConsent({
+      id: randomUUID(),
+      userId: created.id,
+      policyType: "TERMS",
+      policyVersion: TERMS_POLICY_VERSION,
+      acceptedAt,
+      ipAddress: consentContext.ipAddress,
+      userAgent: consentContext.userAgent,
+    });
+
+    createUserLegalConsent({
+      id: randomUUID(),
+      userId: created.id,
+      policyType: "PRIVACY",
+      policyVersion: PRIVACY_POLICY_VERSION,
+      acceptedAt,
+      ipAddress: consentContext.ipAddress,
+      userAgent: consentContext.userAgent,
+    });
+
+    const verificationToken = createOpaqueToken();
+    const verificationCode = createEmailVerificationCode();
+    createEmailVerificationChallenge({
+      id: randomUUID(),
+      userId: created.id,
+      tokenHash: hashToken(verificationToken),
+      codeHash: hashToken(verificationCode),
+      expiresAt: nowPlusMinutesIso(EMAIL_VERIFICATION_TTL_MINUTES),
+    });
+
+    try {
+      await sendVerificationEmail({
+        email: created.email,
+        name: created.name,
+        token: verificationToken,
+        code: verificationCode,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(502).json({ error: error.message });
+        return;
+      }
+
+      throw error;
+    }
+
+    res.status(201).json({
+      data: {
+        verificationRequired: true,
+        email: created.email,
+        ...(process.env.NODE_ENV !== "production"
+          ? {
+              debugVerificationCode: verificationCode,
+              debugVerificationToken: verificationToken,
+            }
+          : {}),
+      },
+    });
+  });
+
+  app.post("/api/v1/auth/verify-email", async (req, res) => {
+    const parsed = verifyEmailSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid verification payload" });
+      return;
+    }
+
+    let user = null as CurrentUser | null;
+    let challengeId = "";
+    const email = parsed.data.email ?? "";
+    const code = parsed.data.code ?? "";
+    const hasCodePayload = Boolean(email && code);
+
+    if (hasCodePayload) {
+      const existing = getUserByEmail(email);
+
+      if (!existing) {
+        res.status(401).json({ error: "Invalid verification code." });
+        return;
+      }
+
+      const challenge = getActiveEmailVerificationChallengeByCodeHash(existing.id, hashToken(code));
+
+      if (!challenge) {
+        res.status(401).json({ error: "Invalid verification code." });
+        return;
+      }
+
+      user = getUserById(existing.id);
+      challengeId = challenge.id;
+    } else {
+      const token = parsed.data.token ?? "";
+      const challenge = getActiveEmailVerificationChallengeByTokenHash(hashToken(token));
+
+      if (!challenge) {
+        res.status(401).json({ error: "Invalid or expired verification token." });
+        return;
+      }
+
+      user = getUserById(challenge.userId);
+      challengeId = challenge.id;
+    }
+
+    if (!user) {
+      res.status(404).json({ error: "User not found." });
+      return;
+    }
+
+    if (!consumeEmailVerificationChallenge(challengeId)) {
+      res.status(401).json({ error: "Verification challenge is no longer valid." });
+      return;
+    }
+
+    const wasAlreadyVerified = Boolean(user.emailVerifiedAt);
+
+    if (!wasAlreadyVerified) {
+      const verifiedCountBefore = countVerifiedUsers();
+      const verifiedUser = markUserEmailVerified(user.id);
+
+      if (!verifiedUser) {
+        res.status(500).json({ error: "Unable to verify account email." });
+        return;
+      }
+
+      if (verifiedCountBefore === 0) {
+        setUserRole(verifiedUser.id, "ADMIN");
+      }
+    }
+
+    const refreshedUser = getUserById(user.id);
+
+    if (!refreshedUser) {
+      res.status(404).json({ error: "User not found." });
+      return;
+    }
+
     const deviceContext = buildDeviceContext(req);
     const deviceId = upsertUserDevice({
       id: randomUUID(),
-      userId: created.id,
+      userId: refreshedUser.id,
       fingerprint: deviceContext.fingerprint,
       label: deviceContext.label,
       ipAddress: deviceContext.ipAddress,
       userAgent: deviceContext.userAgent,
     });
 
-    const tokens = await createAuthTokenPair(created.id, deviceId);
+    const tokens = await createAuthTokenPair(refreshedUser.id, deviceId);
 
-    res.status(201).json({
+    res.json({
       data: {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
-        user: created,
+        user: refreshedUser,
+      },
+    });
+  });
+
+  app.post("/api/v1/auth/resend-verification", async (req, res) => {
+    const parsed = resendVerificationSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid resend payload" });
+      return;
+    }
+
+    try {
+      assertWithinAuthRateLimit(authKey("signup", req, parsed.data.email));
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(429).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+
+    const user = getUserByEmail(parsed.data.email);
+
+    if (!user) {
+      res.json({ data: { sent: true } });
+      return;
+    }
+
+    if (user.emailVerifiedAt) {
+      res.json({ data: { sent: false, alreadyVerified: true } });
+      return;
+    }
+
+    const latestChallenge = getLatestEmailVerificationChallengeByUserId(user.id);
+    const now = new Date();
+
+    if (latestChallenge) {
+      const elapsedSeconds = Math.floor(
+        (now.getTime() - new Date(latestChallenge.lastSentAt).getTime()) / 1000,
+      );
+
+      if (elapsedSeconds < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS) {
+        res.status(429).json({
+          error: `Please wait ${EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS - elapsedSeconds}s before requesting another code.`,
+        });
+        return;
+      }
+    }
+
+    const verificationToken = createOpaqueToken();
+    const verificationCode = createEmailVerificationCode();
+    const expiresAt = nowPlusMinutesIso(EMAIL_VERIFICATION_TTL_MINUTES);
+
+    if (latestChallenge) {
+      const replaced = replaceEmailVerificationChallenge({
+        challengeId: latestChallenge.id,
+        tokenHash: hashToken(verificationToken),
+        codeHash: hashToken(verificationCode),
+        expiresAt,
+      });
+
+      if (!replaced) {
+        createEmailVerificationChallenge({
+          id: randomUUID(),
+          userId: user.id,
+          tokenHash: hashToken(verificationToken),
+          codeHash: hashToken(verificationCode),
+          expiresAt,
+        });
+      }
+    } else {
+      createEmailVerificationChallenge({
+        id: randomUUID(),
+        userId: user.id,
+        tokenHash: hashToken(verificationToken),
+        codeHash: hashToken(verificationCode),
+        expiresAt,
+      });
+    }
+
+    try {
+      await sendVerificationEmail({
+        email: user.email,
+        name: user.name,
+        token: verificationToken,
+        code: verificationCode,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(502).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+
+    res.json({
+      data: {
+        sent: true,
+        ...(process.env.NODE_ENV !== "production"
+          ? {
+              debugVerificationCode: verificationCode,
+              debugVerificationToken: verificationToken,
+            }
+          : {}),
       },
     });
   });
@@ -1229,7 +1747,7 @@ export function createApp() {
 
     const existing = getUserByEmail(parsed.data.email);
 
-    if (!existing) {
+    if (!existing || existing.deletedAt) {
       res.status(401).json({ error: "Invalid email or password." });
       return;
     }
@@ -1238,6 +1756,11 @@ export function createApp() {
 
     if (!valid) {
       res.status(401).json({ error: "Invalid email or password." });
+      return;
+    }
+
+    if (!existing.emailVerifiedAt) {
+      res.status(401).json({ error: "EMAIL_NOT_VERIFIED" });
       return;
     }
 
@@ -1279,17 +1802,18 @@ export function createApp() {
     });
 
     const tokens = await createAuthTokenPair(existing.id, deviceId);
+    const signedInUser = getUserById(existing.id);
+
+    if (!signedInUser) {
+      res.status(404).json({ error: "User not found." });
+      return;
+    }
 
     res.json({
       data: {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
-        user: {
-          id: existing.id,
-          name: existing.name,
-          email: existing.email,
-          role: existing.role,
-        },
+        user: signedInUser,
       },
     });
   });
@@ -1304,7 +1828,12 @@ export function createApp() {
 
     const existingUser = getUserByEmail(parsed.data.email);
 
-    if (!existingUser || !existingUser.passkeyEnabled) {
+    if (
+      !existingUser ||
+      existingUser.deletedAt ||
+      !existingUser.passkeyEnabled ||
+      !existingUser.emailVerifiedAt
+    ) {
       res.status(401).json({ error: "Passkey sign-in is unavailable for this account." });
       return;
     }
@@ -1368,6 +1897,11 @@ export function createApp() {
 
     if (!user) {
       res.status(401).json({ error: "User not found for passkey credential." });
+      return;
+    }
+
+    if (!user.emailVerifiedAt) {
+      res.status(401).json({ error: "Passkey sign-in is unavailable for this account." });
       return;
     }
 
@@ -1474,11 +2008,201 @@ export function createApp() {
 
   app.get("/api/v1/auth/me", requireAuth, (req, res) => {
     const authReq = req as AuthenticatedRequest;
+    const currentUser = getUserById(authReq.authUser.id);
+
+    if (!currentUser) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const profile = getUserProfileByUserId(currentUser.id);
+    const preferences = getUserPreferencesByUserId(currentUser.id);
 
     res.json({
       data: {
-        user: authReq.authUser,
+        user: currentUser,
         accessToken: authReq.authAccessToken,
+        profile,
+        preferences,
+      },
+    });
+  });
+
+  app.patch("/api/v1/auth/me", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = authMePatchSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid account payload" });
+      return;
+    }
+
+    if (parsed.data.name !== undefined) {
+      const updatedUser = updateUserName(authReq.authUser.id, parsed.data.name);
+
+      if (!updatedUser) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+    }
+
+    if (parsed.data.profile) {
+      upsertUserProfile(authReq.authUser.id, parsed.data.profile);
+    }
+
+    if (parsed.data.preferences) {
+      upsertUserPreferences(authReq.authUser.id, parsed.data.preferences);
+    }
+
+    const currentUser = getUserById(authReq.authUser.id);
+
+    if (!currentUser) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    const profile = getUserProfileByUserId(currentUser.id);
+    const preferences = getUserPreferencesByUserId(currentUser.id);
+
+    res.json({
+      data: {
+        user: currentUser,
+        profile,
+        preferences,
+      },
+    });
+  });
+
+  app.post("/api/v1/auth/change-password", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = changePasswordSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid password payload" });
+      return;
+    }
+
+    if (parsed.data.oldPassword === parsed.data.newPassword) {
+      res.status(400).json({ error: "New password must be different from current password." });
+      return;
+    }
+
+    const existing = getUserAuthById(authReq.authUser.id);
+
+    if (!existing || existing.deletedAt) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    const validCurrentPassword = await argon2.verify(existing.passwordHash, parsed.data.oldPassword);
+
+    if (!validCurrentPassword) {
+      res.status(401).json({ error: "Current password is incorrect." });
+      return;
+    }
+
+    const passwordHash = await argon2.hash(parsed.data.newPassword, {
+      type: argon2.argon2id,
+      memoryCost: 19456,
+      timeCost: 3,
+      parallelism: 1,
+    });
+    const updated = updateUserPasswordHash(authReq.authUser.id, passwordHash);
+
+    if (!updated) {
+      res.status(500).json({ error: "Unable to update password." });
+      return;
+    }
+
+    res.json({ data: { updated: true } });
+  });
+
+  app.post("/api/v1/auth/delete", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = deleteAccountSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid delete payload" });
+      return;
+    }
+
+    const existing = getUserAuthById(authReq.authUser.id);
+
+    if (!existing || existing.deletedAt) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    if (parsed.data.emailConfirm !== existing.email.toLowerCase()) {
+      res.status(401).json({ error: "Email confirmation does not match your account." });
+      return;
+    }
+
+    const validPassword = await argon2.verify(existing.passwordHash, parsed.data.passwordConfirm);
+
+    if (!validPassword) {
+      res.status(401).json({ error: "Password confirmation is invalid." });
+      return;
+    }
+
+    const deleted = softDeleteUserAndAnonymize({
+      userId: existing.id,
+      reason: "self-service-account-delete",
+    });
+
+    if (!deleted) {
+      res.status(409).json({ error: "Account is already deleted." });
+      return;
+    }
+
+    res.json({ data: { deleted: true } });
+  });
+
+  app.get("/api/v1/onboarding", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const profile = getUserOnboardingProfile(authReq.authUser.id);
+
+    res.json({
+      data: {
+        profile,
+        onboardingCompletedAt: authReq.authUser.onboardingCompletedAt,
+      },
+    });
+  });
+
+  app.put("/api/v1/onboarding", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = onboardingSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid onboarding payload" });
+      return;
+    }
+
+    const updatedProfile = upsertUserOnboardingProfile({
+      id: randomUUID(),
+      userId: authReq.authUser.id,
+      primaryObjective: parsed.data.primaryObjective,
+      biggestDifficulty: parsed.data.biggestDifficulty,
+      mainNeed: parsed.data.mainNeed,
+      dailyTimeCommitment: parsed.data.dailyTimeCommitment,
+      coachingStyle: parsed.data.coachingStyle,
+      contemplativeExperience: parsed.data.contemplativeExperience,
+      preferredPracticeFormat: parsed.data.preferredPracticeFormat,
+      successDefinition30d: parsed.data.successDefinition30d,
+      notes: parsed.data.notes,
+    });
+    const updatedUser = markUserOnboardingCompleted(authReq.authUser.id);
+
+    if (!updatedUser) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    res.json({
+      data: {
+        profile: updatedProfile,
+        onboardingCompletedAt: updatedUser.onboardingCompletedAt,
       },
     });
   });
@@ -1809,6 +2533,25 @@ export function createApp() {
     }
 
     res.json({ data: listNotificationsByUser(authReq.authUser.id, parsed.data.limit) });
+  });
+
+  app.get("/api/v1/notifications/preferences", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const preferences = getUserNotificationPreferencesByUserId(authReq.authUser.id);
+    res.json({ data: preferences });
+  });
+
+  app.patch("/api/v1/notifications/preferences", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = notificationPreferencesPatchSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid notification preferences payload" });
+      return;
+    }
+
+    const preferences = upsertUserNotificationPreferences(authReq.authUser.id, parsed.data);
+    res.json({ data: preferences });
   });
 
   app.patch("/api/v1/notifications/:id/read", requireAuth, (req, res) => {

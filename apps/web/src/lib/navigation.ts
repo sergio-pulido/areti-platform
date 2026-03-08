@@ -1,4 +1,6 @@
 import {
+  AlertTriangle,
+  Bell,
   BookOpen,
   Bot,
   CalendarDays,
@@ -8,11 +10,12 @@ import {
   FlaskConical,
   FolderKanban,
   Home,
+  KeyRound,
+  Monitor,
   Notebook,
   NotebookPen,
-  Shield,
-  Star,
   Settings,
+  Shield,
   Trophy,
   UserRound,
   UsersRound,
@@ -27,7 +30,9 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   description: string;
+  group?: string;
   matchSubpaths?: boolean;
+  enabled?: boolean;
 };
 
 export type NavSection = {
@@ -171,41 +176,65 @@ export const dashboardNavSections: NavSection[] = [
     id: "account",
     label: "Account",
     href: "/account",
-    description: "Profile and security controls",
-    matchPrefixes: [
-      "/account",
-      "/account/settings",
-      "/account/privacy",
-      "/account/terms",
-      "/account/cookies",
-      "/legal/privacy",
-      "/legal/terms",
-      "/legal/cookies",
-    ],
+    description: "Profile, security, and personal controls",
+    matchPrefixes: ["/account"],
     items: [
       {
         href: "/account",
+        label: "Home",
+        icon: Home,
+        description: "Overview of your account",
+        group: "Account",
+        matchSubpaths: false,
+      },
+      {
+        href: "/account/profile",
         label: "Profile",
         icon: UserRound,
-        description: "Personal details",
+        description: "Personal details and contact information",
+        group: "Profile",
       },
       {
         href: "/account/settings",
         label: "Settings",
         icon: Settings,
-        description: "Security and access",
+        description: "Account preferences and settings",
+        group: "Preferences",
       },
       {
-        href: "/account/privacy",
-        label: "Privacy",
+        href: "/account/security",
+        label: "Security",
         icon: Shield,
-        description: "Policy and data",
+        description: "Security overview and recommendations",
+        group: "Security",
       },
       {
-        href: "/account/terms",
-        label: "Terms",
-        icon: Star,
-        description: "Platform rules",
+        href: "/account/password",
+        label: "Password",
+        icon: KeyRound,
+        description: "Change your password",
+        group: "Security",
+      },
+      {
+        href: "/account/sessions",
+        label: "Sessions",
+        icon: Monitor,
+        description: "Manage active sessions and devices",
+        group: "Security",
+      },
+      {
+        href: "/account/danger",
+        label: "Danger Zone",
+        icon: AlertTriangle,
+        description: "Irreversible account actions",
+        group: "Security",
+      },
+      {
+        href: "/account/notifications",
+        label: "Notifications",
+        icon: Bell,
+        description: "Manage your notification preferences",
+        group: "Communication",
       },
     ],
   },

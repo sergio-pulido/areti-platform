@@ -7,7 +7,11 @@ export default async function SignupPage() {
   const user = await getCurrentUser();
 
   if (user) {
-    redirect("/dashboard");
+    if (user.onboardingCompletedAt) {
+      redirect("/dashboard");
+    }
+
+    redirect("/onboarding");
   }
 
   return (

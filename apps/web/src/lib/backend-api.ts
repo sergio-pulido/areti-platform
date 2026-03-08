@@ -5,6 +5,54 @@ export type ApiUser = {
   name: string;
   email: string;
   role: "MEMBER" | "ADMIN";
+  emailVerifiedAt: string | null;
+  onboardingCompletedAt: string | null;
+};
+
+export type ApiSocialLink = {
+  label: string;
+  url: string;
+};
+
+export type ApiUserProfile = {
+  id: string;
+  userId: string;
+  username: string | null;
+  summary: string;
+  phone: string;
+  city: string;
+  country: string;
+  socialLinks: ApiSocialLink[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiUserPreferences = {
+  id: string;
+  userId: string;
+  language: string;
+  timezone: string;
+  profileVisibility: "public" | "private" | "contacts";
+  showEmail: boolean;
+  showPhone: boolean;
+  allowContact: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiNotificationPreferences = {
+  id: string;
+  userId: string;
+  emailChallenges: boolean;
+  emailEvents: boolean;
+  emailUpdates: boolean;
+  emailMarketing: boolean;
+  pushChallenges: boolean;
+  pushEvents: boolean;
+  pushUpdates: boolean;
+  digest: "immediate" | "daily" | "weekly";
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type AuthTokenPair = {
@@ -14,6 +62,29 @@ export type AuthTokenPair = {
 
 export type ApiAuthPayload = AuthTokenPair & {
   user: ApiUser;
+};
+
+export type ApiMePayload = {
+  user: ApiUser;
+  accessToken: string;
+  profile: ApiUserProfile;
+  preferences: ApiUserPreferences;
+};
+
+export type ApiSignupResult = {
+  verificationRequired: true;
+  email: string;
+  debugVerificationCode?: string;
+  debugVerificationToken?: string;
+};
+
+export type ApiVerifyEmailResult = ApiAuthPayload;
+
+export type ApiResendVerificationResult = {
+  sent: boolean;
+  alreadyVerified?: boolean;
+  debugVerificationCode?: string;
+  debugVerificationToken?: string;
 };
 
 export type ApiSigninResult =
@@ -99,6 +170,27 @@ export type ApiChatMessage = {
 
 export type ApiChatPreferences = {
   customInstructions: string;
+};
+
+export type ApiOnboardingProfile = {
+  id: string;
+  userId: string;
+  primaryObjective: string;
+  biggestDifficulty: string;
+  mainNeed: string;
+  dailyTimeCommitment: string;
+  coachingStyle: string;
+  contemplativeExperience: string;
+  preferredPracticeFormat: string;
+  successDefinition30d: string;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiOnboardingResponse = {
+  profile: ApiOnboardingProfile | null;
+  onboardingCompletedAt: string | null;
 };
 
 export type ApiChatEvent = {
@@ -377,10 +469,30 @@ export async function apiSignup(input: {
   email: string;
   password: string;
   confirmPassword: string;
-}): Promise<ApiAuthPayload> {
-  return requestJson<ApiAuthPayload>("/api/v1/auth/signup", {
+  acceptTerms: boolean;
+  acceptPrivacy: boolean;
+}): Promise<ApiSignupResult> {
+  return requestJson<ApiSignupResult>("/api/v1/auth/signup", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export async function apiVerifyEmail(input: {
+  token?: string;
+  email?: string;
+  code?: string;
+}): Promise<ApiVerifyEmailResult> {
+  return requestJson<ApiVerifyEmailResult>("/api/v1/auth/verify-email", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function apiResendVerification(email: string): Promise<ApiResendVerificationResult> {
+  return requestJson<ApiResendVerificationResult>("/api/v1/auth/resend-verification", {
+    method: "POST",
+    body: JSON.stringify({ email }),
   });
 }
 
@@ -430,8 +542,65 @@ export async function apiSignin(input: {
   throw new ApiHttpError(parsed.message, response.status, parsed.code, parsed.data);
 }
 
-export async function apiMe(token: string): Promise<{ user: ApiUser; accessToken: string }> {
-  return requestJson<{ user: ApiUser; accessToken: string }>("/api/v1/auth/me", withAuth(token));
+export async function apiMe(token: string): Promise<ApiMePayload> {
+  return requestJson<ApiMePayload>("/api/v1/auth/me", withAuth(token));
+}
+
+export async function apiPatchMe(
+  token: string,
+  input: {
+    name?: string;
+    profile?: {
+      username?: string | null;
+      summary?: string;
+      phone?: string;
+      city?: string;
+      country?: string;
+      socialLinks?: ApiSocialLink[];
+    };
+    preferences?: {
+      language?: string;
+      timezone?: string;
+      profileVisibility?: "public" | "private" | "contacts";
+      showEmail?: boolean;
+      showPhone?: boolean;
+      allowContact?: boolean;
+    };
+  },
+): Promise<{ user: ApiUser; profile: ApiUserProfile; preferences: ApiUserPreferences }> {
+  return requestJson<{ user: ApiUser; profile: ApiUserProfile; preferences: ApiUserPreferences }>(
+    "/api/v1/auth/me",
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiChangePassword(
+  token: string,
+  input: { oldPassword: string; newPassword: string; confirmPassword: string },
+): Promise<{ updated: true }> {
+  return requestJson<{ updated: true }>(
+    "/api/v1/auth/change-password",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiDeleteAccount(
+  token: string,
+  input: { emailConfirm: string; passwordConfirm: string },
+): Promise<{ deleted: true }> {
+  return requestJson<{ deleted: true }>(
+    "/api/v1/auth/delete",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
 }
 
 export async function apiRefresh(refreshToken: string): Promise<AuthTokenPair> {
@@ -863,6 +1032,40 @@ export async function apiNotifications(token: string, limit = 20): Promise<ApiNo
   );
 }
 
+export async function apiNotificationPreferences(
+  token: string,
+): Promise<ApiNotificationPreferences> {
+  return requestJson<ApiNotificationPreferences>(
+    "/api/v1/notifications/preferences",
+    withAuth(token),
+  );
+}
+
+export async function apiSetNotificationPreferences(
+  token: string,
+  input: Partial<
+    Pick<
+      ApiNotificationPreferences,
+      | "emailChallenges"
+      | "emailEvents"
+      | "emailUpdates"
+      | "emailMarketing"
+      | "pushChallenges"
+      | "pushEvents"
+      | "pushUpdates"
+      | "digest"
+    >
+  >,
+): Promise<ApiNotificationPreferences> {
+  return requestJson<ApiNotificationPreferences>(
+    "/api/v1/notifications/preferences",
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
 export async function apiNotificationRead(token: string, notificationId: string): Promise<void> {
   return requestJson<void>(
     `/api/v1/notifications/${notificationId}/read`,
@@ -1023,6 +1226,33 @@ export async function apiChatPostMessage(
 
 export async function apiChatPreferences(token: string): Promise<ApiChatPreferences> {
   return requestJson<ApiChatPreferences>("/api/v1/chat/preferences", withAuth(token));
+}
+
+export async function apiOnboarding(token: string): Promise<ApiOnboardingResponse> {
+  return requestJson<ApiOnboardingResponse>("/api/v1/onboarding", withAuth(token));
+}
+
+export async function apiUpsertOnboarding(
+  token: string,
+  input: {
+    primaryObjective: string;
+    biggestDifficulty: string;
+    mainNeed: string;
+    dailyTimeCommitment: string;
+    coachingStyle: string;
+    contemplativeExperience: string;
+    preferredPracticeFormat: string;
+    successDefinition30d: string;
+    notes?: string;
+  },
+): Promise<ApiOnboardingResponse> {
+  return requestJson<ApiOnboardingResponse>(
+    "/api/v1/onboarding",
+    withAuth(token, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  );
 }
 
 export async function apiSetChatPreferences(

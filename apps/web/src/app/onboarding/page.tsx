@@ -12,6 +12,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
   const session = await requireSession();
   const params = await searchParams;
   const editMode = params.edit === "1";
+  const showVerifiedTopbar = Boolean(session.user.onboardingCompletedAt);
 
   if (session.user.onboardingCompletedAt && !editMode) {
     redirect("/dashboard");
@@ -21,7 +22,10 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
 
   return (
     <div className="min-h-screen bg-night-950 text-sand-100">
-      <AppTopbar user={session.user} accessToken={session.accessToken} />
+      <AppTopbar
+        user={showVerifiedTopbar ? session.user : undefined}
+        accessToken={showVerifiedTopbar ? session.accessToken : undefined}
+      />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
         <div className="rounded-3xl border border-night-800 bg-night-900/70 p-6 sm:p-8">
           <p className="text-xs uppercase tracking-[0.3em] text-sage-200/90">Onboarding</p>

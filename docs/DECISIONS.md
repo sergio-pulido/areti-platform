@@ -203,3 +203,63 @@
 - **Decision:** Persist chat events (`thread_first_message_created`, `thread_auto_titled`, rename/archive/restore/delete, provider failures) in `chat_events` and expose admin read API.
 - **Why:** Enables deterministic QA and operational review without external analytics dependency.
 - **Tradeoff:** Additional DB writes and retention considerations for telemetry growth over time.
+
+## 2026-03-08 - Require verified email before session issuance
+- **Context:** Signup previously created authenticated sessions immediately, without verified email ownership.
+- **Decision:** Convert signup to pending-account mode, require `/api/v1/auth/verify-email` (token or 6-digit code), and issue tokens only after verification.
+- **Why:** Strengthens account integrity and aligns auth lifecycle with production expectations.
+- **Tradeoff:** Adds verification step friction and introduces resend/challenge lifecycle complexity.
+
+## 2026-03-08 - Persist auditable legal consent at signup
+- **Context:** Legal acceptance was not explicitly captured with policy-version evidence.
+- **Decision:** Require Terms/Privacy checkboxes at signup and persist versioned acceptance records (`policy type/version`, timestamp, IP, user-agent) in `user_legal_consents`.
+- **Why:** Improves compliance posture and supports future legal/version audits.
+- **Tradeoff:** Slightly larger auth payloads and additional write overhead on signup.
+
+## 2026-03-08 - Enforce onboarding gate before secured app usage
+- **Context:** Personalization signals were insufficient and optional onboarding allowed users into app flows without profile context.
+- **Decision:** Add required `/onboarding` flow with persisted profile answers, block secured-shell access until completion, and allow edits later from Account settings.
+- **Why:** Enables consistent personalization and prompt shaping from first authenticated usage.
+- **Tradeoff:** Initial activation is longer by one required step.
+
+## 2026-03-08 - Gate protected routes on cookie consent
+- **Context:** Cookie policy existed, but runtime consent acknowledgment was not enforced before app usage.
+- **Decision:** Add bottom-banner consent UX plus route-level gate redirecting protected paths to `/legal/cookies?next=...` until consent cookie is present.
+- **Why:** Aligns product behavior with transparent cookie disclosure and acceptance flow.
+- **Tradeoff:** Requires additional middleware/proxy logic and a consent cookie dependency for route access.
+
+## 2026-03-08 - Unify topbar across guest and authenticated surfaces
+- **Context:** Header behavior was fragmented across landing/auth/legal/secured pages and mobile action discoverability was inconsistent.
+- **Decision:** Introduce shared `AppTopbar` for guest and authenticated states, keep desktop action ordering, and move mobile actions/search into user-dropdown patterns.
+- **Why:** Delivers consistent navigation semantics and reduces duplicated header implementations.
+- **Tradeoff:** Adds one shared component with broader responsibilities across route contexts.
+
+## 2026-03-08 - Separate legal IA from account IA and expand account overview
+- **Context:** Account sidenav mixed legal-policy links with profile/security controls, and `/account` lacked a comprehensive “typical account” dashboard.
+- **Decision:** Keep account navigation focused on profile/settings, route legal policies canonically under `/legal/*`, and redesign `/account` into a multi-card overview for identity, security posture, activity, and common actions.
+- **Why:** Improves information architecture clarity and gives users an account home that matches expected account-management patterns.
+- **Tradeoff:** More account-page surface area to maintain, plus legacy `/account/{privacy,terms,cookies}` paths now act as redirect aliases.
+
+## 2026-03-08 - Expand account into grouped multi-tab IA
+- **Context:** A single account/settings surface was insufficient for typical account-management workflows (profile subsections, security operations, communication controls, saved content).
+- **Decision:** Add grouped account navigation and dedicated routes for profile (`/account/profile`, `/account/extra-data`, `/account/contact`, `/account/professional`), security (`/account/security`, `/account/password`, `/account/sessions`, `/account/danger`), communication (`/account/notifications`, `/account/feedback`), and saved content (`/account/calendar`, `/account/likes`, `/account/favourites`, `/account/comments`, `/account/spaces`, `/account/documents`), keeping preferences in `/account/settings`.
+- **Why:** Aligns account UX with expected product patterns and enables focused pages with clearer responsibilities.
+- **Tradeoff:** Increased route/UI maintenance surface, with some pages currently scaffolded pending deeper data-model integration.
+
+## 2026-03-08 - Stoicism-native account domain over copied `/account/*` API pattern
+- **Context:** Reference material from another app provided useful IA ideas but included mismatched API/domain boundaries and features not aligned with this product.
+- **Decision:** Keep account behavior in native domain surfaces (`/auth`, `/notifications`, `/onboarding`, `/security`) and implement only core account capabilities now: identity/profile persistence, preferences, notification preferences, password change, sessions/security, and deletion lifecycle.
+- **Why:** Preserves architectural coherence, minimizes unnecessary endpoints, and keeps implementation aligned with existing backend ownership and schema patterns.
+- **Tradeoff:** Deferred sections stay intentionally disabled/visible (“Coming soon”) until product scope promotes them.
+
+## 2026-03-08 - Consolidate profile UX for personal-use product fit
+- **Context:** Splitting profile into main/extra/contact/professional tabs reflected a copied enterprise/community pattern and did not match this app’s personal-use scope.
+- **Decision:** Collapse account identity editing into a single `/account/profile` tab and remove extra/professional profile sections from account navigation (legacy routes redirect to profile).
+- **Why:** Simpler IA, less cognitive load, and better alignment with a solo personal-practice product.
+- **Tradeoff:** Existing schema can still hold extra fields, but UI/API focus intentionally limits surfaced profile controls.
+
+## 2026-03-08 - Hide deferred account tabs until promoted to core scope
+- **Context:** Showing disabled "coming soon" items in account nav increased noise and made the personal-use account IA feel unfinished.
+- **Decision:** Keep deferred routes in code but remove them from account sidenav for now; only core tabs are visible.
+- **Why:** Reduces cognitive load and keeps account navigation focused on actions users can complete today.
+- **Tradeoff:** Deferred capabilities are less discoverable until explicitly reintroduced.
