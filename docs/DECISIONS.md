@@ -270,6 +270,18 @@
 - **Why:** Provides a single, authoritative progress source for home recommendations and UI summaries.
 - **Tradeoff:** Current signals are journal-derived; lesson/practice completion remains a later API extension.
 
+## 2026-03-08 - Track lesson/practice completion as first-party progress data
+- **Context:** Dashboard lesson/practice progress still depended on heuristics because completion events were not persisted.
+- **Decision:** Add `user_content_completions` persistence and `POST /api/v1/progress/complete`, then include completion-backed fields in dashboard summary (`lessonsCompleted`, `totalLessons`, `practicesCompletedThisWeek`).
+- **Why:** Makes progress indicators behaviorally meaningful and tied to real user actions.
+- **Tradeoff:** Completion is currently user-declared (explicit "mark complete"), not yet auto-derived from deep interaction telemetry.
+
+## 2026-03-08 - Remove runtime Google font dependency for deterministic dev/e2e startup
+- **Context:** Turbopack/dev e2e runs intermittently failed when Google font fetch/internal font module resolution was unavailable.
+- **Decision:** Replace `next/font/google` runtime imports in root layout with deterministic local CSS font stacks via `--font-title` and `--font-body` variables.
+- **Why:** Stabilizes local/dev/test startup and removes external network dependency for core rendering.
+- **Tradeoff:** Typography is now system-stack based until self-hosted custom font assets are introduced.
+
 ## 2026-03-08 - Consolidate profile UX for personal-use product fit
 - **Context:** Splitting profile into main/extra/contact/professional tabs reflected a copied enterprise/community pattern and did not match this app’s personal-use scope.
 - **Decision:** Collapse account identity editing into a single `/account/profile` tab and remove extra/professional profile sections from account navigation (legacy routes redirect to profile).

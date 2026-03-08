@@ -21,6 +21,7 @@ import {
   creatorVideos,
   emailVerificationChallenges,
   journalEntries,
+  userContentCompletions,
   libraryLessons,
   mfaChallenges,
   passkeyCredentials,
@@ -37,6 +38,7 @@ import {
   userOnboardingProfiles,
   userTotpSecrets,
   users,
+  type ContentCompletionKind,
   type ContentStatus,
   type LegalPolicyType,
   type UserRole,
@@ -236,6 +238,23 @@ export type UserNotificationPreferencesRecord = {
   digest: "immediate" | "daily" | "weekly";
   createdAt: string;
   updatedAt: string;
+};
+
+export type ContentCompletionRecord = {
+  id: string;
+  userId: string;
+  contentKind: ContentCompletionKind;
+  contentSlug: string;
+  completionCount: number;
+  lastCompletedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UserContentCompletionSummary = {
+  lessonsCompleted: number;
+  practicesCompletedThisWeek: number;
+  totalLessons: number;
 };
 
 const globalForDb = globalThis as unknown as {
@@ -491,6 +510,7 @@ const db = drizzle(sqlite, {
     userCompanionPreferences,
     chatEvents,
     journalEntries,
+    userContentCompletions,
     contentPillars,
     contentHighlights,
     libraryLessons,
@@ -2066,6 +2086,110 @@ export function countJournalEntriesByUser(userId: string): number {
     .get();
 
   return row?.count ?? 0;
+}
+
+export function trackContentCompletionByUser(
+  userId: string,
+  input: { contentKind: ContentCompletionKind; contentSlug: string },
+): ContentCompletionRecord {
+  const normalizedSlug = input.contentSlug.trim().toLowerCase();
+  const timestamp = nowIso();
+
+  const existing = db
+    .select()
+    .from(userContentCompletions)
+    .where(
+      and(
+        eq(userContentCompletions.userId, userId),
+        eq(userContentCompletions.contentKind, input.contentKind),
+        eq(userContentCompletions.contentSlug, normalizedSlug),
+      ),
+    )
+    .limit(1)
+    .get();
+
+  if (existing) {
+    const completionCount = Math.max(1, existing.completionCount + 1);
+
+    db.update(userContentCompletions)
+      .set({
+        completionCount,
+        lastCompletedAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .where(eq(userContentCompletions.id, existing.id))
+      .run();
+  } else {
+    db.insert(userContentCompletions)
+      .values({
+        id: cryptoRandomId(),
+        userId,
+        contentKind: input.contentKind,
+        contentSlug: normalizedSlug,
+        completionCount: 1,
+        lastCompletedAt: timestamp,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
+  }
+
+  const tracked = db
+    .select()
+    .from(userContentCompletions)
+    .where(
+      and(
+        eq(userContentCompletions.userId, userId),
+        eq(userContentCompletions.contentKind, input.contentKind),
+        eq(userContentCompletions.contentSlug, normalizedSlug),
+      ),
+    )
+    .limit(1)
+    .get();
+
+  if (!tracked) {
+    throw new Error("Failed to persist content completion.");
+  }
+
+  return tracked;
+}
+
+export function getUserContentCompletionSummary(userId: string): UserContentCompletionSummary {
+  const lessonsCompletedRow = db
+    .select({ count: count() })
+    .from(userContentCompletions)
+    .where(
+      and(
+        eq(userContentCompletions.userId, userId),
+        eq(userContentCompletions.contentKind, "lesson"),
+      ),
+    )
+    .get();
+
+  const weekThreshold = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString();
+  const practicesCompletedThisWeekRow = db
+    .select({ count: count() })
+    .from(userContentCompletions)
+    .where(
+      and(
+        eq(userContentCompletions.userId, userId),
+        eq(userContentCompletions.contentKind, "practice"),
+        gt(userContentCompletions.lastCompletedAt, weekThreshold),
+      ),
+    )
+    .get();
+
+  const totalLessonsRow = db
+    .select({ count: count() })
+    .from(libraryLessons)
+    .where(eq(libraryLessons.status, "PUBLISHED"))
+    .get();
+
+  return {
+    lessonsCompleted: lessonsCompletedRow?.count ?? 0,
+    practicesCompletedThisWeek: practicesCompletedThisWeekRow?.count ?? 0,
+    totalLessons: totalLessonsRow?.count ?? 0,
+  };
 }
 
 export function getLandingContent() {

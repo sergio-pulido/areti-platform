@@ -111,6 +111,9 @@ export type ApiDashboardSummary = {
     streakDays: number;
     reflectionsThisWeek: number;
     daysSinceLastEntry: number | null;
+    practicesCompletedThisWeek: number;
+    lessonsCompleted: number;
+    totalLessons: number;
   };
 };
 
@@ -636,6 +639,19 @@ export async function apiJournalCreate(
 ): Promise<void> {
   return requestJson<void>(
     "/api/v1/journal",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiTrackContentCompletion(
+  token: string,
+  input: { contentKind: "lesson" | "practice"; contentSlug: string },
+): Promise<void> {
+  await requestJson<void>(
+    "/api/v1/progress/complete",
     withAuth(token, {
       method: "POST",
       body: JSON.stringify(input),

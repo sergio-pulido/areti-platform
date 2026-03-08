@@ -3,6 +3,7 @@ import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core
 export type UserRole = "MEMBER" | "ADMIN";
 export type ContentStatus = "DRAFT" | "PUBLISHED";
 export type LegalPolicyType = "TERMS" | "PRIVACY";
+export type ContentCompletionKind = "lesson" | "practice";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -220,6 +221,29 @@ export const journalEntries = sqliteTable("journal_entries", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const userContentCompletions = sqliteTable(
+  "user_content_completions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    contentKind: text("content_kind").$type<ContentCompletionKind>().notNull(),
+    contentSlug: text("content_slug").notNull(),
+    completionCount: integer("completion_count").notNull().default(1),
+    lastCompletedAt: text("last_completed_at").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    userContentUnique: uniqueIndex("user_content_completions_user_kind_slug_unique").on(
+      table.userId,
+      table.contentKind,
+      table.contentSlug,
+    ),
+  }),
+);
 
 export const contentPillars = sqliteTable("content_pillars", {
   id: integer("id").primaryKey({ autoIncrement: true }),

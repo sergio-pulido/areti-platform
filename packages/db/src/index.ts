@@ -3,6 +3,7 @@ export {
   consumeEmailVerificationChallenge,
   countVerifiedUsers,
   countJournalEntriesByUser,
+  getUserContentCompletionSummary,
   countUsers,
   createAdminAuditLog,
   createChatEvent,
@@ -110,6 +111,7 @@ export {
   setUserMfaEnabled,
   setUserPasskeyEnabled,
   softDeleteUserAndAnonymize,
+  trackContentCompletionByUser,
   updateUserName,
   updateUserPasswordHash,
   updateChatThread,
@@ -136,6 +138,7 @@ export {
 } from "./client.js";
 
 export type {
+  ContentCompletionRecord,
   ChatMessageRecord,
   ChatEventRecord,
   ChatEventType,
@@ -154,5 +157,6 @@ export type {
   UserNotificationPreferencesRecord,
   UserPreferencesRecord,
   UserProfileRecord,
+  UserContentCompletionSummary,
 } from "./client.js";
-export type { ContentStatus, LegalPolicyType, UserRole } from "./schema.js";
+export type { ContentCompletionKind, ContentStatus, LegalPolicyType, UserRole } from "./schema.js";

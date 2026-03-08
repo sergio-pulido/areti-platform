@@ -57,6 +57,9 @@
 
 :root {
   color-scheme: dark;
+  --font-title: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, "Times New Roman",
+    serif;
+  --font-body: "Avenir Next", "Segoe UI", "Source Sans Pro", "Helvetica Neue", sans-serif;
 }
 
 * {

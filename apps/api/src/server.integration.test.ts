@@ -195,7 +195,7 @@ describe("API integration", () => {
     expect(typeof registerOptions.body.data.options.challenge).toBe("string");
   });
 
-  it("creates journal entries and exposes dashboard summary", async () => {
+  it("creates journal entries, tracks content completion, and exposes dashboard summary", async () => {
     const createJournal = await request(app)
       .post("/api/v1/journal")
       .set("Authorization", `Bearer ${adminToken}`)
@@ -207,6 +207,24 @@ describe("API integration", () => {
 
     expect(createJournal.status).toBe(201);
 
+    const completeLesson = await request(app)
+      .post("/api/v1/progress/complete")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        contentKind: "lesson",
+        contentSlug: "friendship-resilience",
+      });
+    expect(completeLesson.status).toBe(201);
+
+    const completePractice = await request(app)
+      .post("/api/v1/progress/complete")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        contentKind: "practice",
+        contentSlug: "morning-premeditatio",
+      });
+    expect(completePractice.status).toBe(201);
+
     const summary = await request(app)
       .get("/api/v1/dashboard/summary")
       .set("Authorization", `Bearer ${adminToken}`);
@@ -217,6 +235,11 @@ describe("API integration", () => {
     expect(typeof summary.body.data.progress.streakDays).toBe("number");
     expect(typeof summary.body.data.progress.reflectionsThisWeek).toBe("number");
     expect(typeof summary.body.data.progress.daysSinceLastEntry).toBe("number");
+    expect(typeof summary.body.data.progress.practicesCompletedThisWeek).toBe("number");
+    expect(typeof summary.body.data.progress.lessonsCompleted).toBe("number");
+    expect(typeof summary.body.data.progress.totalLessons).toBe("number");
+    expect(summary.body.data.progress.practicesCompletedThisWeek).toBeGreaterThanOrEqual(1);
+    expect(summary.body.data.progress.lessonsCompleted).toBeGreaterThanOrEqual(1);
   });
 
   it("supports notifications read flows", async () => {

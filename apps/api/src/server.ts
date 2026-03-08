@@ -65,6 +65,7 @@ import {
   getCommunityExperts,
   getCommunityResources,
   getCreatorVideos,
+  getUserContentCompletionSummary,
   getActiveEmailVerificationChallengeByCodeHash,
   getActiveEmailVerificationChallengeByTokenHash,
   getLandingContent,
@@ -119,6 +120,7 @@ import {
   setUserMfaEnabled,
   setUserPasskeyEnabled,
   softDeleteUserAndAnonymize,
+  trackContentCompletionByUser,
   updateChatThread,
   updateCommunity,
   updateCommunityChallenge,
@@ -795,6 +797,9 @@ type DashboardProgress = {
   streakDays: number;
   reflectionsThisWeek: number;
   daysSinceLastEntry: number | null;
+  practicesCompletedThisWeek: number;
+  lessonsCompleted: number;
+  totalLessons: number;
 };
 
 function toUtcDayStart(dateValue: Date): number {
@@ -815,6 +820,9 @@ function computeDashboardProgress(entries: Array<{ createdAt: string }>): Dashbo
       streakDays: 0,
       reflectionsThisWeek: 0,
       daysSinceLastEntry: null,
+      practicesCompletedThisWeek: 0,
+      lessonsCompleted: 0,
+      totalLessons: 0,
     };
   }
 
@@ -845,6 +853,9 @@ function computeDashboardProgress(entries: Array<{ createdAt: string }>): Dashbo
     streakDays,
     reflectionsThisWeek,
     daysSinceLastEntry,
+    practicesCompletedThisWeek: 0,
+    lessonsCompleted: 0,
+    totalLessons: 0,
   };
 }
 
@@ -1180,6 +1191,17 @@ const journalSchema = z.object({
   title: z.string().trim().min(3).max(80),
   body: z.string().trim().min(10).max(3000),
   mood: z.string().trim().min(2).max(32),
+});
+
+const contentCompletionSchema = z.object({
+  contentKind: z.enum(["lesson", "practice"]),
+  contentSlug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1)
+    .max(140)
+    .regex(/^[a-z0-9-]+$/),
 });
 
 const statusSchema = z.object({
@@ -3018,12 +3040,38 @@ export function createApp() {
     })();
   });
 
+  app.post("/api/v1/progress/complete", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = contentCompletionSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid completion payload" });
+      return;
+    }
+
+    const completion = trackContentCompletionByUser(authReq.authUser.id, parsed.data);
+
+    res.status(201).json({
+      data: {
+        id: completion.id,
+        contentKind: completion.contentKind,
+        contentSlug: completion.contentSlug,
+        completionCount: completion.completionCount,
+        lastCompletedAt: completion.lastCompletedAt,
+      },
+    });
+  });
+
   app.get("/api/v1/dashboard/summary", requireAuth, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const entriesCount = countJournalEntriesByUser(authReq.authUser.id);
     const latestEntries = listJournalEntriesByUser(authReq.authUser.id, 3);
     const progressEntries = listJournalEntriesByUser(authReq.authUser.id, 365);
-    const progress = computeDashboardProgress(progressEntries);
+    const completionSummary = getUserContentCompletionSummary(authReq.authUser.id);
+    const progress = {
+      ...computeDashboardProgress(progressEntries),
+      ...completionSummary,
+    };
 
     res.json({
       data: {

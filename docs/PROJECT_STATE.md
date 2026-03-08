@@ -5,6 +5,7 @@
 - Canonical section routing is active (`/dashboard` overview, standalone personal tools at `/chat`, `/journal`, `/library`, `/practices`, plus `/community/*`, `/creator/*`, `/account/*`) with contextual sidebars and topbar section entry.
 - Dashboard home (`/dashboard`) is now action-first: dominant "next step" hero, "Today for you" shortcut actions, continuity resume list, structured reflections, contextual Companion panel, lightweight progress signals, and conditional-only account nudges.
 - Dashboard summary API now computes real progress signals (`streakDays`, `reflectionsThisWeek`, `daysSinceLastEntry`) from persisted journal data and feeds dashboard recency/progress behavior.
+- Dashboard summary now also includes completion-backed lesson/practice progress (`lessonsCompleted`, `totalLessons`, `practicesCompletedThisWeek`) persisted in `user_content_completions`.
 - Chat now operates as a dedicated top-level Companion section with section-specific sidebar controls (new thread + active thread history).
 - Companion now uses draft-first thread creation: clicking `New thread` returns to `/chat` draft mode, and a DB thread is created only when the first message is sent.
 - First-message chat flow now auto-titles untitled threads after assistant response, then persists that title in thread history.
@@ -98,6 +99,8 @@
   - Creator root (`/creator`) now renders actionable overview page (no redirect).
   - Topbar bell now consumes notifications API; quick actions remains separate icon/control.
   - Added mandatory signup legal consent with auditable Terms/Privacy acceptance recording.
+  - Added content completion tracking flow from lesson/practice detail pages (`Mark ... complete`) into a persisted backend table, with dashboard progress revalidation.
+  - Replaced runtime Google-font imports in root layout with deterministic local CSS font stacks to stabilize dev/e2e startup behavior.
   - Redesigned auth shell/forms for conversion: contextual topbar (`Privacy`, `Terms`, and one auth switch), clearer left-panel value copy, modernized passkey CTA, and explicit trust microcopy.
   - Added reusable auth UI primitives (`AuthHeroPanel`, `AuthCard`, `AuthField`, `PasswordField`, `PasswordStrengthChecklist`, `LegalConsent`, `AuthDivider`, `PasskeyButton`, `AuthFooterLink`, `AuthTrustMicrocopy`).
   - Simplified signup contract in UI to `email + password + acceptLegal`, with live password criteria checklist and show/hide password controls on both sign-in and signup.
@@ -146,10 +149,12 @@
   - Added proxy routes for thread chat and TOTP flows in Next route handlers.
 - Testing/CI:
   - Expanded API integration tests for verification-required signup/signin gating and onboarding completion lifecycle.
+  - Added API integration coverage for content completion tracking and dashboard progress payload fields.
   - Added accessibility smoke e2e checks for core secured routes.
   - Added API integration coverage for account patch persistence, notification preferences persistence, password-change validation/success, and delete-account lifecycle blocking re-auth.
   - Added web e2e coverage for account data persistence, disabled account tabs behavior, and password-change flow.
   - Added/updated web e2e coverage for dashboard action-first hierarchy and new-user-to-returning-user continuity behavior.
+  - Hardened dashboard e2e selectors for prompt starter and journal form targeting to reduce strict-mode ambiguities.
   - Updated e2e/a11y signup helpers for legal consent, email verification, onboarding completion, and cookie gate behavior.
   - Added GitHub Actions CI workflow and `npm run ci` aggregate command.
 

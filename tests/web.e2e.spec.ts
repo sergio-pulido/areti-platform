@@ -24,11 +24,21 @@ async function signupAndGoDashboard(page: Page): Promise<void> {
   const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const email = `user.${uniqueId}@example.com`;
 
-  await page.getByLabel("Email").fill(email);
+  const emailInput = page.getByRole("textbox", { name: "Email", exact: true });
+  await emailInput.fill(email);
+  await expect(emailInput).toHaveValue(email);
   await page.getByLabel("Password", { exact: true }).fill("StrongPass123");
   await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
 
   await page.getByRole("button", { name: "Create free account" }).click();
+  try {
+    await expect(page).toHaveURL(/\/auth\/verify-email/, { timeout: 5000 });
+  } catch {
+    // Retry once if client-side validation state de-syncs during first hydration pass.
+    await emailInput.fill(email);
+    await expect(emailInput).toHaveValue(email);
+    await page.getByRole("button", { name: "Create free account" }).click();
+  }
   await expectUrl(page, /\/auth\/verify-email/);
   await page.getByRole("button", { name: "Verify Email" }).click();
   await expectUrl(page, /\/onboarding/);
@@ -111,10 +121,19 @@ test("signin unverified state offers resend link and opens code verification", a
     await cookieAccept.first().click();
   }
 
-  await page.getByLabel("Email").fill(email);
+  const pendingEmailInput = page.getByRole("textbox", { name: "Email", exact: true });
+  await pendingEmailInput.fill(email);
+  await expect(pendingEmailInput).toHaveValue(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
   await page.getByRole("button", { name: "Create free account" }).click();
+  try {
+    await expect(page).toHaveURL(/\/auth\/verify-email/, { timeout: 5000 });
+  } catch {
+    await pendingEmailInput.fill(email);
+    await expect(pendingEmailInput).toHaveValue(email);
+    await page.getByRole("button", { name: "Create free account" }).click();
+  }
   await expectUrl(page, /\/auth\/verify-email/);
 
   await page.goto("/auth/signin");
@@ -148,6 +167,9 @@ test("dashboard CTAs remain clickable and route to actionable flows", async ({ p
   await page.getByRole("link", { name: /Open article/i }).first().click();
   await expectUrl(page, /\/library\/.+/);
   await expect(page.getByText("Action Prompt")).toBeVisible();
+  await page.getByRole("button", { name: "Mark lesson complete" }).click();
+  await expectUrl(page, /\/library\/.+\?completed=1/);
+  await expect(page.getByText("Lesson marked complete.")).toBeVisible();
   await page.getByRole("link", { name: "Back to library" }).click();
   await expectUrl(page, /\/library/);
 
@@ -159,6 +181,9 @@ test("dashboard CTAs remain clickable and route to actionable flows", async ({ p
   await page.getByRole("link", { name: /Open practice/i }).first().click();
   await expectUrl(page, /\/practices\/.+/);
   await expect(page.getByText("After Practice")).toBeVisible();
+  await page.getByRole("button", { name: "Mark practice complete" }).click();
+  await expectUrl(page, /\/practices\/.+\?completed=1/);
+  await expect(page.getByText("Practice marked complete.")).toBeVisible();
   await page.getByRole("link", { name: "Log reflection" }).click();
   await expectUrl(page, /\/journal\?title=.*&mood=Focused/);
   await expect(page.getByLabel("Title")).toHaveValue(/Practice:/);

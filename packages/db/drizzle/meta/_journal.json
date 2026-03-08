@@ -57,6 +57,13 @@
       "when": 1773030600000,
       "tag": "0007_steady_account_profile_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1773012171703,
+      "tag": "0008_slow_talisman",
+      "breakpoints": true
     }
   ]
 }

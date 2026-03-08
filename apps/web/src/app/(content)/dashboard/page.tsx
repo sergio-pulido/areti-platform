@@ -322,17 +322,19 @@ function buildRecentReflections(entries: ApiJournalEntry[]): DashboardReflection
 }
 
 function buildProgressSummary(input: {
-  entriesCount: number;
   reflectionsThisWeek: number;
   streakDays: number;
+  practicesCompletedThisWeek: number;
+  lessonsCompleted: number;
+  totalLessons: number;
 }): DashboardProgressSummaryType {
   const streakDays = Math.max(0, input.streakDays);
   const reflectionsThisWeek = Math.max(0, input.reflectionsThisWeek);
-  const practicesThisWeek = Math.max(
-    0,
-    Math.min(7, reflectionsThisWeek + (streakDays > 0 ? 1 : 0)),
-  );
-  const lessonProgressPercent = Math.max(12, Math.min(96, 24 + input.entriesCount * 6));
+  const practicesThisWeek = Math.max(0, input.practicesCompletedThisWeek);
+  const lessonProgressPercent =
+    input.totalLessons > 0
+      ? Math.min(100, Math.round((input.lessonsCompleted / input.totalLessons) * 100))
+      : 0;
 
   return {
     streakDays,
@@ -474,9 +476,11 @@ export default async function DashboardPage() {
   const continueItems = buildContinueItems(journalEntries);
   const recentReflections = buildRecentReflections(journalEntries);
   const progressSummary = buildProgressSummary({
-    entriesCount: summary.entriesCount,
     reflectionsThisWeek: summary.progress.reflectionsThisWeek,
     streakDays: summary.progress.streakDays,
+    practicesCompletedThisWeek: summary.progress.practicesCompletedThisWeek,
+    lessonsCompleted: summary.progress.lessonsCompleted,
+    totalLessons: summary.progress.totalLessons,
   });
   const companionContext = buildCompanionContext(daysSinceLatestEntry, isNewUser);
   const accountNudges = buildAccountNudges({
