@@ -1,6 +1,6 @@
 # Environment Guide
 
-This guide explains every environment variable used by Ataraxia, what it does, valid options, and how to obtain third-party credentials.
+This guide explains every environment variable used by Areti, what it does, valid options, and how to obtain third-party credentials.
 
 ## Quick Start
 
@@ -66,7 +66,7 @@ npm run dev
 ### `PASSKEY_RP_NAME`
 - Purpose: display name shown by authenticators.
 - Used by: passkey registration options.
-- Typical value: product name (e.g. `Ataraxia`).
+- Typical value: product name (e.g. `Areti`).
 
 ### `PASSKEY_ORIGINS`
 - Purpose: allowed origins for passkey ceremonies.
@@ -120,7 +120,7 @@ npm run dev
 - Purpose: sender identity for Resend email delivery.
 - Used by: API auth verification delivery.
 - Must be verified in your Resend account.
-- Example: `Ataraxia <no-reply@yourdomain.com>`.
+- Example: `Areti <no-reply@yourdomain.com>`.
 
 ## External Provider Setup
 

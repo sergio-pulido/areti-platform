@@ -16,7 +16,7 @@ const bodyFont = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Ataraxia Platform",
+  title: "Areti Platform",
   description:
     "A Stoic-Epicurean platform with secure auth, guided practices, journaling, community, and AI support.",
 };

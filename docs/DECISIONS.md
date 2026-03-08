@@ -188,7 +188,7 @@
 
 ## 2026-03-08 - Global Companion doctrine prompt with user addendum
 - **Context:** Companion responses needed consistent philosophy-specialized behavior while still allowing personal customization.
-- **Decision:** Apply a fixed global Ataraxia system prompt first (env-overridable), then append optional user-level custom instructions from account preferences.
+- **Decision:** Apply a fixed global Areti system prompt first (env-overridable), then append optional user-level custom instructions from account preferences.
 - **Why:** Preserves product identity/safety constraints while enabling personal tone and coaching preferences.
 - **Tradeoff:** Adds a small preferences persistence surface and prompt-composition logic in chat request flow.
 
@@ -257,6 +257,12 @@
 - **Decision:** Collapse account identity editing into a single `/account/profile` tab and remove extra/professional profile sections from account navigation (legacy routes redirect to profile).
 - **Why:** Simpler IA, less cognitive load, and better alignment with a solo personal-practice product.
 - **Tradeoff:** Existing schema can still hold extra fields, but UI/API focus intentionally limits surfaced profile controls.
+
+## 2026-03-08 - B2C account IA simplification with canonical routes
+- **Context:** Account navigation still looked like an admin console (home/settings/password/sessions/danger) and was harder to scan for consumer users.
+- **Decision:** Move to six consumer-oriented tabs with canonical URLs: Profile (`/account/profile`), Preferences (`/account/preferences`), Notifications (`/account/notifications`), Security (`/account/security`), Subscription (`/account/subscription`), Privacy (`/account/privacy`). Merge password and sessions into Security, move deletion into Privacy, and redirect legacy routes.
+- **Why:** Reduces cognitive load, improves first-scan comprehension, and aligns with a calm B2C product mental model.
+- **Tradeoff:** Adds redirect-compatibility surface and consolidates more controls on the Security page.
 
 ## 2026-03-08 - Hide deferred account tabs until promoted to core scope
 - **Context:** Showing disabled "coming soon" items in account nav increased noise and made the personal-use account IA feel unfinished.

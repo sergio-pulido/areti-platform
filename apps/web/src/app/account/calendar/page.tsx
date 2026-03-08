@@ -12,7 +12,7 @@ export default async function AccountCalendarPage() {
       <PageHeader
         eyebrow="Saved content"
         title="Calendar"
-        description="Your upcoming events and activities from the Ataraxia community."
+        description="Your upcoming events and activities from the Areti community."
       />
 
       <SurfaceCard title="Upcoming events" subtitle="Personal calendar feed">

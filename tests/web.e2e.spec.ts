@@ -154,7 +154,7 @@ test("companion supports thread lifecycle and persisted messaging", async ({ pag
   await expect(page.getByText("Conversation starters")).toBeVisible();
   await expect(page.locator("aside").getByText("History", { exact: true })).toBeVisible();
 
-  await page.getByLabel("Chat prompt").fill("What is ataraxia?");
+  await page.getByLabel("Chat prompt").fill("What is areti?");
   await page.getByRole("button", { name: "Send chat message" }).click();
   await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
   await expect(page.getByText("Conversation starters")).toHaveCount(0);
@@ -164,7 +164,7 @@ test("companion supports thread lifecycle and persisted messaging", async ({ pag
   await page.getByLabel("Rename thread title").fill("Plan Sprint Decisions");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("main").getByText("Plan Sprint Decisions")).toBeVisible();
-  await expect(page.getByText("What is ataraxia?", { exact: false })).toBeVisible();
+  await expect(page.getByText("What is areti?", { exact: false })).toBeVisible();
 
   await expect(page.getByRole("button", { name: /^Archive$/ }).first()).toBeVisible();
   await page.getByRole("button", { name: /^Archive$/ }).first().click();
@@ -217,19 +217,19 @@ test("section sidebars are isolated across personal, community, and account sect
   }
 });
 
-test("account settings and profile fields persist after save", async ({ page }) => {
+test("account preferences and profile fields persist after save", async ({ page }) => {
   await signupAndGoDashboard(page);
 
-  await page.goto("/account/settings");
+  await page.goto("/account/preferences");
   await page.getByLabel("Language").selectOption("es");
   await page.getByLabel("Timezone").fill("America/New_York");
   await page.getByLabel("Profile visibility").selectOption("contacts");
   await page.getByRole("checkbox", { name: "Show email on profile" }).check();
   await page.getByRole("checkbox", { name: "Show phone on profile" }).check();
   await page.getByRole("checkbox", { name: "Allow direct contact requests" }).uncheck();
-  await page.getByRole("button", { name: "Save settings" }).click();
-  await expect(page).toHaveURL(/\/account\/settings\?saved=1/, { timeout: 15000 });
-  await page.goto("/account/settings");
+  await page.getByRole("button", { name: "Save preferences" }).click();
+  await expect(page).toHaveURL(/\/account\/preferences\?saved=1/, { timeout: 15000 });
+  await page.goto("/account/preferences");
   await expect(page.getByLabel("Timezone")).toHaveValue("America/New_York");
   await expect(page.getByLabel("Profile visibility")).toHaveValue("contacts");
 
@@ -250,17 +250,27 @@ test("account settings and profile fields persist after save", async ({ page }) 
   await expect(page.getByLabel("City")).toHaveValue("Barcelona");
 });
 
-test("coming soon account tabs are hidden", async ({ page }) => {
+test("account sidebar matches simplified B2C IA", async ({ page }) => {
   await signupAndGoDashboard(page);
-  await page.goto("/account");
+  await page.goto("/account/profile");
 
   const sidebar = page.locator("aside");
-  await expect(sidebar.getByText(/Feedback/i)).toHaveCount(0);
-  await expect(sidebar.getByText(/Likes/i)).toHaveCount(0);
-  await expect(sidebar.getByText(/Favourites/i)).toHaveCount(0);
-  await expect(sidebar.getByText(/Comments/i)).toHaveCount(0);
-  await expect(sidebar.getByText(/Documents/i)).toHaveCount(0);
-  await expect(sidebar.getByText(/Coming soon/i)).toHaveCount(0);
+  const accountLinks = sidebar.locator('a[href^="/account/"]');
+  await expect(accountLinks).toHaveCount(6);
+  await expect(accountLinks.nth(0)).toHaveText("Profile");
+  await expect(accountLinks.nth(1)).toHaveText("Preferences");
+  await expect(accountLinks.nth(2)).toHaveText("Notifications");
+  await expect(accountLinks.nth(3)).toHaveText("Security");
+  await expect(accountLinks.nth(4)).toHaveText("Subscription");
+  await expect(accountLinks.nth(5)).toHaveText("Privacy");
+
+  await expect(sidebar.getByText("Home", { exact: true })).toHaveCount(0);
+  await expect(sidebar.getByText("Settings", { exact: true })).toHaveCount(0);
+  await expect(sidebar.getByText("Password", { exact: true })).toHaveCount(0);
+  await expect(sidebar.getByText("Sessions", { exact: true })).toHaveCount(0);
+  await expect(sidebar.getByText("Danger Zone", { exact: true })).toHaveCount(0);
+  await expect(sidebar.getByText("Personal identity and contact details")).toHaveCount(0);
+  await expect(sidebar.getByText("Language and app experience settings")).toHaveCount(0);
 });
 
 test("account password flow validates failure and success", async ({ page }) => {
@@ -297,19 +307,19 @@ test("account password flow validates failure and success", async ({ page }) => 
   await page.getByRole("button", { name: "Continue to dashboard" }).click();
   await expectUrl(page, /\/dashboard/);
 
-  await page.goto("/account/password");
+  await page.goto("/account/security");
   await page.getByLabel("Current password").fill("wrong-pass");
   await page.getByLabel("New password", { exact: true }).fill(newPassword);
   await page.getByLabel("Confirm new password").fill(newPassword);
   await page.getByRole("button", { name: "Update password" }).click();
-  await expect(page).toHaveURL(/\/account\/password\?error=/, { timeout: 15000 });
+  await expect(page).toHaveURL(/\/account\/security\?error=.*focus=password/, { timeout: 15000 });
 
-  await page.goto("/account/password");
+  await page.goto("/account/security");
   await page.getByLabel("Current password").fill(oldPassword);
   await page.getByLabel("New password", { exact: true }).fill(newPassword);
   await page.getByLabel("Confirm new password").fill(newPassword);
   await page.getByRole("button", { name: "Update password" }).click();
-  await expect(page).toHaveURL(/\/account\/password\?saved=1/, { timeout: 15000 });
+  await expect(page).toHaveURL(/\/account\/security\?saved=1&focus=password/, { timeout: 15000 });
 
   await page.getByLabel("Open user menu").click();
   await page.getByRole("button", { name: "Logout" }).click();
@@ -324,4 +334,26 @@ test("account password flow validates failure and success", async ({ page }) => 
   await page.getByLabel("Password").fill(newPassword);
   await page.getByRole("button", { name: "Sign In", exact: true }).click();
   await expectUrl(page, /\/dashboard/);
+});
+
+test("legacy account routes redirect to canonical IA routes", async ({ page }) => {
+  await signupAndGoDashboard(page);
+
+  await page.goto("/account");
+  await expect(page).toHaveURL(/\/account\/profile/, { timeout: 15000 });
+
+  await page.goto("/account/settings");
+  await expect(page).toHaveURL(/\/account\/preferences/, { timeout: 15000 });
+
+  await page.goto("/account/password");
+  await expect(page).toHaveURL(/\/account\/security\?focus=password/, { timeout: 15000 });
+
+  await page.goto("/account/sessions");
+  await expect(page).toHaveURL(/\/account\/security\?focus=sessions/, { timeout: 15000 });
+
+  await page.goto("/account/danger");
+  await expect(page).toHaveURL(/\/account\/privacy\?focus=deletion/, { timeout: 15000 });
+
+  await page.goto("/account/billing");
+  await expect(page).toHaveURL(/\/account\/subscription/, { timeout: 15000 });
 });

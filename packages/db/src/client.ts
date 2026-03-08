@@ -362,7 +362,7 @@ function seedWelcomeNotifications(userId: string): void {
     {
       id: cryptoRandomId(),
       userId,
-      title: "Welcome to Ataraxia",
+      title: "Welcome to Areti",
       body: "Start with one short reflection to ground your practice.",
       href: "/journal?title=First%20Reflection&mood=Grounded",
       readAt: null,

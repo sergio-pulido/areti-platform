@@ -50,7 +50,7 @@ export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProp
               <Menu size={18} />
             </Link>
             <Link href="/dashboard" className="font-title text-xl text-sand-100">
-              Ataraxia
+              Areti
             </Link>
           </div>
 
@@ -202,7 +202,7 @@ export async function DashboardTopnav({ user, accessToken }: DashboardTopnavProp
                 <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Account</p>
                 <div className="flex flex-col text-sm">
                   <Link
-                    href="/account"
+                    href="/account/profile"
                     aria-label="Open account section"
                     className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
                   >

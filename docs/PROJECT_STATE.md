@@ -7,7 +7,7 @@
 - Companion now uses draft-first thread creation: clicking `New thread` returns to `/chat` draft mode, and a DB thread is created only when the first message is sent.
 - First-message chat flow now auto-titles untitled threads after assistant response, then persists that title in thread history.
 - Companion history now supports `Active` and `Archived` views with restore flow, while preserving active-only default thread listing API behavior.
-- Companion now supports account-level user custom instructions appended to the global Ataraxia system prompt.
+- Companion now supports account-level user custom instructions appended to the global Areti system prompt.
 - Chat telemetry is now persisted (`chat_events`) and exposed to admins via API for lifecycle observability.
 - Community and creator domains are now fully API-backed across pages and CMS.
 - Notifications are persisted and wired to topbar bell with unread/read-all/read-one behavior.
@@ -17,14 +17,14 @@
 - Cookie consent is now enforced for app routes via route middleware/proxy redirect to `/legal/cookies?next=...`.
 - A unified thin topbar component now spans secured, auth, legal, and landing surfaces with mobile action consolidation.
 - Secured-shell pages now render the topbar as a true full-width global header above the sidebar/content frame.
-- Account IA now keeps legal policy pages in `/legal/*`; account navigation focuses on profile + settings.
+- Account IA now keeps legal policy pages in `/legal/*`; account navigation is simplified for B2C use.
 - Account domain is now platform-native and API-backed for core lifecycle flows (`/auth/me` patch, password change, account deletion, notification preferences).
-- Account root (`/account`) now provides a full account-overview dashboard (identity, security snapshot, typical actions, activity pulse).
-- Account section now exposes a product-fit core tab set with grouped sidenav headings: Home, Profile, Settings, Security, Password, Sessions, Danger Zone, Notifications.
-- Account profile/contact/professional/settings/password/danger/notifications pages now persist real data against backend APIs.
+- Account root (`/account`) now redirects to `/account/profile` (no account home dashboard in primary IA).
+- Account section now exposes 6 top-level tabs: Profile, Preferences, Notifications, Security, Subscription, Privacy.
+- Account profile/preferences/notifications/security/privacy flows now persist real data against backend APIs; subscription is scaffolded for future billing integration.
 - Account IA has been simplified for this product purpose: profile data is consolidated under a single `/account/profile` tab (no split main/extra/professional model in nav).
 - Deferred account sections are currently hidden from sidenav while implementation is deferred.
-- Security controls are now split across dedicated routes (`/account/security`, `/account/sessions`, `/account/danger`) and preferences remain under `/account/settings`.
+- Security controls are consolidated under `/account/security` (password + sessions/devices merged), with legacy routes redirected.
 - Security settings now include production-ready TOTP enrollment/verification/removal, passkey lifecycle controls, and device/session revocation.
 - Chat is productized with persisted threads/messages and user controls (create/switch/rename/archive/delete).
 - Chat provider runtime now supports ordered fallback (`deepseek,openai` by default) with provider-specific key/model/base-url env wiring.
@@ -99,12 +99,20 @@
   - Moved secured-shell topbar out of content column so it spans full page width on authenticated routes.
   - Refocused account sidenav on profile/settings only and canonicalized policy links to `/legal/*`.
   - Upgraded `/account` to a richer account overview with security/device/notification status and common account actions.
-- Expanded account IA into grouped core navigation:
-  - Account: `/account`
+- Expanded account IA into simplified B2C navigation:
   - Profile: `/account/profile`
-  - Preferences: `/account/settings`
-  - Security: `/account/security`, `/account/password`, `/account/sessions`, `/account/danger`
-  - Communication: `/account/notifications`
+  - Preferences: `/account/preferences`
+  - Notifications: `/account/notifications`
+  - Security: `/account/security`
+  - Subscription: `/account/subscription`
+  - Privacy: `/account/privacy`
+- Legacy account routes now redirect:
+  - `/account` -> `/account/profile`
+  - `/account/settings` -> `/account/preferences`
+  - `/account/password` -> `/account/security?focus=password`
+  - `/account/sessions` -> `/account/security?focus=sessions`
+  - `/account/danger` -> `/account/privacy?focus=deletion`
+  - `/account/billing` -> `/account/subscription`
 - Deferred routes exist but are intentionally hidden from account navigation until promoted to core scope.
   - Split account settings responsibilities across focused pages while preserving existing security actions and notification actions.
   - Replaced placeholder account forms with persisted forms for profile/contact/professional/settings/password/danger/notifications.

@@ -1,4 +1,4 @@
-# Ataraxia Monorepo
+# Areti Monorepo
 
 Monorepo for a Stoic + Epicurean philosophy platform with a separated frontend, backend API, and shared DB/ORM package.
 
@@ -149,7 +149,7 @@ Services:
 - `API_BASE_URL` / `NEXT_PUBLIC_API_BASE_URL` (web -> api)
 - `ATARAXIA_DB_PATH` (SQLite file path; env-specific default if unset)
 - `PASSKEY_RP_ID` (default: `localhost`)
-- `PASSKEY_RP_NAME` (default: `Ataraxia`)
+- `PASSKEY_RP_NAME` (default: `Areti`)
 - `PASSKEY_ORIGINS` (comma-separated origins allowed for WebAuthn verification)
 - `CHAT_PROVIDER_ORDER` (comma-separated provider priority; default: `deepseek,openai`)
 - `DEEPSEEK_API_KEY` (DeepSeek key for chat provider)
@@ -158,7 +158,7 @@ Services:
 - `OPENAI_API_KEY` (OpenAI key for chat provider fallback)
 - `OPENAI_CHAT_MODEL` (default: `gpt-4.1-mini`)
 - `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
-- `CHAT_GLOBAL_SYSTEM_PROMPT` (optional override for Ataraxia global Companion doctrine/system prompt)
+- `CHAT_GLOBAL_SYSTEM_PROMPT` (optional override for Areti global Companion doctrine/system prompt)
 - `WEB_APP_URL` (canonical web origin used in verification links)
 - `RESEND_API_KEY` (Resend API key for verification email delivery)
 - `RESEND_FROM_EMAIL` (verified sender identity for Resend email delivery)
@@ -169,7 +169,7 @@ For `docker compose`, put the chat env vars in a repo-root `.env` file.
 For local `npm run dev`, the API now auto-loads `.env` from `apps/api/.env` and repo-root `.env`.
 
 Companion prompt behavior:
-- A fixed Ataraxia global system prompt is always applied first.
+- A fixed Areti global system prompt is always applied first.
 - Onboarding profile context is injected before user custom instructions.
 - Users can add account-level custom Companion instructions in `/account/settings` under **Companion preferences**.
 - User instructions are appended after the global prompt and cannot override safety/mission constraints.

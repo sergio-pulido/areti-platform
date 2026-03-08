@@ -1,4 +1,4 @@
-# Ataraxia v1.5 Launch Backlog
+# Areti v1.5 Launch Backlog
 
 ## M1 Route/Nav
 - [x] Use canonical section entry points from topbar and user menu (`/community/*`, `/creator/*`, `/account/*`) | Owner: Codex | Priority: P0 | Acceptance: No nav entry points rely on deprecated section paths

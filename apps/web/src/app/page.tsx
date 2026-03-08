@@ -95,7 +95,7 @@ export default async function Home() {
 
       <footer className="border-t border-night-800 bg-night-950/95">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-6 py-6 text-xs text-night-300 lg:flex-row lg:items-center lg:justify-between lg:px-12">
-          <p>Ataraxia Platform - practical philosophy for resilient, meaningful living.</p>
+          <p>Areti Platform - practical philosophy for resilient, meaningful living.</p>
           <div className="flex gap-4">
             <Link href="/legal/privacy" className="hover:text-sand-100">
               Privacy

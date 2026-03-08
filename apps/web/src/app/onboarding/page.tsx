@@ -30,7 +30,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
         <div className="rounded-3xl border border-night-800 bg-night-900/70 p-6 sm:p-8">
           <p className="text-xs uppercase tracking-[0.3em] text-sage-200/90">Onboarding</p>
           <h1 className="mt-2 font-title text-4xl text-sand-100">
-            {editMode ? "Update your profile" : "Personalize your Ataraxia experience"}
+            {editMode ? "Update your profile" : "Personalize your Areti experience"}
           </h1>
           <p className="mt-2 text-sm text-night-200">
             {editMode
@@ -40,7 +40,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
           <div className="mt-6">
             <OnboardingForm
               profile={onboarding.profile}
-              redirectTo={editMode ? "/account/settings" : "/dashboard"}
+              redirectTo={editMode ? "/account/preferences" : "/dashboard"}
             />
           </div>
         </div>

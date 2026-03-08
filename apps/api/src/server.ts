@@ -161,7 +161,7 @@ const DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
 const DEFAULT_CHAT_GLOBAL_SYSTEM_PROMPT = `
-You are Ataraxia Companion, a practical philosophy and psychology coach.
+You are Areti Companion, a practical philosophy and psychology coach.
 Primary mission: help the user cultivate ataraxia through concrete action.
 
 Core balance:
@@ -1350,7 +1350,7 @@ export function createApp() {
   }
 
   const passkeyRpId = env.PASSKEY_RP_ID ?? "localhost";
-  const passkeyRpName = env.PASSKEY_RP_NAME ?? "Ataraxia";
+  const passkeyRpName = env.PASSKEY_RP_NAME ?? "Areti";
   const passkeyExpectedOrigins = (
     env.PASSKEY_ORIGINS ??
     allowedOrigins.join(",") ??
@@ -1385,7 +1385,7 @@ export function createApp() {
       body: JSON.stringify({
         from: resendFromEmail,
         to: input.email,
-        subject: "Verify your Ataraxia account",
+        subject: "Verify your Areti account",
         html: `
           <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.5; color: #1f2937;">
             <h2 style="margin: 0 0 12px;">Verify your email</h2>
@@ -2442,7 +2442,7 @@ export function createApp() {
   app.post("/api/v1/security/mfa/totp/setup", requireAuth, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const secret = generateTotpSecret();
-    const issuer = encodeURIComponent("Ataraxia");
+    const issuer = encodeURIComponent("Areti");
     const label = encodeURIComponent(authReq.authUser.email);
 
     upsertUserTotpSecret({

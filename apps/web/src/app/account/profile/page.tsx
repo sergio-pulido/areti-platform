@@ -29,7 +29,7 @@ export default async function AccountProfilePage({ searchParams }: AccountProfil
       <PageHeader
         eyebrow="Profile"
         title="Profile"
-        description="Manage your personal details and contact information."
+        description="Update who you are and how others can recognize or contact you."
       />
 
       {saved ? (

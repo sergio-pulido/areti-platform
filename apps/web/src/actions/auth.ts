@@ -340,7 +340,7 @@ export async function saveOnboardingAction(
 
   revalidatePath("/");
   revalidatePath("/dashboard");
-  revalidatePath("/account/settings");
+  revalidatePath("/account/preferences");
 
   const redirectTo = getString(formData, "redirectTo").trim();
   if (redirectTo.startsWith("/")) {

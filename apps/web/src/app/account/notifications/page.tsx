@@ -59,9 +59,9 @@ export default async function AccountNotificationsPage({ searchParams }: Account
   return (
     <div>
       <PageHeader
-        eyebrow="Communication"
+        eyebrow="Notifications"
         title="Notifications"
-        description="Review notification history and persist category/channel preferences."
+        description="Choose what you want to hear about and how often we should notify you."
         actions={
           <form action={readAllNotificationsAction}>
             <button

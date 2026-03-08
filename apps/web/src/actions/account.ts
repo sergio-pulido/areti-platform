@@ -110,12 +110,12 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
     });
 
     revalidatePath("/account");
-    revalidatePath("/account/settings");
+    revalidatePath("/account/preferences");
   } catch (error) {
-    redirectWith("/account/settings", { error: toMessage(error) });
+    redirectWith("/account/preferences", { error: toMessage(error) });
   }
 
-  redirectWith("/account/settings", { saved: "1" });
+  redirectWith("/account/preferences", { saved: "1" });
 }
 
 export async function saveNotificationPreferencesAction(formData: FormData): Promise<void> {
@@ -144,6 +144,7 @@ export async function saveNotificationPreferencesAction(formData: FormData): Pro
 
 export async function changePasswordAction(formData: FormData): Promise<void> {
   const session = await requireSession();
+  const focus = str(formData, "focus") || "password";
 
   try {
     const oldPassword = str(formData, "oldPassword");
@@ -160,12 +161,15 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
       confirmPassword,
     });
 
-    revalidatePath("/account/password");
+    revalidatePath("/account/security");
   } catch (error) {
-    redirectWith("/account/password", { error: toMessage(error) });
+    redirectWith("/account/security", {
+      error: toMessage(error),
+      focus,
+    });
   }
 
-  redirectWith("/account/password", { saved: "1" });
+  redirectWith("/account/security", { saved: "1", focus });
 }
 
 export async function deleteAccountAction(formData: FormData): Promise<void> {
@@ -180,7 +184,7 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
     const cookieStore = await cookies();
     cookieStore.delete(SESSION_COOKIE_NAME);
   } catch (error) {
-    redirectWith("/account/danger", { error: toMessage(error) });
+    redirectWith("/account/privacy", { error: toMessage(error), focus: "deletion" });
   }
 
   redirectWith("/auth/signin", { deleted: "1" });

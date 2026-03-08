@@ -29,7 +29,7 @@ export async function AppTopbar({ user, accessToken }: AppTopbarProps) {
       <header className="sticky top-0 z-40 border-b border-night-800/80 bg-night-950/95 px-4 py-2 backdrop-blur lg:px-8">
         <div className="flex w-full items-center justify-between gap-3">
           <Link href="/" className="font-title text-xl text-sand-100">
-            Ataraxia
+            Areti
           </Link>
           <nav className="flex items-center gap-2 text-sm">
             <Link
@@ -97,7 +97,7 @@ export async function AppTopbar({ user, accessToken }: AppTopbarProps) {
                     {section.label}
                   </Link>
                 ))}
-                <Link href="/account" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                <Link href="/account/profile" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                   Account
                 </Link>
               </div>
@@ -105,7 +105,7 @@ export async function AppTopbar({ user, accessToken }: AppTopbarProps) {
           </details>
 
           <Link href="/" className="font-title text-xl text-sand-100">
-            Ataraxia
+            Areti
           </Link>
         </div>
 
@@ -305,7 +305,7 @@ export async function AppTopbar({ user, accessToken }: AppTopbarProps) {
               <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Account</p>
               <div className="flex flex-col text-sm">
                 <Link
-                  href="/account"
+                  href="/account/profile"
                   aria-label="Open account section"
                   className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
                 >
