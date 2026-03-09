@@ -2,78 +2,13 @@ import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { Badge } from "@/components/ui/badge";
-import { apiDashboardSummary, apiProgressCompletions } from "@/lib/backend-api";
+import { apiRewardsProgress } from "@/lib/backend-api";
 import { requireSession } from "@/lib/auth/session";
-
-type RewardMilestone = {
-  id: string;
-  title: string;
-  description: string;
-  earned: boolean;
-};
 
 export default async function AccountRewardsPage() {
   const session = await requireSession();
-  const [summary, completions] = await Promise.all([
-    apiDashboardSummary(session.accessToken),
-    apiProgressCompletions(session.accessToken, 500),
-  ]);
-
-  const streakDays = summary.progress.streakDays;
-  const reflections = summary.entriesCount;
-  const lessonsCompleted = summary.progress.lessonsCompleted;
-  const practiceCompletionsCount = completions.filter((item) => item.contentKind === "practice").length;
-  const distinctCompletions = new Set(
-    completions.map((item) => `${item.contentKind}:${item.contentSlug}`),
-  ).size;
-
-  const milestones: RewardMilestone[] = [
-    {
-      id: "first-reflection",
-      title: "First Reflection",
-      description: "Log your first journal entry.",
-      earned: reflections >= 1,
-    },
-    {
-      id: "streak-3",
-      title: "3-Day Streak",
-      description: "Keep your reflection streak for at least 3 days.",
-      earned: streakDays >= 3,
-    },
-    {
-      id: "streak-7",
-      title: "7-Day Streak",
-      description: "Hold momentum for a full week.",
-      earned: streakDays >= 7,
-    },
-    {
-      id: "lesson-1",
-      title: "Lesson Starter",
-      description: "Complete your first library lesson.",
-      earned: lessonsCompleted >= 1,
-    },
-    {
-      id: "lesson-3",
-      title: "Scholar",
-      description: "Complete 3 library lessons.",
-      earned: lessonsCompleted >= 3,
-    },
-    {
-      id: "practice-3",
-      title: "Practitioner",
-      description: "Complete 3 practices.",
-      earned: practiceCompletionsCount >= 3,
-    },
-    {
-      id: "consistency-5",
-      title: "Consistency Builder",
-      description: "Complete 5 distinct lessons/practices.",
-      earned: distinctCompletions >= 5,
-    },
-  ];
-
-  const earnedCount = milestones.filter((item) => item.earned).length;
-  const nextMilestone = milestones.find((item) => !item.earned) ?? null;
+  const rewards = await apiRewardsProgress(session.accessToken);
+  const nextMilestone = rewards.nextMilestone;
 
   return (
     <div className="space-y-4">
@@ -84,8 +19,8 @@ export default async function AccountRewardsPage() {
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="default">{earnedCount} badges earned</Badge>
-        <Badge variant="muted">{milestones.length - earnedCount} remaining</Badge>
+        <Badge variant="default">{rewards.earnedCount} badges earned</Badge>
+        <Badge variant="muted">{rewards.totalCount - rewards.earnedCount} remaining</Badge>
       </div>
 
       <SurfaceCard
@@ -114,7 +49,7 @@ export default async function AccountRewardsPage() {
       </SurfaceCard>
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {milestones.map((milestone) => (
+        {rewards.milestones.map((milestone) => (
           <SurfaceCard
             key={milestone.id}
             title={milestone.title}

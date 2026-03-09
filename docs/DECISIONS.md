@@ -12,6 +12,12 @@
 - **Why:** Makes progression choices explicit in one click and protects newly shipped motivation surfaces against UI regressions.
 - **Tradeoff:** Path templates are heuristic tags over existing content metadata rather than a fully modeled curriculum graph.
 
+## 2026-03-09 - Centralize rewards milestone computation in backend progress API
+- **Context:** Rewards milestone logic initially lived in web route code, duplicating progress calculations and making cross-client consistency harder.
+- **Decision:** Add `GET /api/v1/progress/rewards` with server-side milestone computation (earned count, next milestone, and signal payload) and consume it from `/account/rewards`; add integration and e2e coverage for milestone transition behavior.
+- **Why:** Keeps milestone rules in one source of truth, reduces frontend drift risk, and simplifies future channel expansion (mobile/app widgets).
+- **Tradeoff:** Slightly larger API surface area and one additional authenticated request for rewards page load.
+
 ## 2026-03-09 - Public preview section with no-auth feature walkthroughs
 - **Context:** Product needed a low-friction way for guests to explore key experiences before signup, while preserving existing authenticated flows.
 - **Decision:** Add a dedicated public preview section (`/preview`) with unauthenticated preview pages for chat, dashboard, journal, library, and practices; back `/preview/chat` with a no-auth preview API (`/api/preview/chat`) using provider-backed responses with strict guest rate limits and token caps; add preview analytics event ingestion (`/api/v1/preview/events`) plus admin conversion summary endpoint (`/api/v1/admin/preview/analytics`), retention cleanup (90 days), and lightweight anti-bot heuristics (honeypot + minimum interaction time).

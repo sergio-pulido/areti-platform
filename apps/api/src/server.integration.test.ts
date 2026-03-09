@@ -196,6 +196,17 @@ describe("API integration", () => {
   });
 
   it("creates journal entries, tracks content completion, and exposes dashboard summary", async () => {
+    const rewardsBefore = await request(app)
+      .get("/api/v1/progress/rewards")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(rewardsBefore.status).toBe(200);
+    expect(rewardsBefore.body.data.earnedCount).toBe(0);
+    expect(
+      rewardsBefore.body.data.milestones.find(
+        (item: { id: string; earned: boolean }) => item.id === "first-reflection",
+      )?.earned,
+    ).toBe(false);
+
     const createJournal = await request(app)
       .post("/api/v1/journal")
       .set("Authorization", `Bearer ${adminToken}`)
@@ -254,6 +265,22 @@ describe("API integration", () => {
         (item: { contentKind: string; contentSlug: string }) =>
           item.contentKind === "lesson" && item.contentSlug === "friendship-resilience",
       ),
+    ).toBe(true);
+
+    const rewardsAfter = await request(app)
+      .get("/api/v1/progress/rewards")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(rewardsAfter.status).toBe(200);
+    expect(rewardsAfter.body.data.earnedCount).toBeGreaterThanOrEqual(2);
+    expect(
+      rewardsAfter.body.data.milestones.find(
+        (item: { id: string; earned: boolean }) => item.id === "first-reflection",
+      )?.earned,
+    ).toBe(true);
+    expect(
+      rewardsAfter.body.data.milestones.find(
+        (item: { id: string; earned: boolean }) => item.id === "lesson-1",
+      )?.earned,
     ).toBe(true);
   });
 

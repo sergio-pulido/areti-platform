@@ -132,6 +132,29 @@ export type ApiProgressCompletion = {
   lastCompletedAt: string;
 };
 
+export type ApiRewardsProgress = {
+  earnedCount: number;
+  totalCount: number;
+  nextMilestone: {
+    id: string;
+    title: string;
+    description: string;
+  } | null;
+  signals: {
+    streakDays: number;
+    reflections: number;
+    lessonsCompleted: number;
+    practiceRuns: number;
+    distinctCompletions: number;
+  };
+  milestones: Array<{
+    id: string;
+    title: string;
+    description: string;
+    earned: boolean;
+  }>;
+};
+
 export type ApiSecuritySettings = {
   mfaEnabled: boolean;
   passkeyEnabled: boolean;
@@ -693,6 +716,10 @@ export async function apiProgressCompletions(
     `/api/v1/progress/completions?limit=${Math.max(1, Math.min(limit, 500))}`,
     withAuth(token),
   );
+}
+
+export async function apiRewardsProgress(token: string): Promise<ApiRewardsProgress> {
+  return requestJson<ApiRewardsProgress>("/api/v1/progress/rewards", withAuth(token));
 }
 
 export async function apiSecuritySettings(token: string): Promise<ApiSecuritySettings> {

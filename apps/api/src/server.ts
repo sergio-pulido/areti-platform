@@ -891,6 +891,31 @@ type DashboardProgress = {
   }>;
 };
 
+type RewardMilestone = {
+  id: string;
+  title: string;
+  description: string;
+  earned: boolean;
+};
+
+type RewardsProgress = {
+  earnedCount: number;
+  totalCount: number;
+  nextMilestone: {
+    id: string;
+    title: string;
+    description: string;
+  } | null;
+  signals: {
+    streakDays: number;
+    reflections: number;
+    lessonsCompleted: number;
+    practiceRuns: number;
+    distinctCompletions: number;
+  };
+  milestones: RewardMilestone[];
+};
+
 function toUtcDayStart(dateValue: Date): number {
   return Date.UTC(dateValue.getUTCFullYear(), dateValue.getUTCMonth(), dateValue.getUTCDate());
 }
@@ -956,6 +981,95 @@ function slugToTitle(slug: string): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function buildRewardsProgress(input: {
+  entriesCount: number;
+  streakDays: number;
+  lessonsCompleted: number;
+  completionRows: Array<{
+    contentKind: "lesson" | "practice";
+    completionCount: number;
+    contentSlug: string;
+  }>;
+}): RewardsProgress {
+  const reflections = Math.max(0, input.entriesCount);
+  const streakDays = Math.max(0, input.streakDays);
+  const lessonsCompleted = Math.max(0, input.lessonsCompleted);
+  const practiceRuns = input.completionRows
+    .filter((item) => item.contentKind === "practice")
+    .reduce((acc, item) => acc + Math.max(0, item.completionCount), 0);
+  const distinctCompletions = new Set(
+    input.completionRows.map((item) => `${item.contentKind}:${item.contentSlug}`),
+  ).size;
+
+  const milestones: RewardMilestone[] = [
+    {
+      id: "first-reflection",
+      title: "First Reflection",
+      description: "Log your first journal entry.",
+      earned: reflections >= 1,
+    },
+    {
+      id: "streak-3",
+      title: "3-Day Streak",
+      description: "Keep your reflection streak for at least 3 days.",
+      earned: streakDays >= 3,
+    },
+    {
+      id: "streak-7",
+      title: "7-Day Streak",
+      description: "Hold momentum for a full week.",
+      earned: streakDays >= 7,
+    },
+    {
+      id: "lesson-1",
+      title: "Lesson Starter",
+      description: "Complete your first library lesson.",
+      earned: lessonsCompleted >= 1,
+    },
+    {
+      id: "lesson-3",
+      title: "Scholar",
+      description: "Complete 3 library lessons.",
+      earned: lessonsCompleted >= 3,
+    },
+    {
+      id: "practice-3",
+      title: "Practitioner",
+      description: "Complete 3 practices.",
+      earned: practiceRuns >= 3,
+    },
+    {
+      id: "consistency-5",
+      title: "Consistency Builder",
+      description: "Complete 5 distinct lessons/practices.",
+      earned: distinctCompletions >= 5,
+    },
+  ];
+
+  const earnedCount = milestones.filter((item) => item.earned).length;
+  const nextMilestone = milestones.find((item) => !item.earned) ?? null;
+
+  return {
+    earnedCount,
+    totalCount: milestones.length,
+    nextMilestone: nextMilestone
+      ? {
+          id: nextMilestone.id,
+          title: nextMilestone.title,
+          description: nextMilestone.description,
+        }
+      : null,
+    signals: {
+      streakDays,
+      reflections,
+      lessonsCompleted,
+      practiceRuns,
+      distinctCompletions,
+    },
+    milestones,
+  };
 }
 
 function maybeCreateBehaviorNotification(input: {
@@ -3482,6 +3596,24 @@ export function createApp() {
     }));
 
     res.json({ data: completions });
+  });
+
+  app.get("/api/v1/progress/rewards", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const entriesCount = countJournalEntriesByUser(authReq.authUser.id);
+    const progressEntries = listJournalEntriesByUser(authReq.authUser.id, 365);
+    const completionSummary = getUserContentCompletionSummary(authReq.authUser.id);
+    const completionRows = listContentCompletionsByUser(authReq.authUser.id, 500);
+    const progress = computeDashboardProgress(progressEntries);
+
+    const rewards = buildRewardsProgress({
+      entriesCount,
+      streakDays: progress.streakDays,
+      lessonsCompleted: completionSummary.lessonsCompleted,
+      completionRows,
+    });
+
+    res.json({ data: rewards });
   });
 
   app.get("/api/v1/dashboard/summary", requireAuth, (req, res) => {

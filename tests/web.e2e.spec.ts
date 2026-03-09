@@ -77,6 +77,15 @@ async function expectFocusedRoundedContainer(page: Page, selector: string): Prom
   expect(Number.parseFloat(radius)).toBeGreaterThan(0);
 }
 
+async function expectRewardMilestoneState(
+  page: Page,
+  title: string,
+  state: "Earned" | "In progress",
+): Promise<void> {
+  const card = page.getByRole("heading", { name: title }).locator("xpath=ancestor::section[1]");
+  await expect(card.getByText(state)).toBeVisible();
+}
+
 test("landing loads API content and signup reaches dashboard", async ({ page }) => {
   await page.goto("/");
 
@@ -308,6 +317,26 @@ test("library path templates and rewards milestones render for active users", as
   await expect(page.getByText(/badges earned/i)).toBeVisible();
   await expect(page.getByRole("heading", { name: "First Reflection" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Lesson Starter" })).toBeVisible();
+});
+
+test("rewards milestones transition from locked to earned after real activity", async ({ page }) => {
+  await signupAndGoDashboard(page);
+
+  await page.goto("/account/rewards");
+  await expectRewardMilestoneState(page, "First Reflection", "In progress");
+  await expectRewardMilestoneState(page, "Lesson Starter", "In progress");
+
+  await createJournalReflection(page);
+
+  await page.goto("/library");
+  await page.getByRole("link", { name: /Open article/i }).first().click();
+  await expectUrl(page, /\/library\/.+/);
+  await page.getByRole("button", { name: "Mark lesson complete" }).click();
+  await expectUrl(page, /\/library\/.+\?completed=1/);
+
+  await page.goto("/account/rewards");
+  await expectRewardMilestoneState(page, "First Reflection", "Earned");
+  await expectRewardMilestoneState(page, "Lesson Starter", "Earned");
 });
 
 test("account focus query highlights rounded target containers", async ({ page }) => {
