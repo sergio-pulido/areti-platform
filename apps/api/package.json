@@ -7,6 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "job:notification-digest": "tsx src/jobs/notification-digest.ts",
+    "job:notification-digest:healthcheck": "tsx src/jobs/notification-digest-healthcheck.ts",
     "typecheck": "tsc --noEmit",
     "test:integration": "vitest run"
   },

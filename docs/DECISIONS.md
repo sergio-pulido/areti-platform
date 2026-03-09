@@ -48,6 +48,12 @@
 - **Why:** Improves mean time to diagnosis by reducing visual/manual filtering overhead.
 - **Tradeoff:** Slightly larger query contract and CMS URL-state handling complexity.
 
+## 2026-03-09 - Add digest healthcheck command for alert integration
+- **Context:** Ops needed a simple non-zero signal for stale-lock and recent-failure conditions without building full observability infrastructure first.
+- **Decision:** Add `job:notification-digest:healthcheck` script that inspects lock age and latest `notification_digest` run status from `system_job_runs`, returning exit code `1` on unhealthy conditions.
+- **Why:** Enables immediate integration with cron monitors and host-level alerting.
+- **Tradeoff:** Health semantics are intentionally narrow (stale lock + recent error window), so broader SLA checks may still require external monitoring.
+
 ## 2026-03-09 - Public preview section with no-auth feature walkthroughs
 - **Context:** Product needed a low-friction way for guests to explore key experiences before signup, while preserving existing authenticated flows.
 - **Decision:** Add a dedicated public preview section (`/preview`) with unauthenticated preview pages for chat, dashboard, journal, library, and practices; back `/preview/chat` with a no-auth preview API (`/api/preview/chat`) using provider-backed responses with strict guest rate limits and token caps; add preview analytics event ingestion (`/api/v1/preview/events`) plus admin conversion summary endpoint (`/api/v1/admin/preview/analytics`), retention cleanup (90 days), and lightweight anti-bot heuristics (honeypot + minimum interaction time).
