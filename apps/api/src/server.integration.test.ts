@@ -242,6 +242,19 @@ describe("API integration", () => {
     expect(summary.body.data.progress.practicesCompletedThisWeek).toBeGreaterThanOrEqual(1);
     expect(summary.body.data.progress.lessonsCompleted).toBeGreaterThanOrEqual(1);
     expect(summary.body.data.progress.recentCompletions.length).toBeGreaterThanOrEqual(2);
+
+    const completions = await request(app)
+      .get("/api/v1/progress/completions")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(completions.status).toBe(200);
+    expect(Array.isArray(completions.body.data)).toBe(true);
+    expect(
+      completions.body.data.some(
+        (item: { contentKind: string; contentSlug: string }) =>
+          item.contentKind === "lesson" && item.contentSlug === "friendship-resilience",
+      ),
+    ).toBe(true);
   });
 
   it("supports notifications read flows", async () => {

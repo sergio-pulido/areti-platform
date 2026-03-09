@@ -124,6 +124,14 @@ export type ApiDashboardSummary = {
   };
 };
 
+export type ApiProgressCompletion = {
+  id: string;
+  contentKind: "lesson" | "practice";
+  contentSlug: string;
+  completionCount: number;
+  lastCompletedAt: string;
+};
+
 export type ApiSecuritySettings = {
   mfaEnabled: boolean;
   passkeyEnabled: boolean;
@@ -674,6 +682,16 @@ export async function apiTrackContentCompletion(
       method: "POST",
       body: JSON.stringify(input),
     }),
+  );
+}
+
+export async function apiProgressCompletions(
+  token: string,
+  limit = 300,
+): Promise<ApiProgressCompletion[]> {
+  return requestJson<ApiProgressCompletion[]>(
+    `/api/v1/progress/completions?limit=${Math.max(1, Math.min(limit, 500))}`,
+    withAuth(token),
   );
 }
 

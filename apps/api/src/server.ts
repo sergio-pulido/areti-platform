@@ -35,6 +35,7 @@ import {
   createJournalEntry,
   createLesson,
   createNotification,
+  createNotificationIfRecentDuplicateAbsent,
   createPreviewEvent,
   createPasskeyCredential,
   createPillar,
@@ -96,6 +97,7 @@ import {
   listAdminAuditLogs,
   listAllContentAdmin,
   listRecentContentCompletionsByUser,
+  listContentCompletionsByUser,
   listJournalEntriesByUser,
   listNotificationsByUser,
   listPasskeyCredentialsByUserId,
@@ -954,6 +956,23 @@ function slugToTitle(slug: string): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function maybeCreateBehaviorNotification(input: {
+  userId: string;
+  title: string;
+  body: string;
+  href: string;
+  dedupeWithinHours?: number;
+}): void {
+  createNotificationIfRecentDuplicateAbsent({
+    id: randomUUID(),
+    userId: input.userId,
+    title: input.title,
+    body: input.body,
+    href: input.href,
+    dedupeWithinHours: input.dedupeWithinHours,
+  });
 }
 
 function createChatRuntimeConfig(env: AppEnv): ChatRuntimeConfig {
@@ -3379,6 +3398,56 @@ export function createApp() {
     }
 
     const completion = trackContentCompletionByUser(authReq.authUser.id, parsed.data);
+    const completionSummary = getUserContentCompletionSummary(authReq.authUser.id);
+    const contentTitle =
+      parsed.data.contentKind === "lesson"
+        ? (getLibraryLessonBySlug(parsed.data.contentSlug)?.title ?? slugToTitle(parsed.data.contentSlug))
+        : (getPracticeRoutineBySlug(parsed.data.contentSlug)?.title ?? slugToTitle(parsed.data.contentSlug));
+    const contentHref =
+      parsed.data.contentKind === "lesson"
+        ? `/library/${parsed.data.contentSlug}`
+        : `/practices/${parsed.data.contentSlug}`;
+
+    maybeCreateBehaviorNotification({
+      userId: authReq.authUser.id,
+      title: parsed.data.contentKind === "lesson" ? "Lesson completed" : "Practice completed",
+      body: `"${contentTitle}" logged as complete. Keep your momentum today.`,
+      href: contentHref,
+      dedupeWithinHours: 18,
+    });
+
+    if (completionSummary.lessonsCompleted === 1) {
+      maybeCreateBehaviorNotification({
+        userId: authReq.authUser.id,
+        title: "Milestone unlocked: first lesson",
+        body: "You completed your first lesson. Apply one principle in your next decision.",
+        href: "/library",
+        dedupeWithinHours: 24 * 14,
+      });
+    }
+
+    if (completionSummary.lessonsCompleted > 0 && completionSummary.lessonsCompleted % 3 === 0) {
+      maybeCreateBehaviorNotification({
+        userId: authReq.authUser.id,
+        title: `Milestone unlocked: ${completionSummary.lessonsCompleted} lessons`,
+        body: "Strong consistency. Turn one insight into action before the day ends.",
+        href: "/library",
+        dedupeWithinHours: 24 * 14,
+      });
+    }
+
+    if (
+      completionSummary.practicesCompletedThisWeek > 0 &&
+      completionSummary.practicesCompletedThisWeek % 3 === 0
+    ) {
+      maybeCreateBehaviorNotification({
+        userId: authReq.authUser.id,
+        title: "Weekly practice streak",
+        body: `You completed ${completionSummary.practicesCompletedThisWeek} practices this week.`,
+        href: "/practices",
+        dedupeWithinHours: 24 * 7,
+      });
+    }
 
     res.status(201).json({
       data: {
@@ -3389,6 +3458,30 @@ export function createApp() {
         lastCompletedAt: completion.lastCompletedAt,
       },
     });
+  });
+
+  app.get("/api/v1/progress/completions", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = z
+      .object({
+        limit: z.coerce.number().int().positive().max(500).default(300),
+      })
+      .safeParse(req.query);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    const completions = listContentCompletionsByUser(authReq.authUser.id, parsed.data.limit).map((item) => ({
+      id: item.id,
+      contentKind: item.contentKind,
+      contentSlug: item.contentSlug,
+      completionCount: item.completionCount,
+      lastCompletedAt: item.lastCompletedAt,
+    }));
+
+    res.json({ data: completions });
   });
 
   app.get("/api/v1/dashboard/summary", requireAuth, (req, res) => {
@@ -3426,6 +3519,26 @@ export function createApp() {
       ...completionSummary,
       recentCompletions,
     };
+
+    if ((progress.daysSinceLastEntry ?? 0) >= 2) {
+      maybeCreateBehaviorNotification({
+        userId: authReq.authUser.id,
+        title: "Momentum check-in",
+        body: "You have been away for a couple of days. A 2-minute reflection can restart momentum.",
+        href: "/journal?title=Restart%20check-in&mood=Restless",
+        dedupeWithinHours: 36,
+      });
+    }
+
+    if (entriesCount > 0 && progress.reflectionsThisWeek === 0) {
+      maybeCreateBehaviorNotification({
+        userId: authReq.authUser.id,
+        title: "Weekly reflection reminder",
+        body: "No reflection logged in the last 7 days. Capture one small check-in today.",
+        href: "/journal?title=Weekly%20reset&mood=Grounded",
+        dedupeWithinHours: 72,
+      });
+    }
 
     res.json({
       data: {

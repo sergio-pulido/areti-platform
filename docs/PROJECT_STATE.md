@@ -25,6 +25,10 @@
 - Preview guest endpoints now include lightweight anti-bot checks (`honeypot` + minimum interaction time) in addition to strict per-client rate limits.
 - Community and creator domains are now fully API-backed across pages and CMS.
 - Notifications are persisted and wired to topbar bell with unread/read-all/read-one behavior.
+- Notifications now include behavior-linked nudges and milestone events (content completion, weekly consistency, and momentum restart reminders) with dedupe guards to avoid alert spam.
+- Library and practices are now completion-aware: each page shows recommended next item and completion state per card.
+- Library and practices now also expose explicit path templates (`starter/applied/mastery` and `daily/focus/evening`) to guide structured progression.
+- Rewards is now an active, light-gamification milestone page (earned/in-progress badges from real progress signals) instead of a deferred placeholder.
 - Signup now requires mandatory Terms/Privacy acceptance, stores auditable legal consent records, and defers session creation until email verification.
 - Auth pages are now conversion-optimized with simplified auth-only topbar nav, clearer value-focused hero copy, stronger field/CTA hierarchy, and premium high-contrast form states.
 - Signup now removes `name` and `confirmPassword` from first step, uses a single required legal consent checkbox, and keeps passkey as a first-class secondary path.
@@ -89,6 +93,8 @@
     - `GET /api/v1/notifications`
     - `PATCH /api/v1/notifications/:id/read`
     - `POST /api/v1/notifications/read-all`
+  - Added progress endpoint:
+    - `GET /api/v1/progress/completions`
   - Added chat thread endpoints:
     - `GET/POST /api/v1/chat/threads`
     - `PATCH/DELETE /api/v1/chat/threads/:id`
@@ -119,6 +125,9 @@
   - Topbar bell now consumes notifications API; quick actions remains separate icon/control.
   - Added mandatory signup legal consent with auditable Terms/Privacy acceptance recording.
   - Added content completion tracking flow from lesson/practice detail pages (`Mark ... complete`) into a persisted backend table, with dashboard progress revalidation.
+  - Updated library/practices listings to show completion-backed progression cues and "recommended next" guidance.
+  - Added path-template filters on library/practices for clearer guided tracks.
+  - Replaced `/account/rewards` deferred placeholder with a live milestone/badge experience powered by dashboard + completion data.
   - Replaced runtime Google-font imports in root layout with deterministic local CSS font stacks to stabilize dev/e2e startup behavior.
   - Redesigned auth shell/forms for conversion: contextual topbar (`Privacy`, `Terms`, and one auth switch), clearer left-panel value copy, modernized passkey CTA, and explicit trust microcopy.
   - Added reusable auth UI primitives (`AuthHeroPanel`, `AuthCard`, `AuthField`, `PasswordField`, `PasswordStrengthChecklist`, `LegalConsent`, `AuthDivider`, `PasskeyButton`, `AuthFooterLink`, `AuthTrustMicrocopy`).
@@ -186,6 +195,7 @@
   - Added API integration coverage for account patch persistence, notification preferences persistence, password-change validation/success, and delete-account lifecycle blocking re-auth.
   - Added web e2e coverage for account data persistence, disabled account tabs behavior, and password-change flow.
   - Added/updated web e2e coverage for dashboard action-first hierarchy and new-user-to-returning-user continuity behavior.
+  - Expanded web e2e coverage for progression markers and rewards surface rendering.
   - Added web e2e coverage for account deep-link focus highlight behavior (`totp`, `passkeys`, `deletion`) including rounded-container rendering assertions.
   - Added API integration assertions for new dashboard completion-history payload (`recentCompletions`).
   - Hardened dashboard e2e selectors for prompt starter and journal form targeting to reduce strict-mode ambiguities.

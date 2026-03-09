@@ -2260,6 +2260,16 @@ export function listRecentContentCompletionsByUser(
     .all();
 }
 
+export function listContentCompletionsByUser(userId: string, limit = 300): ContentCompletionRecord[] {
+  return db
+    .select()
+    .from(userContentCompletions)
+    .where(eq(userContentCompletions.userId, userId))
+    .orderBy(desc(userContentCompletions.lastCompletedAt))
+    .limit(Math.max(1, Math.min(limit, 500)))
+    .all();
+}
+
 export function getLandingContent() {
   return {
     pillars: db
@@ -3025,6 +3035,49 @@ export function createNotification(input: {
       createdAt: nowIso(),
     })
     .run();
+}
+
+export function createNotificationIfRecentDuplicateAbsent(input: {
+  id: string;
+  userId: string;
+  title: string;
+  body: string;
+  href: string;
+  dedupeWithinHours?: number;
+}): boolean {
+  const dedupeHours = Math.max(1, Math.min(input.dedupeWithinHours ?? 24, 24 * 30));
+  const threshold = new Date(Date.now() - dedupeHours * 60 * 60 * 1000).toISOString();
+  const recentDuplicate = db
+    .select({ id: userNotifications.id })
+    .from(userNotifications)
+    .where(
+      and(
+        eq(userNotifications.userId, input.userId),
+        eq(userNotifications.title, input.title),
+        eq(userNotifications.href, input.href),
+        gt(userNotifications.createdAt, threshold),
+      ),
+    )
+    .limit(1)
+    .get();
+
+  if (recentDuplicate) {
+    return false;
+  }
+
+  db.insert(userNotifications)
+    .values({
+      id: input.id,
+      userId: input.userId,
+      title: input.title,
+      body: input.body,
+      href: input.href,
+      readAt: null,
+      createdAt: nowIso(),
+    })
+    .run();
+
+  return true;
 }
 
 export function listNotificationsByUser(userId: string, limit: number): {

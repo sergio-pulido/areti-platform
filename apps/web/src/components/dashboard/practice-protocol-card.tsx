@@ -5,9 +5,15 @@ import type { PracticeRoutine } from "@/lib/content-api";
 
 type PracticeProtocolCardProps = {
   routine: Pick<PracticeRoutine, "slug" | "title" | "description" | "cadence">;
+  completed?: boolean;
+  recommended?: boolean;
 };
 
-export function PracticeProtocolCard({ routine }: PracticeProtocolCardProps) {
+export function PracticeProtocolCard({
+  routine,
+  completed = false,
+  recommended = false,
+}: PracticeProtocolCardProps) {
   return (
     <Link
       href={`/practices/${encodeURIComponent(routine.slug)}`}
@@ -18,6 +24,10 @@ export function PracticeProtocolCard({ routine }: PracticeProtocolCardProps) {
         <h2 className="text-lg font-semibold text-sand-100">{routine.title}</h2>
         <div className="mt-2">
           <Badge variant="success">{routine.cadence}</Badge>
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          {completed ? <Badge variant="muted">Completed</Badge> : null}
+          {recommended ? <Badge variant="default">Recommended next</Badge> : null}
         </div>
         <p className="mt-4 line-clamp-3 text-sm text-night-200">{routine.description}</p>
         <p className="mt-4 text-xs text-sage-100">Start practice</p>

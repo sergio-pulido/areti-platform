@@ -239,6 +239,7 @@ test("dashboard CTAs remain clickable and route to actionable flows", async ({ p
   await expect(page.getByText("Lesson marked complete.")).toBeVisible();
   await page.getByRole("link", { name: "Back to library" }).click();
   await expectUrl(page, /\/library/);
+  await expect(page.getByText("Completed")).toBeVisible();
 
   await page.goto("/dashboard");
   await page.getByLabel("Quick actions").click();
@@ -255,6 +256,11 @@ test("dashboard CTAs remain clickable and route to actionable flows", async ({ p
   await expectUrl(page, /\/journal\?title=.*&mood=Focused/);
   await expect(page.getByLabel("Title")).toHaveValue(/Practice:/);
   await expect(page.getByLabel("Mood")).toHaveValue("Focused");
+  await page.goto("/practices");
+  await expectUrl(page, /\/practices/);
+  await expect(page.getByText("Completed")).toBeVisible();
+  await page.getByRole("link", { name: /Daily reset/i }).click();
+  await expectUrl(page, /\/practices\?path=daily/);
 
   await page.goto("/community");
   await page.getByRole("link", { name: "Request invite" }).first().click();
@@ -287,6 +293,21 @@ test("dashboard prioritizes next action and adapts from new user to returning us
 
   await expect(page.getByRole("heading", { name: "Continue your path" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Momentum checkpoint" }).first()).toBeVisible();
+});
+
+test("library path templates and rewards milestones render for active users", async ({ page }) => {
+  await signupAndGoDashboard(page);
+
+  await page.goto("/library");
+  await page.getByRole("link", { name: /Starter \(Beginner\)/i }).click();
+  await expectUrl(page, /\/library\?path=starter/);
+  await expect(page.getByText("Path: starter")).toBeVisible();
+
+  await page.goto("/account/rewards");
+  await expect(page.getByRole("heading", { name: "Rewards" })).toBeVisible();
+  await expect(page.getByText(/badges earned/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "First Reflection" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Lesson Starter" })).toBeVisible();
 });
 
 test("account focus query highlights rounded target containers", async ({ page }) => {

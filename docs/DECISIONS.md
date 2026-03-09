@@ -1,5 +1,17 @@
 # Decisions
 
+## 2026-03-09 - Completion-aware progression + light gamification + deduped behavior notifications
+- **Context:** Core content, notifications, and rewards existed but progression clarity and behavioral loops were weak: users could finish items without visible pathing, rewards was deferred, and notifications were mostly passive.
+- **Decision:** Add completion-aware progression UX in `/library` and `/practices` (recommended-next + completion badges), expose authenticated completion inventory via `GET /api/v1/progress/completions`, replace `/account/rewards` placeholder with live milestone badges driven by journal/completion signals, and generate behavior notifications (content completion milestones and momentum reminders) with duplicate suppression windows.
+- **Why:** Improves day-to-day guidance and retention loops without introducing heavy game mechanics or noisy notification spam.
+- **Tradeoff:** Behavior notifications are generated from app activity (progress/dashboard route usage) rather than an always-on scheduler, so reminder timing is session-dependent.
+
+## 2026-03-09 - Template-based content paths and regression coverage for rewards/progression
+- **Context:** Completion-aware cards improved visibility, but users still needed faster route-level path selection and automated regression checks for new rewards/progression UX.
+- **Decision:** Add lightweight path-template filters in content routes (`/library?path=starter|applied|mastery`, `/practices?path=daily|focus|evening`) and extend Playwright coverage to assert progression badges, template routing, and rewards page rendering.
+- **Why:** Makes progression choices explicit in one click and protects newly shipped motivation surfaces against UI regressions.
+- **Tradeoff:** Path templates are heuristic tags over existing content metadata rather than a fully modeled curriculum graph.
+
 ## 2026-03-09 - Public preview section with no-auth feature walkthroughs
 - **Context:** Product needed a low-friction way for guests to explore key experiences before signup, while preserving existing authenticated flows.
 - **Decision:** Add a dedicated public preview section (`/preview`) with unauthenticated preview pages for chat, dashboard, journal, library, and practices; back `/preview/chat` with a no-auth preview API (`/api/preview/chat`) using provider-backed responses with strict guest rate limits and token caps; add preview analytics event ingestion (`/api/v1/preview/events`) plus admin conversion summary endpoint (`/api/v1/admin/preview/analytics`), retention cleanup (90 days), and lightweight anti-bot heuristics (honeypot + minimum interaction time).

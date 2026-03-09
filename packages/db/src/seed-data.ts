@@ -171,6 +171,36 @@ If momentum is early, narrow launch scope and protect quality. If momentum is st
 
 Timing is leverage. Better launch rhythm can outperform brute-force effort with lower team burnout.`,
   },
+  {
+    slug: "stoic-preferred-indifferents",
+    title: "Preferred Indifferents in Real Decisions",
+    tradition: "Stoicism",
+    level: "Beginner",
+    minutes: 8,
+    summary: "Use outcomes wisely without attaching your identity to them.",
+    content: `Stoicism does not reject outcomes. Health, resources, and reputation are "preferred indifferents": useful when present, but not the core of moral worth.
+
+When deciding, separate value from identity. You can prefer a promotion while refusing to compromise integrity to get it.
+
+Use a two-part decision rule: choose the better external option, then judge yourself by the quality of your character and effort in pursuing it.
+
+This framing keeps ambition alive while protecting psychological stability when outcomes shift.`,
+  },
+  {
+    slug: "buddhist-second-arrow",
+    title: "The Second Arrow and Emotional Reactivity",
+    tradition: "Buddhism",
+    level: "Intermediate",
+    minutes: 9,
+    summary: "Reduce emotional spirals by stopping the self-inflicted second arrow.",
+    content: `The first arrow is unavoidable pain: criticism, delay, or disappointment. The second arrow is what we add: rumination, shame narratives, and catastrophic forecasting.
+
+When triggered, label the first arrow in one sentence: "I received hard feedback." Then name the second arrow: "I am telling myself I am failing completely."
+
+Pause for three breaths and choose one grounded action that addresses reality directly. Keep it concrete and immediate.
+
+Ending the second arrow quickly does not deny pain; it prevents pain from becoming identity.`,
+  },
 ] as const;
 
 export const PRACTICE_SEED = [
@@ -221,6 +251,30 @@ export const PRACTICE_SEED = [
 3. Work with steady pace; when tension rises, relax shoulders and continue.
 4. If stuck, simplify the next step instead of forcing intensity.
 5. End with a 2-minute note on what flowed and what created friction.`,
+  },
+  {
+    slug: "control-column-reset",
+    title: "Control Column Reset",
+    description:
+      "Rebuild clarity under pressure by separating what you can influence from what you cannot.",
+    cadence: "Daily · 5 min",
+    protocol: `1. Write the stressor in one sentence.
+2. Draw two columns: in my control / outside my control.
+3. Fill both columns quickly without editing.
+4. Pick one action from the control column that can be done today.
+5. Start the action immediately for two focused minutes.`,
+  },
+  {
+    slug: "evening-gratitude-ledger",
+    title: "Evening Gratitude Ledger",
+    description:
+      "Close the day with a calm inventory of what was sufficient, supportive, and meaningful.",
+    cadence: "Daily · 6 min",
+    protocol: `1. List three moments of enoughness from today.
+2. Write one person or relationship that supported your stability.
+3. Name one excess desire you can release for tomorrow.
+4. Commit one small action of care for your future self.
+5. End with one sentence of appreciation.`,
   },
 ] as const;
 

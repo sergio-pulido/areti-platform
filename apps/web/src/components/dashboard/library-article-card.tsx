@@ -8,9 +8,15 @@ type LibraryArticleCardProps = {
     LibraryLesson,
     "slug" | "title" | "tradition" | "level" | "minutes" | "summary"
   >;
+  completed?: boolean;
+  recommended?: boolean;
 };
 
-export function LibraryArticleCard({ lesson }: LibraryArticleCardProps) {
+export function LibraryArticleCard({
+  lesson,
+  completed = false,
+  recommended = false,
+}: LibraryArticleCardProps) {
   return (
     <Link
       href={`/library/${encodeURIComponent(lesson.slug)}`}
@@ -23,6 +29,8 @@ export function LibraryArticleCard({ lesson }: LibraryArticleCardProps) {
         <div className="mt-3 flex items-center gap-2">
           <Badge variant="muted">{lesson.level}</Badge>
           <Badge variant="default">{lesson.minutes} min read</Badge>
+          {completed ? <Badge variant="success">Completed</Badge> : null}
+          {recommended ? <Badge variant="default">Recommended next</Badge> : null}
         </div>
         <p className="mt-3 line-clamp-3 text-sm text-night-200">{lesson.summary}</p>
         <p className="mt-4 text-xs text-sage-100">Read article</p>
