@@ -545,6 +545,29 @@ export function runMigrations() {
 
 runMigrations();
 
+function ensureCompatibilitySchema(): void {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS user_content_completions (
+      id text PRIMARY KEY NOT NULL,
+      user_id text NOT NULL,
+      content_kind text NOT NULL,
+      content_slug text NOT NULL,
+      completion_count integer DEFAULT 1 NOT NULL,
+      last_completed_at text NOT NULL,
+      created_at text NOT NULL,
+      updated_at text NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade
+    );
+  `);
+
+  sqlite.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS user_content_completions_user_kind_slug_unique
+      ON user_content_completions (user_id, content_kind, content_slug);
+  `);
+}
+
+ensureCompatibilitySchema();
+
 function seedIfEmpty(): void {
   const timestamp = nowIso();
 
