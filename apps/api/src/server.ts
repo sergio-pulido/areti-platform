@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -1645,6 +1646,12 @@ const adminSystemJobRunsQuerySchema = z.object({
 const adminSystemJobSummaryQuerySchema = z.object({
   jobName: z.string().trim().min(1).max(120).default("notification_digest"),
   failureWindowMinutes: z.coerce.number().int().positive().max(24 * 60).default(120),
+  staleLockMinutes: z.coerce.number().int().positive().max(24 * 60).default(30),
+});
+
+const adminSystemJobUnlockSchema = z.object({
+  jobName: z.string().trim().min(1).max(120).default("notification_digest"),
+  minAgeMinutes: z.coerce.number().int().positive().max(24 * 60).default(30),
 });
 
 function parseIdOrFail(request: Request, response: Response): number | null {
@@ -1671,6 +1678,55 @@ function parseStatusOrFail(request: Request, response: Response): ContentStatus 
 
 function normalizeCustomInstructions(value: string): string {
   return value.trim();
+}
+
+function resolveNotificationDigestLockPath(): string {
+  const configured = process.env.NOTIFICATION_DIGEST_LOCK_PATH?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  return path.join(process.cwd(), ".notification-digest.lock");
+}
+
+function getNotificationDigestLockInfo(): {
+  path: string;
+  exists: boolean;
+  startedAt: string | null;
+  ageMinutes: number | null;
+} {
+  const lockPath = resolveNotificationDigestLockPath();
+
+  if (!existsSync(lockPath)) {
+    return {
+      path: lockPath,
+      exists: false,
+      startedAt: null,
+      ageMinutes: null,
+    };
+  }
+
+  try {
+    const payload = JSON.parse(readFileSync(lockPath, "utf8")) as { startedAt?: string };
+    const startedAt = payload.startedAt ?? null;
+    const startedAtMs = startedAt ? Date.parse(startedAt) : NaN;
+
+    return {
+      path: lockPath,
+      exists: true,
+      startedAt,
+      ageMinutes: Number.isNaN(startedAtMs)
+        ? null
+        : Math.max(0, Math.floor((Date.now() - startedAtMs) / (60 * 1000))),
+    };
+  } catch {
+    return {
+      path: lockPath,
+      exists: true,
+      startedAt: null,
+      ageMinutes: null,
+    };
+  }
 }
 
 function resolveEmailTransportMode(rawValue: string | undefined, nodeEnv: string): EmailTransportMode {
@@ -3939,11 +3995,19 @@ export function createApp() {
       status: "error",
       limit: 1,
     })[0] ?? null;
+    const recentRuns7d = listSystemJobRuns({
+      jobName: parsed.data.jobName,
+      days: 7,
+      limit: 500,
+    });
+    const successRuns7d = recentRuns7d.filter((item) => item.status === "success").length;
     const runsLast24h = listSystemJobRuns({
       jobName: parsed.data.jobName,
       days: 1,
       limit: 500,
     }).length;
+    const successRate7d =
+      recentRuns7d.length > 0 ? Number((successRuns7d / recentRuns7d.length).toFixed(4)) : 0;
     const minutesSinceLatestRun =
       latestRun && !Number.isNaN(Date.parse(latestRun.startedAt))
         ? Math.max(0, Math.floor((Date.now() - Date.parse(latestRun.startedAt)) / (60 * 1000)))
@@ -3952,9 +4016,15 @@ export function createApp() {
       latestError && !Number.isNaN(Date.parse(latestError.startedAt))
         ? Math.max(0, Math.floor((Date.now() - Date.parse(latestError.startedAt)) / (60 * 1000)))
         : null;
+    const lockInfo = getNotificationDigestLockInfo();
+    const staleLockDetected =
+      lockInfo.exists &&
+      lockInfo.ageMinutes !== null &&
+      lockInfo.ageMinutes > parsed.data.staleLockMinutes;
 
     const healthy =
       latestRun !== null &&
+      !staleLockDetected &&
       !(
         latestRun.status === "error" &&
         minutesSinceLatestError !== null &&
@@ -3965,6 +4035,7 @@ export function createApp() {
       data: {
         jobName: parsed.data.jobName,
         failureWindowMinutes: parsed.data.failureWindowMinutes,
+        staleLockMinutes: parsed.data.staleLockMinutes,
         healthy,
         latestStatus: latestRun?.status ?? null,
         latestRunAt: latestRun?.startedAt ?? null,
@@ -3973,6 +4044,59 @@ export function createApp() {
         latestErrorAt: latestError?.startedAt ?? null,
         latestErrorMessage: latestError?.errorMessage ?? null,
         runsLast24h,
+        runsLast7d: recentRuns7d.length,
+        successRuns7d,
+        successRate7d,
+        lock: {
+          path: lockInfo.path,
+          exists: lockInfo.exists,
+          startedAt: lockInfo.startedAt,
+          ageMinutes: lockInfo.ageMinutes,
+          staleDetected: staleLockDetected,
+        },
+      },
+    });
+  });
+
+  app.post("/api/v1/admin/system/jobs/unlock", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = adminSystemJobUnlockSchema.safeParse(req.body ?? {});
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid unlock payload" });
+      return;
+    }
+
+    if (parsed.data.jobName !== "notification_digest") {
+      res.status(400).json({ error: "Unsupported job name for unlock." });
+      return;
+    }
+
+    const lockInfo = getNotificationDigestLockInfo();
+    if (!lockInfo.exists) {
+      res.status(404).json({ error: "No lock file found." });
+      return;
+    }
+
+    if (lockInfo.ageMinutes === null || lockInfo.ageMinutes < parsed.data.minAgeMinutes) {
+      res.status(409).json({
+        error: `Lock is not stale enough to unlock. age=${lockInfo.ageMinutes ?? "unknown"} min.`,
+      });
+      return;
+    }
+
+    rmSync(lockInfo.path, { force: true });
+    auditAdminAction(authReq, "system.job.unlock", "system_job", parsed.data.jobName, {
+      lockPath: lockInfo.path,
+      lockAgeMinutes: lockInfo.ageMinutes,
+      minAgeMinutes: parsed.data.minAgeMinutes,
+    });
+
+    res.json({
+      data: {
+        unlocked: true,
+        lockPath: lockInfo.path,
+        lockAgeMinutes: lockInfo.ageMinutes,
       },
     });
   });

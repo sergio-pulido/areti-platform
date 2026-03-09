@@ -60,6 +60,12 @@
 - **Why:** Reduces time-to-detection and keeps operational checks actionable from a single admin surface.
 - **Tradeoff:** One additional admin API call on CMS page load.
 
+## 2026-03-09 - Add threshold controls, stale-lock visibility, and safe unlock remediation
+- **Context:** Static health thresholds and read-only stale-lock signals limited operator control and recovery speed.
+- **Decision:** Extend summary contract with `staleLockMinutes`, lock metadata, and 7-day success-rate metrics; add CMS threshold controls (`failureWindow`, `staleLock`) and admin-only `POST /api/v1/admin/system/jobs/unlock` with audit logging.
+- **Why:** Enables in-product tuning and safe remediation without shell access while preserving privileged-action traceability.
+- **Tradeoff:** Slightly broader admin surface area and additional URL/query-state complexity in CMS.
+
 ## 2026-03-09 - Public preview section with no-auth feature walkthroughs
 - **Context:** Product needed a low-friction way for guests to explore key experiences before signup, while preserving existing authenticated flows.
 - **Decision:** Add a dedicated public preview section (`/preview`) with unauthenticated preview pages for chat, dashboard, journal, library, and practices; back `/preview/chat` with a no-auth preview API (`/api/preview/chat`) using provider-backed responses with strict guest rate limits and token caps; add preview analytics event ingestion (`/api/v1/preview/events`) plus admin conversion summary endpoint (`/api/v1/admin/preview/analytics`), retention cleanup (90 days), and lightweight anti-bot heuristics (honeypot + minimum interaction time).

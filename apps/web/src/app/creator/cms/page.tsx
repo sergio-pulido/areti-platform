@@ -40,6 +40,7 @@ import {
   updatePracticeAdminAction,
   updateResourceAdminAction,
   updateVideoAdminAction,
+  unlockNotificationDigestLockAdminAction,
 } from "@/actions/admin-content";
 import { PageHeader } from "@/components/dashboard/page-header";
 import {
@@ -63,6 +64,8 @@ type CmsPageProps = {
 
 type JobRunStatusFilter = "all" | "running" | "success" | "error" | "skipped";
 type JobRunDaysFilter = "all" | "1" | "7" | "30" | "90";
+type FailureWindowFilter = "30" | "60" | "120" | "240";
+type StaleLockFilter = "15" | "30" | "60" | "120";
 
 function first(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : (value ?? "");
@@ -84,13 +87,40 @@ function normalizeDaysFilter(value: string): JobRunDaysFilter {
   return "all";
 }
 
-function buildCmsFilterHref(filters: { status: JobRunStatusFilter; days: JobRunDaysFilter }): string {
+function normalizeFailureWindow(value: string): FailureWindowFilter {
+  if (value === "30" || value === "60" || value === "120" || value === "240") {
+    return value;
+  }
+
+  return "120";
+}
+
+function normalizeStaleLock(value: string): StaleLockFilter {
+  if (value === "15" || value === "30" || value === "60" || value === "120") {
+    return value;
+  }
+
+  return "30";
+}
+
+function buildCmsOpsHref(filters: {
+  status: JobRunStatusFilter;
+  days: JobRunDaysFilter;
+  failureWindow: FailureWindowFilter;
+  staleLock: StaleLockFilter;
+}): string {
   const params = new URLSearchParams();
   if (filters.status !== "all") {
     params.set("runStatus", filters.status);
   }
   if (filters.days !== "all") {
     params.set("runDays", filters.days);
+  }
+  if (filters.failureWindow !== "120") {
+    params.set("failureWindow", filters.failureWindow);
+  }
+  if (filters.staleLock !== "30") {
+    params.set("staleLock", filters.staleLock);
   }
   const qs = params.toString();
   return qs ? `/creator/cms?${qs}` : "/creator/cms";
@@ -121,6 +151,8 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
   const params = ((await searchParams) ?? {}) as Record<string, string | string[] | undefined>;
   const runStatus = normalizeStatusFilter(first(params.runStatus));
   const runDays = normalizeDaysFilter(first(params.runDays));
+  const failureWindow = normalizeFailureWindow(first(params.failureWindow));
+  const staleLock = normalizeStaleLock(first(params.staleLock));
 
   if (user.role !== "ADMIN") {
     return (
@@ -147,7 +179,8 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
     apiAdminPreviewAnalytics(token, 30),
     apiAdminSystemJobSummary(token, {
       jobName: "notification_digest",
-      failureWindowMinutes: 120,
+      failureWindowMinutes: Number(failureWindow),
+      staleLockMinutes: Number(staleLock),
     }),
     apiAdminSystemJobRuns(token, {
       limit: 20,
@@ -255,6 +288,12 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
               </p>
             </article>
             <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">7d success rate</p>
+              <p className="mt-1 text-base font-semibold text-sand-100">
+                {(systemJobSummary.successRate7d * 100).toFixed(1)}%
+              </p>
+            </article>
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
               <p className="text-night-300">Last error</p>
               <p className="mt-1 text-base font-semibold text-sand-100">
                 {systemJobSummary.latestErrorAt
@@ -263,6 +302,51 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
               </p>
             </article>
           </div>
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="text-night-300">Failure window</span>
+            <Link href={buildCmsOpsHref({ status: runStatus, days: runDays, failureWindow: "30", staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              30m
+            </Link>
+            <Link href={buildCmsOpsHref({ status: runStatus, days: runDays, failureWindow: "60", staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              60m
+            </Link>
+            <Link href={buildCmsOpsHref({ status: runStatus, days: runDays, failureWindow: "120", staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              120m
+            </Link>
+            <Link href={buildCmsOpsHref({ status: runStatus, days: runDays, failureWindow: "240", staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              240m
+            </Link>
+            <span className="ml-2 text-night-300">Stale lock</span>
+            <Link href={buildCmsOpsHref({ status: runStatus, days: runDays, failureWindow, staleLock: "15" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              15m
+            </Link>
+            <Link href={buildCmsOpsHref({ status: runStatus, days: runDays, failureWindow, staleLock: "30" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              30m
+            </Link>
+            <Link href={buildCmsOpsHref({ status: runStatus, days: runDays, failureWindow, staleLock: "60" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              60m
+            </Link>
+            <Link href={buildCmsOpsHref({ status: runStatus, days: runDays, failureWindow, staleLock: "120" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              120m
+            </Link>
+          </div>
+          {systemJobSummary.lock.exists ? (
+            <p className="mb-3 rounded-xl border border-night-700 bg-night-950/70 px-3 py-2 text-xs text-night-200">
+              lock age: {systemJobSummary.lock.ageMinutes ?? "unknown"} min
+              {systemJobSummary.lock.staleDetected ? " (stale)" : ""}
+            </p>
+          ) : null}
+          {systemJobSummary.lock.staleDetected ? (
+            <form action={unlockNotificationDigestLockAdminAction} className="mb-3">
+              <input type="hidden" name="minAgeMinutes" value={staleLock} />
+              <button
+                type="submit"
+                className="rounded border border-amber-300/40 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-100 hover:bg-amber-500/20"
+              >
+                Unlock stale digest lock
+              </button>
+            </form>
+          ) : null}
           {systemJobSummary.latestErrorMessage ? (
             <p className="mb-3 rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
               {systemJobSummary.latestErrorMessage}
@@ -270,35 +354,35 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
           ) : null}
           <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
             <span className="text-night-300">Status</span>
-            <Link href={buildCmsFilterHref({ status: "all", days: runDays })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+            <Link href={buildCmsOpsHref({ status: "all", days: runDays, failureWindow, staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
               All
             </Link>
-            <Link href={buildCmsFilterHref({ status: "running", days: runDays })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+            <Link href={buildCmsOpsHref({ status: "running", days: runDays, failureWindow, staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
               Running
             </Link>
-            <Link href={buildCmsFilterHref({ status: "success", days: runDays })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+            <Link href={buildCmsOpsHref({ status: "success", days: runDays, failureWindow, staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
               Success
             </Link>
-            <Link href={buildCmsFilterHref({ status: "error", days: runDays })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+            <Link href={buildCmsOpsHref({ status: "error", days: runDays, failureWindow, staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
               Error
             </Link>
-            <Link href={buildCmsFilterHref({ status: "skipped", days: runDays })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+            <Link href={buildCmsOpsHref({ status: "skipped", days: runDays, failureWindow, staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
               Skipped
             </Link>
             <span className="ml-2 text-night-300">Window</span>
-            <Link href={buildCmsFilterHref({ status: runStatus, days: "all" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+            <Link href={buildCmsOpsHref({ status: runStatus, days: "all", failureWindow, staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
               All time
             </Link>
-            <Link href={buildCmsFilterHref({ status: runStatus, days: "1" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+            <Link href={buildCmsOpsHref({ status: runStatus, days: "1", failureWindow, staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
               24h
             </Link>
-            <Link href={buildCmsFilterHref({ status: runStatus, days: "7" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+            <Link href={buildCmsOpsHref({ status: runStatus, days: "7", failureWindow, staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
               7d
             </Link>
-            <Link href={buildCmsFilterHref({ status: runStatus, days: "30" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+            <Link href={buildCmsOpsHref({ status: runStatus, days: "30", failureWindow, staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
               30d
             </Link>
-            <Link href={buildCmsFilterHref({ status: runStatus, days: "90" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+            <Link href={buildCmsOpsHref({ status: runStatus, days: "90", failureWindow, staleLock })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
               90d
             </Link>
           </div>

@@ -32,6 +32,7 @@ import {
   apiAdminSetPracticeStatus,
   apiAdminSetResourceStatus,
   apiAdminSetVideoStatus,
+  apiAdminUnlockSystemJob,
   apiAdminUpdateChallenge,
   apiAdminUpdateCommunity,
   apiAdminUpdateEvent,
@@ -112,6 +113,18 @@ function revalidateCms(): void {
   revalidatePath("/creator/videos");
   revalidatePath("/creator/readings");
   revalidatePath("/creator/exercises");
+}
+
+export async function unlockNotificationDigestLockAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+  const minAgeMinutes = getNumber(formData, "minAgeMinutes");
+
+  await apiAdminUnlockSystemJob(token, {
+    jobName: "notification_digest",
+    minAgeMinutes,
+  });
+
+  revalidateCms();
 }
 
 export async function createLessonAdminAction(formData: FormData): Promise<void> {

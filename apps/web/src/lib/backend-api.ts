@@ -335,6 +335,7 @@ export type ApiAdminSystemJobRun = {
 export type ApiAdminSystemJobSummary = {
   jobName: string;
   failureWindowMinutes: number;
+  staleLockMinutes: number;
   healthy: boolean;
   latestStatus: string | null;
   latestRunAt: string | null;
@@ -343,6 +344,16 @@ export type ApiAdminSystemJobSummary = {
   latestErrorAt: string | null;
   latestErrorMessage: string | null;
   runsLast24h: number;
+  runsLast7d: number;
+  successRuns7d: number;
+  successRate7d: number;
+  lock: {
+    path: string;
+    exists: boolean;
+    startedAt: string | null;
+    ageMinutes: number | null;
+    staleDetected: boolean;
+  };
 };
 
 export type ContentStatus = "DRAFT" | "PUBLISHED";
@@ -861,7 +872,7 @@ export async function apiAdminSystemJobRuns(
 
 export async function apiAdminSystemJobSummary(
   token: string,
-  input?: { jobName?: string; failureWindowMinutes?: number },
+  input?: { jobName?: string; failureWindowMinutes?: number; staleLockMinutes?: number },
 ): Promise<ApiAdminSystemJobSummary> {
   const params = new URLSearchParams();
   if (input?.jobName) {
@@ -870,10 +881,29 @@ export async function apiAdminSystemJobSummary(
   if (input?.failureWindowMinutes) {
     params.set("failureWindowMinutes", String(input.failureWindowMinutes));
   }
+  if (input?.staleLockMinutes) {
+    params.set("staleLockMinutes", String(input.staleLockMinutes));
+  }
   const qs = params.toString();
   return requestJson<ApiAdminSystemJobSummary>(
     `/api/v1/admin/system/jobs/summary${qs ? `?${qs}` : ""}`,
     withAuth(token),
+  );
+}
+
+export async function apiAdminUnlockSystemJob(
+  token: string,
+  input?: { jobName?: string; minAgeMinutes?: number },
+): Promise<{ unlocked: boolean; lockPath: string; lockAgeMinutes: number | null }> {
+  return requestJson<{ unlocked: boolean; lockPath: string; lockAgeMinutes: number | null }>(
+    "/api/v1/admin/system/jobs/unlock",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify({
+        jobName: input?.jobName ?? "notification_digest",
+        minAgeMinutes: input?.minAgeMinutes ?? 30,
+      }),
+    }),
   );
 }
 
