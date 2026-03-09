@@ -64,6 +64,13 @@
       "when": 1773012171703,
       "tag": "0008_slow_talisman",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1773059400000,
+      "tag": "0009_plain_preview_analytics",
+      "breakpoints": true
     }
   ]
 }

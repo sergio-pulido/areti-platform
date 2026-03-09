@@ -16,6 +16,10 @@
 - Companion now supports account-level user custom instructions appended to the global Areti system prompt.
 - Chat telemetry is now persisted (`chat_events`) and exposed to admins via API for lifecycle observability.
 - Companion chat UX now prioritizes guided reflective conversation: lighter hierarchy, compact thread controls, structured assistant rendering, continuity snippets, follow-up chips, and a mode-driven composer.
+- Public preview section is now available at `/preview` (no auth), including lightweight previews for chat, journal, library, and practices to let guests evaluate core UX before signup.
+- Public preview now also includes `/preview/dashboard` to demonstrate the action-first member home with sample momentum data.
+- `/preview/chat` now runs on a no-auth preview chat API with strict token-budget testing (fixed session budget, per-turn input/output caps, response clipping, resettable sandbox session).
+- Preview analytics events are now captured for guest journeys (page views, preview signup clicks, signup views, preview chat prompt/response events) and summarized via admin endpoint `/api/v1/admin/preview/analytics`.
 - Community and creator domains are now fully API-backed across pages and CMS.
 - Notifications are persisted and wired to topbar bell with unread/read-all/read-one behavior.
 - Signup now requires mandatory Terms/Privacy acceptance, stores auditable legal consent records, and defers session creation until email verification.
@@ -158,6 +162,13 @@
   - Companion history now includes Active/Archived tabs, debounced search, and list virtualization for larger histories.
   - Thread details panel now shows status and supports restore for archived threads; archived threads disable composer until restored.
   - Companion chat UI now has lighter framing, compact overflow thread actions, preview-rich thread rows, guided empty state starters, structured assistant message sections, follow-up action chips, and a ritual-style composer with mode pills + rotating prompts.
+  - Added a public preview section:
+    - `/preview` hub page linking to all previews
+    - `/preview/chat` token-limited companion demo
+    - `/preview/dashboard` sample action-first home experience
+    - `/preview/journal`, `/preview/library`, `/preview/practices` lightweight feature walkthroughs
+  - Added no-auth preview chat API at `/api/preview/chat` used by `/preview/chat`.
+  - Added no-auth preview analytics proxy route at `/api/preview/events` and backend analytics ingestion at `/api/v1/preview/events`.
   - Library and practices lists now render reusable clickable card components.
   - Added `/library/[slug]` article detail and upgraded `/practices/[slug]` to DB protocol content.
   - Added admin-only create pages:

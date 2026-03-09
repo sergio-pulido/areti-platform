@@ -25,6 +25,7 @@ import {
   libraryLessons,
   mfaChallenges,
   passkeyCredentials,
+  previewEvents,
   practiceRoutines,
   refreshSessions,
   sessions,
@@ -41,6 +42,7 @@ import {
   type ContentCompletionKind,
   type ContentStatus,
   type LegalPolicyType,
+  type PreviewEventType,
   type UserRole,
 } from "./schema.js";
 import {
@@ -163,6 +165,16 @@ export type ChatEventRecord = {
   threadId: string | null;
   eventType: ChatEventType;
   payloadJson: string;
+  createdAt: string;
+};
+
+export type PreviewEventRecord = {
+  id: string;
+  sessionId: string;
+  eventType: PreviewEventType;
+  path: string;
+  referrer: string | null;
+  metadataJson: string;
   createdAt: string;
 };
 
@@ -3400,6 +3412,43 @@ export function listChatEvents(limit: number): ChatEventRecord[] {
     .map((row) => ({
       ...row,
       eventType: row.eventType as ChatEventType,
+    }));
+}
+
+export function createPreviewEvent(input: {
+  id: string;
+  sessionId: string;
+  eventType: PreviewEventType;
+  path: string;
+  referrer?: string | null;
+  metadataJson?: string;
+}): void {
+  db.insert(previewEvents)
+    .values({
+      id: input.id,
+      sessionId: input.sessionId,
+      eventType: input.eventType,
+      path: input.path,
+      referrer: input.referrer ?? null,
+      metadataJson: input.metadataJson ?? "{}",
+      createdAt: nowIso(),
+    })
+    .run();
+}
+
+export function listPreviewEventsByDays(days: number): PreviewEventRecord[] {
+  const safeDays = Number.isFinite(days) && days > 0 ? days : 30;
+  const floor = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000).toISOString();
+
+  return db
+    .select()
+    .from(previewEvents)
+    .where(gt(previewEvents.createdAt, floor))
+    .orderBy(desc(previewEvents.createdAt))
+    .all()
+    .map((row) => ({
+      ...row,
+      eventType: row.eventType as PreviewEventType,
     }));
 }
 

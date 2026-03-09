@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ChatSimulator } from "@/components/dashboard/chat-simulator";
 import { PageHeader } from "@/components/dashboard/page-header";
 
@@ -18,6 +19,14 @@ export default async function ChatPage({ searchParams }: ChatPageProps) {
           eyebrow="Companion"
           title="Reflective Companion"
           description="Think clearly, regulate emotion, and turn philosophy into concrete next actions."
+          actions={
+            <Link
+              href="/preview/chat"
+              className="inline-flex rounded-xl border border-sage-300/40 bg-sage-500/10 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20"
+            >
+              Open public token preview
+            </Link>
+          }
         />
       ) : null}
 

@@ -41,7 +41,7 @@ export default async function Home() {
                   <ArrowRight size={15} />
                 </Link>
                 <Link
-                  href="/chat"
+                  href="/preview/chat"
                   className="inline-flex items-center gap-2 rounded-xl border border-night-600 bg-night-900/60 px-5 py-3 text-sm text-sand-100 hover:border-night-500"
                 >
                   <Sparkles size={14} />

@@ -4,6 +4,12 @@ export type UserRole = "MEMBER" | "ADMIN";
 export type ContentStatus = "DRAFT" | "PUBLISHED";
 export type LegalPolicyType = "TERMS" | "PRIVACY";
 export type ContentCompletionKind = "lesson" | "practice";
+export type PreviewEventType =
+  | "preview_page_view"
+  | "preview_signup_click"
+  | "preview_signup_view"
+  | "preview_chat_prompt_submitted"
+  | "preview_chat_response_received";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -409,6 +415,16 @@ export const chatEvents = sqliteTable("chat_events", {
   threadId: text("thread_id").references(() => chatThreads.id, { onDelete: "set null" }),
   eventType: text("event_type").notNull(),
   payloadJson: text("payload_json").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const previewEvents = sqliteTable("preview_events", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id").notNull(),
+  eventType: text("event_type").$type<PreviewEventType>().notNull(),
+  path: text("path").notNull(),
+  referrer: text("referrer"),
+  metadataJson: text("metadata_json").notNull().default("{}"),
   createdAt: text("created_at").notNull(),
 });
 

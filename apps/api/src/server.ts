@@ -35,6 +35,7 @@ import {
   createJournalEntry,
   createLesson,
   createNotification,
+  createPreviewEvent,
   createPasskeyCredential,
   createPillar,
   createPractice,
@@ -98,6 +99,7 @@ import {
   listJournalEntriesByUser,
   listNotificationsByUser,
   listPasskeyCredentialsByUserId,
+  listPreviewEventsByDays,
   listUserDevicesByUserId,
   markAllNotificationsRead,
   markNotificationRead,
@@ -159,6 +161,20 @@ const PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const MODERATION_BLOCKED_WORDS = ["suicide", "kill myself", "bomb", "terrorist", "self-harm"];
 const CHAT_WINDOW_MS = 60 * 1000;
 const CHAT_MAX_ATTEMPTS = 20;
+const PREVIEW_CHAT_WINDOW_MS = 60 * 1000;
+const PREVIEW_CHAT_MAX_ATTEMPTS = 6;
+const PREVIEW_EVENT_WINDOW_MS = 60 * 1000;
+const PREVIEW_EVENT_MAX_ATTEMPTS = 45;
+const APPROX_CHARS_PER_TOKEN = 4;
+const PREVIEW_CHAT_SYSTEM_PROMPT = `
+You are Areti Preview Companion, a concise coach for first-time visitors.
+Give practical, calm guidance in 2-5 short paragraphs.
+Include:
+- one control-vs-no-control distinction
+- one concrete action that takes under 10 minutes
+- one reflective question
+Keep output compact and avoid jargon.
+`.trim();
 const DEFAULT_CHAT_PROVIDER_ORDER = ["deepseek", "openai"] as const;
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
@@ -266,6 +282,8 @@ const authAttemptsByKey = new Map<string, number[]>();
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_MAX_ATTEMPTS = 8;
 const chatAttemptsByUser = new Map<string, number[]>();
+const previewChatAttemptsByKey = new Map<string, number[]>();
+const previewEventAttemptsByKey = new Map<string, number[]>();
 
 const serverFilePath = fileURLToPath(import.meta.url);
 const serverDirPath = path.dirname(serverFilePath);
@@ -332,6 +350,32 @@ function assertWithinChatRateLimit(userId: string): void {
 
   recent.push(now);
   chatAttemptsByUser.set(userId, recent);
+}
+
+function assertWithinPreviewChatRateLimit(key: string): void {
+  const now = Date.now();
+  const current = previewChatAttemptsByKey.get(key) ?? [];
+  const recent = current.filter((timestamp) => now - timestamp <= PREVIEW_CHAT_WINDOW_MS);
+
+  if (recent.length >= PREVIEW_CHAT_MAX_ATTEMPTS) {
+    throw new Error("Too many preview chat requests. Please wait a minute and try again.");
+  }
+
+  recent.push(now);
+  previewChatAttemptsByKey.set(key, recent);
+}
+
+function assertWithinPreviewEventRateLimit(key: string): void {
+  const now = Date.now();
+  const current = previewEventAttemptsByKey.get(key) ?? [];
+  const recent = current.filter((timestamp) => now - timestamp <= PREVIEW_EVENT_WINDOW_MS);
+
+  if (recent.length >= PREVIEW_EVENT_MAX_ATTEMPTS) {
+    throw new Error("Too many preview analytics events. Please wait and retry.");
+  }
+
+  recent.push(now);
+  previewEventAttemptsByKey.set(key, recent);
 }
 
 function base32Encode(buffer: Uint8Array): string {
@@ -576,6 +620,12 @@ function authKey(intent: "signin" | "signup", request: Request, email: string): 
   return `${intent}:${getIpAddress(request)}:${email.toLowerCase()}`;
 }
 
+function previewClientKey(request: Request): string {
+  const ipAddress = getIpAddress(request);
+  const userAgent = request.header("user-agent")?.slice(0, 200) ?? "unknown-agent";
+  return createHash("sha256").update(`${ipAddress}|${userAgent}`).digest("hex");
+}
+
 function deriveSignupDisplayName(email: string): string {
   const localPart = email.split("@")[0] ?? "";
   const normalized = localPart
@@ -741,6 +791,25 @@ function fallbackThreadTitle(prompt: string): string {
   }
 
   return title.length > 120 ? title.slice(0, 120).trim() : title;
+}
+
+function estimateApproxTokens(value: string): number {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return 0;
+  }
+
+  return Math.ceil(trimmed.length / APPROX_CHARS_PER_TOKEN);
+}
+
+function clipToApproxTokenLimit(value: string, maxTokens: number): string {
+  if (estimateApproxTokens(value) <= maxTokens) {
+    return value;
+  }
+
+  const maxChars = Math.max(maxTokens * APPROX_CHARS_PER_TOKEN, 16);
+  return `${value.slice(0, maxChars).trimEnd()}...`;
 }
 
 function composeEffectiveSystemPrompt(
@@ -955,6 +1024,7 @@ async function resolveProviderAnswer(
   options?: {
     systemPrompt?: string;
     temperature?: number;
+    maxTokens?: number;
   },
 ): Promise<{
   answer: string | null;
@@ -980,6 +1050,7 @@ async function resolveProviderAnswer(
           },
         ],
         temperature: options?.temperature ?? 0.6,
+        max_tokens: options?.maxTokens,
       }),
     });
 
@@ -1022,6 +1093,9 @@ async function resolveChatAnswer(
   prompt: string,
   chatConfig: ChatRuntimeConfig,
   systemPrompt: string,
+  options?: {
+    maxTokens?: number;
+  },
 ): Promise<string> {
   if (chatConfig.providers.length === 0) {
     return fallbackChatAnswer(prompt);
@@ -1032,6 +1106,7 @@ async function resolveChatAnswer(
   for (const provider of chatConfig.providers) {
     const { answer, failure } = await resolveProviderAnswer(prompt, provider, {
       systemPrompt,
+      maxTokens: options?.maxTokens,
     });
     if (answer) {
       return answer;
@@ -1248,6 +1323,25 @@ const chatSchema = z.object({
   prompt: z.string().trim().min(3).max(800),
 });
 
+const previewChatSchema = z.object({
+  prompt: z.string().trim().min(3).max(320),
+  maxResponseTokens: z.coerce.number().int().min(24).max(120).optional(),
+});
+
+const previewEventSchema = z.object({
+  sessionId: z.string().trim().min(8).max(72),
+  eventType: z.enum([
+    "preview_page_view",
+    "preview_signup_click",
+    "preview_signup_view",
+    "preview_chat_prompt_submitted",
+    "preview_chat_response_received",
+  ]),
+  path: z.string().trim().min(1).max(200).default("/preview"),
+  referrer: z.string().trim().min(1).max(300).optional(),
+  metadata: z.record(z.string(), z.string().max(120)).optional(),
+});
+
 const lessonSchema = z.object({
   slug: z.string().trim().min(3).max(80),
   title: z.string().trim().min(3).max(140),
@@ -1395,6 +1489,10 @@ const onboardingSchema = z.object({
 
 const adminChatEventsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).default(200),
+});
+
+const adminPreviewAnalyticsQuerySchema = z.object({
+  days: z.coerce.number().int().positive().max(90).default(30),
 });
 
 function parseIdOrFail(request: Request, response: Response): number | null {
@@ -2800,6 +2898,107 @@ export function createApp() {
     res.json({ data: { updatedCount } });
   });
 
+  app.post("/api/v1/preview/chat", async (req, res) => {
+    const parsed = previewChatSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid prompt" });
+      return;
+    }
+
+    const rateLimitKey = previewClientKey(req);
+
+    try {
+      assertWithinPreviewChatRateLimit(rateLimitKey);
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(429).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+
+    const moderationError = moderatePrompt(parsed.data.prompt);
+
+    if (moderationError) {
+      res.status(400).json({ error: moderationError });
+      return;
+    }
+
+    const maxResponseTokens = parsed.data.maxResponseTokens ?? 96;
+
+    try {
+      const resolvedAnswer = await resolveChatAnswer(
+        parsed.data.prompt,
+        chatConfig,
+        PREVIEW_CHAT_SYSTEM_PROMPT,
+        { maxTokens: maxResponseTokens },
+      );
+      const answer = clipToApproxTokenLimit(resolvedAnswer, maxResponseTokens);
+
+      res.json({
+        data: {
+          answer,
+          usage: {
+            promptTokens: estimateApproxTokens(parsed.data.prompt),
+            answerTokens: estimateApproxTokens(answer),
+            maxResponseTokens,
+          },
+        },
+      });
+    } catch (error) {
+      if (error instanceof ChatProvidersFailedError) {
+        res.status(502).json({
+          error:
+            "Unable to reach configured chat providers. Check CHAT_PROVIDER_ORDER and provider API keys/models.",
+        });
+        return;
+      }
+
+      if (error instanceof Error) {
+        res.status(502).json({
+          error:
+            "Unable to reach configured chat providers. Check CHAT_PROVIDER_ORDER and provider API keys/models.",
+        });
+        return;
+      }
+
+      throw error;
+    }
+  });
+
+  app.post("/api/v1/preview/events", (req, res) => {
+    const parsed = previewEventSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid preview event payload" });
+      return;
+    }
+
+    const rateLimitKey = previewClientKey(req);
+
+    try {
+      assertWithinPreviewEventRateLimit(rateLimitKey);
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(429).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+
+    createPreviewEvent({
+      id: randomUUID(),
+      sessionId: parsed.data.sessionId,
+      eventType: parsed.data.eventType,
+      path: parsed.data.path,
+      referrer: parsed.data.referrer ?? null,
+      metadataJson: JSON.stringify(parsed.data.metadata ?? {}),
+    });
+
+    res.status(201).json({ data: { ok: true } });
+  });
+
   app.post("/api/v1/chat", requireAuth, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatSchema.safeParse(req.body);
@@ -3380,6 +3579,50 @@ export function createApp() {
     }
 
     res.json({ data: listChatEvents(parsed.data.limit) });
+  });
+
+  app.get("/api/v1/admin/preview/analytics", requireAuth, requireAdmin, (req, res) => {
+    const parsed = adminPreviewAnalyticsQuerySchema.safeParse(req.query);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    const events = listPreviewEventsByDays(parsed.data.days);
+    const previewViewSessions = new Set(
+      events
+        .filter((event) => event.eventType === "preview_page_view")
+        .map((event) => event.sessionId),
+    );
+    const signupViewSessions = new Set(
+      events
+        .filter((event) => event.eventType === "preview_signup_view")
+        .map((event) => event.sessionId),
+    );
+
+    const countsByType = events.reduce<Record<string, number>>((acc, event) => {
+      acc[event.eventType] = (acc[event.eventType] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    const sessionsPreviewed = previewViewSessions.size;
+    const sessionsReachedSignup = signupViewSessions.size;
+    const signupConversionRate =
+      sessionsPreviewed > 0 ? Number((sessionsReachedSignup / sessionsPreviewed).toFixed(4)) : 0;
+
+    res.json({
+      data: {
+        days: parsed.data.days,
+        totals: {
+          events: events.length,
+          sessionsPreviewed,
+          sessionsReachedSignup,
+          signupConversionRate,
+        },
+        countsByType,
+      },
+    });
   });
 
   app.post("/api/v1/admin/content/lessons", requireAuth, requireAdmin, (req, res) => {

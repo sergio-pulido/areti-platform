@@ -516,6 +516,56 @@ describe("API integration", () => {
     expect(eventTypes).toContain("thread_restored");
   });
 
+  it("supports public preview chat and analytics conversion reporting", async () => {
+    const previewChat = await request(app)
+      .post("/api/v1/preview/chat")
+      .set("User-Agent", "preview-integration-suite")
+      .send({
+        prompt: "Give me one calm next step before a stressful meeting.",
+        maxResponseTokens: 48,
+      });
+
+    expect(previewChat.status).toBe(200);
+    expect(typeof previewChat.body.data.answer).toBe("string");
+    expect(previewChat.body.data.answer.length).toBeGreaterThan(0);
+    expect(previewChat.body.data.usage.maxResponseTokens).toBe(48);
+
+    const sessionId = `preview-${Date.now()}`;
+    const previewViewEvent = await request(app).post("/api/v1/preview/events").send({
+      sessionId,
+      eventType: "preview_page_view",
+      path: "/preview/chat",
+    });
+
+    expect(previewViewEvent.status).toBe(201);
+
+    const signupClickEvent = await request(app).post("/api/v1/preview/events").send({
+      sessionId,
+      eventType: "preview_signup_click",
+      path: "/preview/chat",
+    });
+
+    expect(signupClickEvent.status).toBe(201);
+
+    const signupViewEvent = await request(app).post("/api/v1/preview/events").send({
+      sessionId,
+      eventType: "preview_signup_view",
+      path: "/auth/signup",
+      metadata: { from: "/preview/chat" },
+    });
+
+    expect(signupViewEvent.status).toBe(201);
+
+    const analytics = await request(app)
+      .get("/api/v1/admin/preview/analytics?days=30")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(analytics.status).toBe(200);
+    expect(analytics.body.data.totals.sessionsPreviewed).toBeGreaterThanOrEqual(1);
+    expect(analytics.body.data.totals.sessionsReachedSignup).toBeGreaterThanOrEqual(1);
+    expect(analytics.body.data.countsByType.preview_signup_click).toBeGreaterThanOrEqual(1);
+  });
+
   it("keeps draft lesson private until published", async () => {
     const createLesson = await request(app)
       .post("/api/v1/admin/content/lessons")

@@ -110,6 +110,40 @@ test("landing loads API content and signup reaches dashboard", async ({ page }) 
   }
 });
 
+test("public preview section is accessible without authentication", async ({ page }) => {
+  await page.goto("/preview");
+  const cookieAccept = page.getByRole("button", { name: "Accept cookies" });
+  if (await cookieAccept.count()) {
+    await cookieAccept.first().click();
+  }
+  await expect(page).toHaveURL(/\/preview$/, { timeout: 15000 });
+  await expect(page.getByRole("heading", { name: "Try Areti Without Signing In" })).toBeVisible();
+
+  await page.goto("/preview/chat");
+  await expect(page).toHaveURL(/\/preview\/chat$/, { timeout: 15000 });
+  await expect(page.getByText("Token budget:", { exact: false })).toBeVisible();
+
+  const composer = page.getByPlaceholder("Write a concise prompt (Shift+Enter for newline).");
+  await composer.fill("Help me reset quickly before a difficult conversation.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByText("Help me reset quickly before a difficult conversation.")).toBeVisible();
+
+  await composer.fill("x".repeat(500));
+  await expect(page.getByText(/Prompt too long:/)).toBeVisible();
+
+  await page.goto("/preview/journal");
+  await expect(page.getByRole("heading", { name: "Journal" })).toBeVisible();
+
+  await page.goto("/preview/library");
+  await expect(page.getByRole("heading", { name: "Library" })).toBeVisible();
+
+  await page.goto("/preview/practices");
+  await expect(page.getByRole("heading", { name: "Practices" })).toBeVisible();
+
+  await page.goto("/preview/dashboard");
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+});
+
 test("cookie consent gate redirects protected routes until accepted", async ({ page }) => {
   await page.goto("/dashboard");
   await expectUrl(page, /\/legal\/cookies\?next=/);

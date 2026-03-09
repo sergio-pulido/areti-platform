@@ -20,6 +20,7 @@ export {
   createLesson,
   createMfaChallenge,
   createNotification,
+  createPreviewEvent,
   createEmailVerificationChallenge,
   createPasskeyCredential,
   createPillar,
@@ -86,6 +87,7 @@ export {
   listJournalEntriesByUser,
   listNotificationsByUser,
   listPasskeyCredentialsByUserId,
+  listPreviewEventsByDays,
   listUserDevicesByUserId,
   markAllNotificationsRead,
   markNotificationRead,
@@ -151,6 +153,7 @@ export type {
   NotificationRecord,
   OnboardingProfileRecord,
   PasskeyCredentialRecord,
+  PreviewEventRecord,
   RefreshSessionContext,
   SecuritySettings,
   UserAuthRecord,
@@ -161,4 +164,10 @@ export type {
   RecentContentCompletionItem,
   UserContentCompletionSummary,
 } from "./client.js";
-export type { ContentCompletionKind, ContentStatus, LegalPolicyType, UserRole } from "./schema.js";
+export type {
+  ContentCompletionKind,
+  ContentStatus,
+  LegalPolicyType,
+  PreviewEventType,
+  UserRole,
+} from "./schema.js";
