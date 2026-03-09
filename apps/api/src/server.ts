@@ -37,6 +37,7 @@ import {
   createNotification,
   createNotificationIfRecentDuplicateAbsent,
   createPreviewEvent,
+  createSystemJobRun,
   createPasskeyCredential,
   createPillar,
   createPractice,
@@ -102,12 +103,14 @@ import {
   listNotificationsByUser,
   listPasskeyCredentialsByUserId,
   listPreviewEventsByDays,
+  listSystemJobRuns,
   listUserDevicesByUserId,
   markAllNotificationsRead,
   markNotificationRead,
   markUserEmailVerified,
   markUserOnboardingCompleted,
   markUserTotpVerified,
+  finishSystemJobRun,
   replaceEmailVerificationChallenge,
   renamePasskeyCredentialById,
   revokeUserDevice,
@@ -1630,6 +1633,11 @@ const adminChatEventsQuerySchema = z.object({
 
 const adminPreviewAnalyticsQuerySchema = z.object({
   days: z.coerce.number().int().positive().max(90).default(30),
+});
+
+const adminSystemJobRunsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).default(100),
+  jobName: z.string().trim().min(1).max(120).optional(),
 });
 
 function parseIdOrFail(request: Request, response: Response): number | null {
@@ -3881,6 +3889,22 @@ export function createApp() {
         },
         countsByType,
       },
+    });
+  });
+
+  app.get("/api/v1/admin/system/jobs/runs", requireAuth, requireAdmin, (req, res) => {
+    const parsed = adminSystemJobRunsQuerySchema.safeParse(req.query);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    res.json({
+      data: listSystemJobRuns({
+        jobName: parsed.data.jobName,
+        limit: parsed.data.limit,
+      }),
     });
   });
 

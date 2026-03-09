@@ -319,6 +319,19 @@ export type ApiAdminPreviewAnalytics = {
   countsByType: Record<string, number>;
 };
 
+export type ApiAdminSystemJobRun = {
+  id: string;
+  jobName: string;
+  status: string;
+  usersScanned: number;
+  usersWithDigestEnabled: number;
+  notificationsCreated: number;
+  duplicatesSkipped: number;
+  startedAt: string;
+  finishedAt: string | null;
+  errorMessage: string | null;
+};
+
 export type ContentStatus = "DRAFT" | "PUBLISHED";
 
 export type AdminContentBundle = {
@@ -800,6 +813,24 @@ export async function apiAdminPreviewAnalytics(
 ): Promise<ApiAdminPreviewAnalytics> {
   return requestJson<ApiAdminPreviewAnalytics>(
     `/api/v1/admin/preview/analytics?days=${days}`,
+    withAuth(token),
+  );
+}
+
+export async function apiAdminSystemJobRuns(
+  token: string,
+  input?: { limit?: number; jobName?: string },
+): Promise<ApiAdminSystemJobRun[]> {
+  const params = new URLSearchParams();
+  if (input?.limit) {
+    params.set("limit", String(input.limit));
+  }
+  if (input?.jobName) {
+    params.set("jobName", input.jobName);
+  }
+  const qs = params.toString();
+  return requestJson<ApiAdminSystemJobRun[]>(
+    `/api/v1/admin/system/jobs/runs${qs ? `?${qs}` : ""}`,
     withAuth(token),
   );
 }

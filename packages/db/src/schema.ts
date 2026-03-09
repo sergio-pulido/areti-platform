@@ -428,6 +428,19 @@ export const previewEvents = sqliteTable("preview_events", {
   createdAt: text("created_at").notNull(),
 });
 
+export const systemJobRuns = sqliteTable("system_job_runs", {
+  id: text("id").primaryKey(),
+  jobName: text("job_name").notNull(),
+  status: text("status").notNull(),
+  usersScanned: integer("users_scanned").notNull().default(0),
+  usersWithDigestEnabled: integer("users_with_digest_enabled").notNull().default(0),
+  notificationsCreated: integer("notifications_created").notNull().default(0),
+  duplicatesSkipped: integer("duplicates_skipped").notNull().default(0),
+  startedAt: text("started_at").notNull(),
+  finishedAt: text("finished_at"),
+  errorMessage: text("error_message"),
+});
+
 export const userTotpSecrets = sqliteTable("user_totp_secrets", {
   id: text("id").primaryKey(),
   userId: text("user_id")

@@ -3,6 +3,8 @@ import path from "node:path";
 import {
   countJournalEntriesByUser,
   createNotificationIfRecentDuplicateAbsent,
+  createSystemJobRun,
+  finishSystemJobRun,
   getUserContentCompletionSummary,
   getUserNotificationPreferencesByUserId,
   listActiveUserIds,
@@ -174,12 +176,31 @@ if (!lock) {
   process.exit(0);
 }
 
+const run = createSystemJobRun({
+  id: crypto.randomUUID(),
+  jobName: "notification_digest",
+  status: "running",
+});
+
 try {
   const summary = runDigestJob();
+  finishSystemJobRun(run.id, {
+    status: "success",
+    usersScanned: summary.usersScanned,
+    usersWithDigestEnabled: summary.usersWithDigestEnabled,
+    notificationsCreated: summary.notificationsCreated,
+    duplicatesSkipped: summary.duplicatesSkipped,
+  });
   // eslint-disable-next-line no-console
   console.log(
     `[notification-digest] scanned=${summary.usersScanned} digestEnabled=${summary.usersWithDigestEnabled} created=${summary.notificationsCreated} dedupeSkipped=${summary.duplicatesSkipped}`,
   );
+} catch (error) {
+  finishSystemJobRun(run.id, {
+    status: "error",
+    errorMessage: error instanceof Error ? error.message : "Unknown notification digest error",
+  });
+  throw error;
 } finally {
   releaseJobLock(lock);
 }

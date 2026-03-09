@@ -624,6 +624,15 @@ describe("API integration", () => {
     expect(analytics.body.data.countsByType.preview_signup_click).toBeGreaterThanOrEqual(1);
   });
 
+  it("exposes admin system job run listings", async () => {
+    const runs = await request(app)
+      .get("/api/v1/admin/system/jobs/runs?limit=25&jobName=notification_digest")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(runs.status).toBe(200);
+    expect(Array.isArray(runs.body.data)).toBe(true);
+  });
+
   it("keeps draft lesson private until published", async () => {
     const createLesson = await request(app)
       .post("/api/v1/admin/content/lessons")

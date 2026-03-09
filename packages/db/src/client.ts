@@ -29,6 +29,7 @@ import {
   practiceRoutines,
   refreshSessions,
   sessions,
+  systemJobRuns,
   userNotificationPreferences,
   userPreferences,
   userProfiles,
@@ -176,6 +177,19 @@ export type PreviewEventRecord = {
   referrer: string | null;
   metadataJson: string;
   createdAt: string;
+};
+
+export type SystemJobRunRecord = {
+  id: string;
+  jobName: string;
+  status: string;
+  usersScanned: number;
+  usersWithDigestEnabled: number;
+  notificationsCreated: number;
+  duplicatesSkipped: number;
+  startedAt: string;
+  finishedAt: string | null;
+  errorMessage: string | null;
 };
 
 export type UserDeviceRecord = {
@@ -3524,6 +3538,97 @@ export function listPreviewEventsByDays(days: number): PreviewEventRecord[] {
       ...row,
       eventType: row.eventType as PreviewEventType,
     }));
+}
+
+export function createSystemJobRun(input: {
+  id: string;
+  jobName: string;
+  status: string;
+}): SystemJobRunRecord {
+  const startedAt = nowIso();
+  db.insert(systemJobRuns)
+    .values({
+      id: input.id,
+      jobName: input.jobName,
+      status: input.status,
+      usersScanned: 0,
+      usersWithDigestEnabled: 0,
+      notificationsCreated: 0,
+      duplicatesSkipped: 0,
+      startedAt,
+      finishedAt: null,
+      errorMessage: null,
+    })
+    .run();
+
+  return {
+    id: input.id,
+    jobName: input.jobName,
+    status: input.status,
+    usersScanned: 0,
+    usersWithDigestEnabled: 0,
+    notificationsCreated: 0,
+    duplicatesSkipped: 0,
+    startedAt,
+    finishedAt: null,
+    errorMessage: null,
+  };
+}
+
+export function finishSystemJobRun(
+  id: string,
+  input: {
+    status: "success" | "error" | "skipped";
+    usersScanned?: number;
+    usersWithDigestEnabled?: number;
+    notificationsCreated?: number;
+    duplicatesSkipped?: number;
+    errorMessage?: string | null;
+  },
+): boolean {
+  const existing = db
+    .select({ id: systemJobRuns.id })
+    .from(systemJobRuns)
+    .where(eq(systemJobRuns.id, id))
+    .limit(1)
+    .get();
+
+  if (!existing) {
+    return false;
+  }
+
+  db.update(systemJobRuns)
+    .set({
+      status: input.status,
+      usersScanned: input.usersScanned ?? 0,
+      usersWithDigestEnabled: input.usersWithDigestEnabled ?? 0,
+      notificationsCreated: input.notificationsCreated ?? 0,
+      duplicatesSkipped: input.duplicatesSkipped ?? 0,
+      finishedAt: nowIso(),
+      errorMessage: input.errorMessage ?? null,
+    })
+    .where(eq(systemJobRuns.id, id))
+    .run();
+
+  return true;
+}
+
+export function listSystemJobRuns(input: {
+  jobName?: string;
+  limit: number;
+}): SystemJobRunRecord[] {
+  const safeLimit = Math.max(1, Math.min(input.limit, 500));
+  const base = db.select().from(systemJobRuns);
+
+  const rows = input.jobName
+    ? base
+        .where(eq(systemJobRuns.jobName, input.jobName))
+        .orderBy(desc(systemJobRuns.startedAt))
+        .limit(safeLimit)
+        .all()
+    : base.orderBy(desc(systemJobRuns.startedAt)).limit(safeLimit).all();
+
+  return rows;
 }
 
 export function createAdminAuditLog(input: {
