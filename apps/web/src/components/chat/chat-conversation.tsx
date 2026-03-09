@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, Loader2, Sparkles } from "lucide-react";
 import type { ChatMessage } from "@/components/chat/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
@@ -11,6 +11,7 @@ type ChatConversationProps = {
   pending: boolean;
   loading?: boolean;
   onFollowUpSelect?: (prompt: string) => void;
+  className?: string;
 };
 
 type AssistantStructure = {
@@ -157,9 +158,12 @@ export function ChatConversation({
   pending,
   loading = false,
   onFollowUpSelect,
+  className,
 }: ChatConversationProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
+  const forceInstantScrollRef = useRef(false);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
   const lastAssistantMessageId = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -172,26 +176,42 @@ export function ChatConversation({
   }, [messages]);
 
   useEffect(() => {
+    if (loading) {
+      // New thread/session payload should always open at the most recent message.
+      shouldStickToBottomRef.current = true;
+      forceInstantScrollRef.current = true;
+    }
+  }, [loading]);
+
+  useEffect(() => {
     const scroller = scrollerRef.current;
-    if (!scroller || loading) {
+    if (!scroller || loading || !shouldStickToBottomRef.current) {
       return;
     }
 
-    if (shouldStickToBottomRef.current) {
-      scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
-    }
+    const behavior = forceInstantScrollRef.current ? "auto" : "smooth";
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior });
+    forceInstantScrollRef.current = false;
   }, [loading, messages.length, pending]);
 
   return (
-    <section className="flex h-[61vh] min-h-[430px] flex-col overflow-hidden rounded-[var(--radius-2xl)] border border-night-800/60 bg-night-950/35">
+    <section
+      className={cn(
+        "relative flex min-h-0 flex-col overflow-hidden rounded-[var(--radius-2xl)] border border-night-800/60 bg-night-950/35",
+        className,
+      )}
+    >
       <div
         ref={scrollerRef}
+        data-testid="chat-conversation-scroller"
         onScroll={(event) => {
           const element = event.currentTarget;
           const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
-          shouldStickToBottomRef.current = remaining < 96;
+          const isNearBottom = remaining < 96;
+          shouldStickToBottomRef.current = isNearBottom;
+          setShowJumpToLatest(!isNearBottom);
         }}
-        className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4 sm:py-4"
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4 sm:py-4"
       >
         {loading ? (
           <div className="space-y-3">
@@ -266,6 +286,26 @@ export function ChatConversation({
           </article>
         ) : null}
       </div>
+
+      {showJumpToLatest ? (
+        <button
+          type="button"
+          onClick={() => {
+            const scroller = scrollerRef.current;
+            if (!scroller) {
+              return;
+            }
+            shouldStickToBottomRef.current = true;
+            setShowJumpToLatest(false);
+            scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+          }}
+          className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full border border-sage-300/45 bg-night-900/95 px-3 py-1 text-xs text-sage-100 shadow-lg transition hover:bg-night-900"
+          aria-label="Jump to latest message"
+        >
+          <ArrowDown size={12} />
+          Latest
+        </button>
+      ) : null}
     </section>
   );
 }

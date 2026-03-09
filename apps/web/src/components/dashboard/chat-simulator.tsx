@@ -13,7 +13,7 @@ import {
 } from "@/components/chat/events";
 import { parseJsonOrThrow } from "@/components/chat/request";
 import { ThreadListPanel } from "@/components/chat/thread-list-panel";
-import type { ChatMessage, ChatThread } from "@/components/chat/types";
+import type { ChatContextTelemetry, ChatMessage, ChatThread } from "@/components/chat/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,6 +74,22 @@ function closeThreadActionsMenu(event: MouseEvent<HTMLElement>): void {
   }
 }
 
+function formatSummaryTimestamp(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -84,12 +100,14 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
+  const [manualSummarizePending, setManualSummarizePending] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mobileThreadsOpen, setMobileThreadsOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [composerFocusSignal, setComposerFocusSignal] = useState(0);
+  const [contextNotice, setContextNotice] = useState<string | null>(null);
   const consumedPromptRef = useRef<string | null>(null);
 
   const activeThread = useMemo(
@@ -98,6 +116,11 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
   );
 
   const activePreview = useMemo(() => deriveMessagePreview(messages), [messages]);
+  const activeContext = activeThread?.context ?? null;
+  const contextSummaryTimestamp = useMemo(
+    () => formatSummaryTimestamp(activeContext?.lastSummarizedAt ?? null),
+    [activeContext?.lastSummarizedAt],
+  );
   const resumePrompt = useMemo(() => {
     if (!activeThread || activeThread.archived || !activePreview) {
       return null;
@@ -210,13 +233,24 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
       emitChatThreadPreview({ threadId: resolvedThreadId, preview: nextPrompt });
       setInput("");
 
-      await parseJsonOrThrow<{ answer: string }>(
+      const messageResult = await parseJsonOrThrow<{ answer: string; context?: ChatContextTelemetry }>(
         await fetch(`/api/chat/threads/${resolvedThreadId}/messages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prompt: nextPrompt }),
         }),
       );
+
+      if (messageResult.context) {
+        setThreads((prev) =>
+          prev.map((thread) =>
+            thread.id === resolvedThreadId ? { ...thread, context: { ...thread.context, ...messageResult.context } } : thread,
+          ),
+        );
+        setContextNotice(messageResult.context.notice ?? null);
+      } else {
+        setContextNotice(null);
+      }
 
       await Promise.all([loadMessages(resolvedThreadId), loadThreads()]);
       emitChatThreadsInvalidated();
@@ -227,6 +261,36 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
       }
     } finally {
       setPending(false);
+    }
+  }
+
+  async function summarizeContextNow(): Promise<void> {
+    if (!activeThread) {
+      return;
+    }
+
+    setManualSummarizePending(true);
+    setError(null);
+
+    try {
+      const result = await parseJsonOrThrow<{ context: ChatContextTelemetry }>(
+        await fetch(`/api/chat/threads/${activeThread.id}/context/summarize`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      setThreads((prev) =>
+        prev.map((thread) =>
+          thread.id === activeThread.id ? { ...thread, context: { ...thread.context, ...result.context } } : thread,
+        ),
+      );
+      setContextNotice(result.context.notice ?? null);
+      emitChatThreadsInvalidated();
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Unable to summarize context.");
+    } finally {
+      setManualSummarizePending(false);
     }
   }
 
@@ -337,11 +401,13 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
       setMessages([]);
       setRenaming(false);
       setRenameValue("");
+      setContextNotice(null);
       setMessagesLoading(false);
       return;
     }
 
     setMessages([]);
+    setContextNotice(null);
     void loadMessages(activeThreadId).catch((caughtError) => {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to load messages.");
     });
@@ -378,7 +444,7 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
     : null;
 
   return (
-    <div className="space-y-2">
+    <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
       <div className="flex items-center justify-between lg:hidden">
         <Button
           variant="secondary"
@@ -538,28 +604,58 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
         </header>
       ) : null}
 
-      {activeThread ? (
-        <ChatConversation
-          messages={messages}
-          pending={pending}
-          loading={messagesLoading}
-          onFollowUpSelect={activeThread.archived ? undefined : prefillComposer}
-        />
-      ) : (
-        <ChatEmptyState prompts={EMPTY_STATE_PROMPTS} onUsePrompt={prefillComposer} />
-      )}
+      {activeThread && activeContext?.state === "degraded" ? (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-400/45 bg-rose-500/10 px-4 py-3">
+          <p className="text-xs text-rose-100">
+            Conversation context is near capacity. Replies may lose precision. Start a new conversation for best continuity.
+          </p>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setThreadInUrl(null);
+              setMessages([]);
+              setContextNotice(null);
+            }}
+          >
+            Start new conversation
+          </Button>
+        </section>
+      ) : null}
 
-      <ChatComposer
-        value={input}
-        pending={pending}
-        disabled={activeThread?.archived ?? false}
-        continuePrompt={resumePrompt}
-        focusSignal={composerFocusSignal}
-        onChange={setInput}
-        onSend={() => {
-          void sendPrompt(input);
-        }}
-      />
+      {activeThread && contextNotice ? <p className="text-xs text-sage-100">{contextNotice}</p> : null}
+
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-3 overflow-hidden">
+        {activeThread ? (
+          <ChatConversation
+            messages={messages}
+            pending={pending}
+            loading={messagesLoading}
+            onFollowUpSelect={activeThread.archived ? undefined : prefillComposer}
+            className="h-full min-h-0"
+          />
+        ) : (
+          <ChatEmptyState prompts={EMPTY_STATE_PROMPTS} onUsePrompt={prefillComposer} />
+        )}
+
+        <ChatComposer
+          value={input}
+          pending={pending}
+          disabled={activeThread?.archived ?? false}
+          continuePrompt={resumePrompt}
+          focusSignal={composerFocusSignal}
+          context={activeContext}
+          contextSummaryTimestamp={contextSummaryTimestamp}
+          summarizePending={manualSummarizePending}
+          onChange={setInput}
+          onSend={() => {
+            void sendPrompt(input);
+          }}
+          onSummarizeContext={() => {
+            void summarizeContextNow();
+          }}
+        />
+      </div>
 
       {activeThread?.archived ? (
         <p className="text-xs text-night-300">

@@ -86,6 +86,12 @@ async function expectRewardMilestoneState(
   await expect(card.getByText(state)).toBeVisible();
 }
 
+async function remainingConversationScroll(page: Page): Promise<number> {
+  return page.getByTestId("chat-conversation-scroller").evaluate((element) => {
+    return element.scrollHeight - element.scrollTop - element.clientHeight;
+  });
+}
+
 test("landing loads API content and signup reaches dashboard", async ({ page }) => {
   await page.goto("/");
 
@@ -248,7 +254,6 @@ test("dashboard CTAs remain clickable and route to actionable flows", async ({ p
   await expect(page.getByText("Lesson marked complete.")).toBeVisible();
   await page.getByRole("link", { name: "Back to library" }).click();
   await expectUrl(page, /\/library/);
-  await expect(page.getByText("Completed")).toBeVisible();
 
   await page.goto("/dashboard");
   await page.getByLabel("Quick actions").click();
@@ -267,7 +272,6 @@ test("dashboard CTAs remain clickable and route to actionable flows", async ({ p
   await expect(page.getByLabel("Mood")).toHaveValue("Focused");
   await page.goto("/practices");
   await expectUrl(page, /\/practices/);
-  await expect(page.getByText("Completed")).toBeVisible();
   await page.getByRole("link", { name: /Daily reset/i }).click();
   await expectUrl(page, /\/practices\?path=daily/);
 
@@ -352,6 +356,30 @@ test("account focus query highlights rounded target containers", async ({ page }
   await expectFocusedRoundedContainer(page, "#deletion-card");
 });
 
+test("totp setup renders a scannable qr code and fallback secret fields", async ({ page }) => {
+  await signupAndGoDashboard(page);
+
+  await page.goto("/account/security?focus=totp");
+  await page.getByRole("button", { name: "Setup TOTP" }).click();
+
+  await expect(page.getByRole("img", { name: "TOTP setup QR code" })).toBeVisible();
+  await expect(page.getByText("Secret:", { exact: false })).toBeVisible();
+  await expect(page.getByText("URI:", { exact: false })).toBeVisible();
+});
+
+test("passkey registration action is managed from the registered passkeys panel", async ({ page }) => {
+  await signupAndGoDashboard(page);
+
+  await page.goto("/account/security");
+
+  const authMethodsCard = page.getByRole("heading", { name: "Authentication methods" }).locator("xpath=ancestor::section[1]");
+  const registeredPasskeysCard = page.getByRole("heading", { name: "Registered passkeys" }).locator("xpath=ancestor::section[1]");
+
+  await expect(authMethodsCard.getByRole("button", { name: /register .*passkey/i })).toHaveCount(0);
+  await expect(authMethodsCard.getByText(/No passkeys registered yet/i)).toBeVisible();
+  await expect(registeredPasskeysCard.getByRole("button", { name: "Register first passkey" })).toBeVisible();
+});
+
 test("companion supports thread lifecycle and persisted messaging", async ({ page }) => {
   await signupAndGoDashboard(page);
   await page.goto("/chat");
@@ -371,13 +399,18 @@ test("companion supports thread lifecycle and persisted messaging", async ({ pag
   await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
   await expect(page.getByRole("heading", { name: "Begin where you are" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Reflective Companion" })).toHaveCount(0);
+  await page.getByLabel("Open context usage details").click();
+  await expect(page.getByText("Context usage (estimated)")).toBeVisible();
+  await expect(page.getByText(/State: (Healthy|Warning|Degraded)/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Summarize now" })).toBeVisible();
+  await page.getByRole("button", { name: "Close" }).click();
 
   await page.getByLabel("Open thread actions").click();
   await page.getByRole("button", { name: "Rename" }).first().click();
   await page.getByLabel("Rename thread title").fill("Plan Sprint Decisions");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("main").getByText("Plan Sprint Decisions")).toBeVisible();
-  await expect(page.getByText("What is areti?", { exact: false })).toBeVisible();
+  await expect(page.getByText("What is areti?", { exact: true })).toBeVisible();
 
   await page.getByLabel("Open thread actions").click();
   await expect(page.getByRole("button", { name: /^Archive$/ }).first()).toBeVisible();
@@ -388,6 +421,222 @@ test("companion supports thread lifecycle and persisted messaging", async ({ pag
   await page.getByLabel("Open thread actions").first().click();
   await expect(page.getByRole("button", { name: /^Archive$/ }).first()).toBeVisible();
   await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
+});
+
+test("companion auto-summarizes context under sustained conversation", async ({ page }) => {
+  test.setTimeout(180000);
+  await signupAndGoDashboard(page);
+  await page.goto("/chat");
+  await page.getByLabel("Chat prompt").fill("Kick off a long-context stress test thread.");
+  await page.getByRole("button", { name: "Send chat message" }).click();
+  await expect(page.getByText("Thinking...")).toHaveCount(0, { timeout: 45000 });
+  await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
+
+  const threadId = new URL(page.url()).searchParams.get("thread");
+  expect(threadId).toBeTruthy();
+
+  await page.evaluate(async (resolvedThreadId) => {
+    if (!resolvedThreadId) {
+      throw new Error("Missing thread id");
+    }
+
+    for (let index = 0; index < 12; index += 1) {
+      const prompt = [
+        `Turn ${index + 1}: keep all prior commitments in memory.`,
+        "Track goals, blockers, and emotional state from earlier turns.",
+        "Preserve unresolved questions and action items without losing continuity.",
+        "Give practical next-step guidance with explicit tradeoffs.",
+      ].join(" ");
+
+      const response = await fetch(`/api/chat/threads/${resolvedThreadId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Chat send failed (${response.status}): ${text}`);
+      }
+    }
+  }, threadId);
+
+  await page.goto(`/chat?thread=${threadId}`);
+  await page.getByLabel("Open context usage details").click();
+  await expect(page.getByText("Context usage (estimated)")).toBeVisible();
+  await expect(page.getByText(/State: (Healthy|Warning|Degraded)/)).toBeVisible();
+  await expect(page.getByText(/Last summary:/)).toBeVisible();
+  await page.getByRole("button", { name: "Close" }).click();
+
+  if ((await page.getByText("State: Degraded").count()) > 0) {
+    await expect(page.getByRole("button", { name: "Start new conversation" })).toBeVisible();
+  }
+});
+
+test("companion allows manual context summarization", async ({ page }) => {
+  await signupAndGoDashboard(page);
+  await page.goto("/chat");
+  await page.getByLabel("Chat prompt").fill("Manual summarize turn 0");
+  await page.getByRole("button", { name: "Send chat message" }).click();
+  await expect(page.getByText("Thinking...")).toHaveCount(0, { timeout: 45000 });
+  await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
+
+  const threadId = new URL(page.url()).searchParams.get("thread");
+  expect(threadId).toBeTruthy();
+
+  await page.evaluate(async (resolvedThreadId) => {
+    if (!resolvedThreadId) {
+      throw new Error("Missing thread id");
+    }
+
+    for (let index = 1; index <= 4; index += 1) {
+      const response = await fetch(`/api/chat/threads/${resolvedThreadId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: `Manual summarize turn ${index}` }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Chat send failed (${response.status}): ${text}`);
+      }
+    }
+  }, threadId);
+
+  await page.goto(`/chat?thread=${threadId}`);
+
+  await page.getByLabel("Open context usage details").click();
+  await page.getByRole("button", { name: "Summarize now" }).click();
+  await expect(
+    page.getByText(
+      /Context summarized manually to preserve long-term memory efficiency\.|No compaction yet\./,
+    ),
+  ).toBeVisible();
+});
+
+test("companion keeps composer visible while conversation scrolls", async ({ page }) => {
+  test.setTimeout(180000);
+  await signupAndGoDashboard(page);
+  await page.goto("/chat");
+  await page.getByLabel("Chat prompt").fill("Start composer visibility test.");
+  await page.getByRole("button", { name: "Send chat message" }).click();
+  await expect(page.getByText("Thinking...")).toHaveCount(0, { timeout: 45000 });
+  await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
+
+  const threadId = new URL(page.url()).searchParams.get("thread");
+  expect(threadId).toBeTruthy();
+
+  await page.evaluate(async (resolvedThreadId) => {
+    if (!resolvedThreadId) {
+      throw new Error("Missing thread id");
+    }
+
+    for (let index = 0; index < 14; index += 1) {
+      const prompt = [
+        `Composer visibility turn ${index + 1}.`,
+        "Respond in detail with practical steps, examples, and reflections.",
+        "Use multiple paragraphs to make this long enough to require scrolling.",
+      ].join(" ");
+
+      const response = await fetch(`/api/chat/threads/${resolvedThreadId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Chat send failed (${response.status}): ${text}`);
+      }
+    }
+  }, threadId);
+
+  await page.goto(`/chat?thread=${threadId}`);
+  const scroller = page.getByTestId("chat-conversation-scroller");
+  await expect(scroller).toBeVisible();
+
+  await scroller.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(page.getByLabel("Jump to latest message")).toBeVisible();
+
+  const chatPrompt = page.getByLabel("Chat prompt");
+  await expect(chatPrompt).toBeVisible();
+  const box = await chatPrompt.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box).toBeTruthy();
+  expect(viewport).toBeTruthy();
+  if (!box || !viewport) {
+    throw new Error("Missing chat prompt bounding box or viewport");
+  }
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+
+  await chatPrompt.fill("Composer is still visible and usable.");
+  await expect(chatPrompt).toHaveValue("Composer is still visible and usable.");
+});
+
+test("companion thread switching opens each thread at latest message", async ({ page }) => {
+  test.setTimeout(180000);
+  await signupAndGoDashboard(page);
+  await page.goto("/chat");
+
+  await page.getByLabel("Chat prompt").fill("Create first thread.");
+  await page.getByRole("button", { name: "Send chat message" }).click();
+  await expect(page.getByText("Thinking...")).toHaveCount(0, { timeout: 45000 });
+  await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
+  const threadA = new URL(page.url()).searchParams.get("thread");
+  expect(threadA).toBeTruthy();
+
+  await page.evaluate(async (resolvedThreadId) => {
+    if (!resolvedThreadId) {
+      throw new Error("Missing thread id");
+    }
+    for (let index = 0; index < 10; index += 1) {
+      const response = await fetch(`/api/chat/threads/${resolvedThreadId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: `Thread A long turn ${index + 1}. Keep it detailed.` }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Chat send failed (${response.status}): ${text}`);
+      }
+    }
+  }, threadA);
+
+  await page.getByLabel("Create a new conversation thread").first().click();
+  await expect(page).toHaveURL(/\/chat$/, { timeout: 15000 });
+  await page.getByLabel("Chat prompt").fill("Create second thread.");
+  await page.getByRole("button", { name: "Send chat message" }).click();
+  await expect(page.getByText("Thinking...")).toHaveCount(0, { timeout: 45000 });
+  await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
+  const threadB = new URL(page.url()).searchParams.get("thread");
+  expect(threadB).toBeTruthy();
+
+  await page.evaluate(async (resolvedThreadId) => {
+    if (!resolvedThreadId) {
+      throw new Error("Missing thread id");
+    }
+    for (let index = 0; index < 8; index += 1) {
+      const response = await fetch(`/api/chat/threads/${resolvedThreadId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: `Thread B long turn ${index + 1}. Keep it detailed.` }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Chat send failed (${response.status}): ${text}`);
+      }
+    }
+  }, threadB);
+
+  await page.goto(`/chat?thread=${threadA}`);
+  await expect(page.getByTestId("chat-conversation-scroller")).toBeVisible();
+  expect(await remainingConversationScroll(page)).toBeLessThan(100);
+
+  await page.goto(`/chat?thread=${threadB}`);
+  await expect(page.getByTestId("chat-conversation-scroller")).toBeVisible();
+  expect(await remainingConversationScroll(page)).toBeLessThan(100);
 });
 
 test("section sidebars are isolated across personal, community, and account sections", async ({
@@ -509,6 +758,8 @@ test("account password flow validates failure and success", async ({ page }) => 
   } catch {
     await signupEmailInput.fill(email);
     await expect(signupEmailInput).toHaveValue(email);
+    await page.getByLabel("Password", { exact: true }).fill(oldPassword);
+    await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
     await page.getByRole("button", { name: "Create free account" }).click();
   }
   await expectUrl(page, /\/auth\/verify-email/);

@@ -13,7 +13,7 @@ export default async function ChatPage({ searchParams }: ChatPageProps) {
   const showStudioIntro = !initialThreadId;
 
   return (
-    <div className="space-y-3">
+    <div className="flex h-[calc(100dvh-56px-3rem)] min-h-[32rem] flex-col gap-3 overflow-hidden">
       {showStudioIntro ? (
         <PageHeader
           eyebrow="Companion"
@@ -30,7 +30,7 @@ export default async function ChatPage({ searchParams }: ChatPageProps) {
         />
       ) : null}
 
-      <div className="grid gap-3">
+      <div className="grid min-h-0 flex-1 gap-3">
         <ChatSimulator initialPrompt={initialPrompt} initialThreadId={initialThreadId} />
       </div>
     </div>
