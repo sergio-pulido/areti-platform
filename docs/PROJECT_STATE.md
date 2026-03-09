@@ -2,6 +2,8 @@
 
 ## Current Status
 - Monorepo architecture is active with frontend (`apps/web`), backend (`apps/api`), and shared DB/ORM (`packages/db`).
+- Web app now ships as an installable Progressive Web App (manifest, install metadata, icons, service worker, and offline fallback page).
+- PWA release hygiene now includes a dedicated checklist (`docs/PWA_RELEASE_CHECKLIST.md`) and an e2e smoke test for manifest/service-worker/offline route availability.
 - Canonical section routing is active (`/dashboard` overview, standalone personal tools at `/chat`, `/journal`, `/library`, `/practices`, plus `/community/*`, `/creator/*`, `/account/*`) with contextual sidebars and topbar section entry.
 - Dashboard home (`/dashboard`) is now action-first: dominant "next step" hero, "Today for you" shortcut actions, continuity resume list, structured reflections, contextual Companion panel, lightweight progress signals, and conditional-only account nudges.
 - Dashboard summary API now computes real progress signals (`streakDays`, `reflectionsThisWeek`, `daysSinceLastEntry`) from persisted journal data and feeds dashboard recency/progress behavior.
@@ -97,6 +99,14 @@
   - Added chat rate limiting and API env validation.
   - Added explicit auth email transport selection (`EMAIL_TRANSPORT=disabled|resend|smtp`) with optional SMTP/MailHog support (`SMTP_*`) and production-time enforcement.
 - Web:
+  - Added production PWA foundations:
+    - `app/manifest.ts` with install metadata, categories, screenshots, and quick-launch shortcuts
+    - generated app icons (`app/icon.tsx`, `app/apple-icon.tsx`) plus public maskable SVG icon
+    - service worker registration (`ServiceWorkerRegistration`) and versioned `public/sw.js`
+    - offline fallback route at `/offline`
+    - service-worker cache header rules in `next.config.ts` for safe updates
+    - route-level PWA smoke coverage in Playwright (`tests/pwa.e2e.spec.ts`)
+    - PWA release checklist (`docs/PWA_RELEASE_CHECKLIST.md`) for cache versioning/install validation discipline
   - Community and creator pages now consume backend content APIs (no hardcoded arrays).
   - Creator root (`/creator`) now renders actionable overview page (no redirect).
   - Topbar bell now consumes notifications API; quick actions remains separate icon/control.

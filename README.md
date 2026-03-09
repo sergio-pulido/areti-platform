@@ -134,6 +134,18 @@ npm run test
 
 E2E test startup forces `EMAIL_TRANSPORT=disabled`, so signup/resend flows do not hit external email providers.
 
+## Progressive Web App (PWA)
+- The web app now includes installable PWA metadata (`apps/web/src/app/manifest.ts`) and service worker offline/runtime caching (`apps/web/public/sw.js`).
+- PWA behavior is enabled in production builds; run:
+
+```bash
+npm run build --workspace @ataraxia/web
+npm run start --workspace @ataraxia/web
+```
+
+- Then open the app in a browser with PWA support (Chrome/Edge/Safari) to install it and validate offline fallback at `/offline`.
+- For releases that modify PWA behavior, use [`docs/PWA_RELEASE_CHECKLIST.md`](docs/PWA_RELEASE_CHECKLIST.md).
+
 ## Docker Compose
 Run everything with one command:
 

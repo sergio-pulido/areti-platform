@@ -335,3 +335,21 @@
 - **Decision:** Introduce a shared account focus highlight contract (`account-focus-highlight` + helper utility), apply it to all active account deep-link targets (Security + Privacy), and add e2e assertions for `focus=totp`, `focus=passkeys`, and `focus=deletion`.
 - **Why:** Ensures deterministic, accessible visual orientation when users are redirected into dense settings screens, without per-page style drift.
 - **Tradeoff:** Adds a small shared styling/API surface that must remain aligned with global design tokens.
+
+## 2026-03-09 - Ship first-party PWA baseline with offline fallback
+- **Context:** The web product needed installability and resilient offline behavior across mobile/desktop without adding heavy plugin/dependency overhead.
+- **Decision:** Implement native Next.js PWA primitives: `app/manifest.ts`, generated app/apple icons, client-side service-worker registration, versioned custom service worker (`public/sw.js`), and an `/offline` fallback route; add no-cache header policy for `sw.js`.
+- **Why:** Delivers install-ready UX, faster repeat visits, and graceful offline navigation while keeping the stack dependency-light and transparent.
+- **Tradeoff:** Cache strategy is now app-owned code and requires explicit version bumps/maintenance when behavior changes.
+
+## 2026-03-09 - Avoid caching authenticated API traffic in service worker
+- **Context:** The initial service worker runtime strategy cached same-origin API GET responses, which risks stale or sensitive authenticated payload persistence.
+- **Decision:** Keep `/api/*` requests network-only in the service worker and return explicit offline `503` JSON without cache fallback.
+- **Why:** Reduces privacy/security risk and avoids hard-to-debug stale account/chat/security state when offline.
+- **Tradeoff:** Offline API UX is less permissive; protected API responses are unavailable offline by design.
+
+## 2026-03-09 - Add PWA release operational checklist and smoke regression test
+- **Context:** PWA behavior now depends on app-owned manifest/service-worker logic, so regressions can slip in without explicit release discipline.
+- **Decision:** Add `docs/PWA_RELEASE_CHECKLIST.md` and a Playwright smoke test (`tests/pwa.e2e.spec.ts`) validating manifest, `sw.js` headers, and offline route availability.
+- **Why:** Makes cache/version/install verification explicit and automatable in CI/local release flow.
+- **Tradeoff:** Slightly longer QA flow and one more e2e file to maintain as PWA behavior evolves.

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Areti icon">
+  <defs>
+    <radialGradient id="bg" cx="20%" cy="20%" r="100%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="55%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <text x="50%" y="58%" text-anchor="middle" fill="#e2e8f0" font-size="272" font-family="Segoe UI, Arial, sans-serif" font-weight="700">A</text>
+</svg>
