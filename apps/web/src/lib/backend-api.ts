@@ -277,6 +277,17 @@ export type ApiAdminAuditLog = {
   createdAt: string;
 };
 
+export type ApiAdminPreviewAnalytics = {
+  days: number;
+  totals: {
+    events: number;
+    sessionsPreviewed: number;
+    sessionsReachedSignup: number;
+    signupConversionRate: number;
+  };
+  countsByType: Record<string, number>;
+};
+
 export type ContentStatus = "DRAFT" | "PUBLISHED";
 
 export type AdminContentBundle = {
@@ -734,6 +745,16 @@ export async function apiAdminAudit(token: string, limit = 40): Promise<ApiAdmin
 export async function apiAdminChatEvents(token: string, limit = 200): Promise<ApiChatEvent[]> {
   return requestJson<ApiChatEvent[]>(
     `/api/v1/admin/chat/events?limit=${limit}`,
+    withAuth(token),
+  );
+}
+
+export async function apiAdminPreviewAnalytics(
+  token: string,
+  days = 30,
+): Promise<ApiAdminPreviewAnalytics> {
+  return requestJson<ApiAdminPreviewAnalytics>(
+    `/api/v1/admin/preview/analytics?days=${days}`,
     withAuth(token),
   );
 }

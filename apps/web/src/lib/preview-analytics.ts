@@ -1,6 +1,7 @@
 "use client";
 
 const PREVIEW_SESSION_STORAGE_KEY = "areti_preview_session_id";
+const PREVIEW_STARTED_AT_KEY = "areti_preview_started_at";
 
 type PreviewEventType =
   | "preview_page_view"
@@ -38,6 +39,26 @@ export function getPreviewSessionId(): string {
   return created;
 }
 
+function getPreviewStartedAt(): number {
+  if (typeof window === "undefined") {
+    return Date.now();
+  }
+
+  const raw = window.localStorage.getItem(PREVIEW_STARTED_AT_KEY);
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+
+  const now = Date.now();
+  window.localStorage.setItem(PREVIEW_STARTED_AT_KEY, now.toString());
+  return now;
+}
+
+export function getPreviewInteractionMs(): number {
+  return Math.max(800, Date.now() - getPreviewStartedAt());
+}
+
 export function trackPreviewEvent(input: PreviewEventPayload): void {
   if (typeof window === "undefined") {
     return;
@@ -49,6 +70,8 @@ export function trackPreviewEvent(input: PreviewEventPayload): void {
     path: input.path,
     referrer: document.referrer || undefined,
     metadata: input.metadata,
+    honeypot: "",
+    interactionMs: getPreviewInteractionMs(),
   });
 
   if (typeof navigator.sendBeacon === "function") {

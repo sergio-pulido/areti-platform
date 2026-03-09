@@ -94,6 +94,7 @@ export {
   markUserEmailVerified,
   markUserOnboardingCompleted,
   markUserTotpVerified,
+  purgePreviewEventsOlderThanDays,
   replaceEmailVerificationChallenge,
   renamePasskeyCredentialById,
   revokeUserDevice,

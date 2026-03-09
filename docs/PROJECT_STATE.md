@@ -20,6 +20,9 @@
 - Public preview now also includes `/preview/dashboard` to demonstrate the action-first member home with sample momentum data.
 - `/preview/chat` now runs on a no-auth preview chat API with strict token-budget testing (fixed session budget, per-turn input/output caps, response clipping, resettable sandbox session).
 - Preview analytics events are now captured for guest journeys (page views, preview signup clicks, signup views, preview chat prompt/response events) and summarized via admin endpoint `/api/v1/admin/preview/analytics`.
+- CMS now surfaces a preview-conversion panel (last 30 days) so admins can monitor preview-to-signup funnel metrics without external dashboards.
+- Preview analytics retention is now enforced in-app by purging events older than 90 days during event writes.
+- Preview guest endpoints now include lightweight anti-bot checks (`honeypot` + minimum interaction time) in addition to strict per-client rate limits.
 - Community and creator domains are now fully API-backed across pages and CMS.
 - Notifications are persisted and wired to topbar bell with unread/read-all/read-one behavior.
 - Signup now requires mandatory Terms/Privacy acceptance, stores auditable legal consent records, and defers session creation until email verification.
@@ -169,6 +172,7 @@
     - `/preview/journal`, `/preview/library`, `/preview/practices` lightweight feature walkthroughs
   - Added no-auth preview chat API at `/api/preview/chat` used by `/preview/chat`.
   - Added no-auth preview analytics proxy route at `/api/preview/events` and backend analytics ingestion at `/api/v1/preview/events`.
+  - Added admin preview analytics endpoint (`/api/v1/admin/preview/analytics`) and CMS dashboard card for conversion monitoring.
   - Library and practices lists now render reusable clickable card components.
   - Added `/library/[slug]` article detail and upgraded `/practices/[slug]` to DB protocol content.
   - Added admin-only create pages:

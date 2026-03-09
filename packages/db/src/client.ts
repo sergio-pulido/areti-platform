@@ -3423,6 +3423,8 @@ export function createPreviewEvent(input: {
   referrer?: string | null;
   metadataJson?: string;
 }): void {
+  purgePreviewEventsOlderThanDays(90);
+
   db.insert(previewEvents)
     .values({
       id: input.id,
@@ -3434,6 +3436,13 @@ export function createPreviewEvent(input: {
       createdAt: nowIso(),
     })
     .run();
+}
+
+export function purgePreviewEventsOlderThanDays(days: number): number {
+  const safeDays = Number.isFinite(days) && days > 0 ? days : 90;
+  const floor = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000).toISOString();
+  const deleted = db.delete(previewEvents).where(lt(previewEvents.createdAt, floor)).run();
+  return deleted.changes ?? 0;
 }
 
 export function listPreviewEventsByDays(days: number): PreviewEventRecord[] {

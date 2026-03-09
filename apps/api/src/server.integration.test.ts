@@ -517,12 +517,19 @@ describe("API integration", () => {
   });
 
   it("supports public preview chat and analytics conversion reporting", async () => {
+    const blockedPreviewChat = await request(app).post("/api/v1/preview/chat").send({
+      prompt: "test",
+      interactionMs: 10,
+    });
+    expect(blockedPreviewChat.status).toBe(400);
+
     const previewChat = await request(app)
       .post("/api/v1/preview/chat")
       .set("User-Agent", "preview-integration-suite")
       .send({
         prompt: "Give me one calm next step before a stressful meeting.",
         maxResponseTokens: 48,
+        interactionMs: 1200,
       });
 
     expect(previewChat.status).toBe(200);
@@ -535,6 +542,7 @@ describe("API integration", () => {
       sessionId,
       eventType: "preview_page_view",
       path: "/preview/chat",
+      interactionMs: 1200,
     });
 
     expect(previewViewEvent.status).toBe(201);
@@ -543,6 +551,7 @@ describe("API integration", () => {
       sessionId,
       eventType: "preview_signup_click",
       path: "/preview/chat",
+      interactionMs: 1200,
     });
 
     expect(signupClickEvent.status).toBe(201);
@@ -552,9 +561,18 @@ describe("API integration", () => {
       eventType: "preview_signup_view",
       path: "/auth/signup",
       metadata: { from: "/preview/chat" },
+      interactionMs: 1200,
     });
 
     expect(signupViewEvent.status).toBe(201);
+
+    const blockedPreviewEvent = await request(app).post("/api/v1/preview/events").send({
+      sessionId,
+      eventType: "preview_signup_click",
+      path: "/preview/chat",
+      interactionMs: 10,
+    });
+    expect(blockedPreviewEvent.status).toBe(400);
 
     const analytics = await request(app)
       .get("/api/v1/admin/preview/analytics?days=30")

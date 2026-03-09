@@ -1326,6 +1326,8 @@ const chatSchema = z.object({
 const previewChatSchema = z.object({
   prompt: z.string().trim().min(3).max(320),
   maxResponseTokens: z.coerce.number().int().min(24).max(120).optional(),
+  honeypot: z.string().max(0).optional(),
+  interactionMs: z.coerce.number().int().min(700).max(120000).optional(),
 });
 
 const previewEventSchema = z.object({
@@ -1340,6 +1342,8 @@ const previewEventSchema = z.object({
   path: z.string().trim().min(1).max(200).default("/preview"),
   referrer: z.string().trim().min(1).max(300).optional(),
   metadata: z.record(z.string(), z.string().max(120)).optional(),
+  honeypot: z.string().max(0).optional(),
+  interactionMs: z.coerce.number().int().min(700).max(120000).optional(),
 });
 
 const lessonSchema = z.object({
@@ -2906,6 +2910,11 @@ export function createApp() {
       return;
     }
 
+    if ((parsed.data.honeypot ?? "").length > 0 || (parsed.data.interactionMs ?? 0) < 700) {
+      res.status(400).json({ error: "Human verification failed." });
+      return;
+    }
+
     const rateLimitKey = previewClientKey(req);
 
     try {
@@ -2972,6 +2981,11 @@ export function createApp() {
 
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid preview event payload" });
+      return;
+    }
+
+    if ((parsed.data.honeypot ?? "").length > 0 || (parsed.data.interactionMs ?? 0) < 700) {
+      res.status(400).json({ error: "Human verification failed." });
       return;
     }
 

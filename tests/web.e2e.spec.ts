@@ -144,6 +144,31 @@ test("public preview section is accessible without authentication", async ({ pag
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 });
 
+test("preview pages route to signup with conversion params", async ({ page }) => {
+  await page.goto("/preview");
+  const cookieAccept = page.getByRole("button", { name: "Accept cookies" });
+  if (await cookieAccept.count()) {
+    await cookieAccept.first().click();
+  }
+
+  const checks: Array<{ path: string; ctaName: RegExp; mainOnly?: boolean }> = [
+    { path: "/preview", ctaName: /^Create account$/, mainOnly: true },
+    { path: "/preview/journal", ctaName: /Create account to unlock journal/i },
+    { path: "/preview/library", ctaName: /Create account to unlock library/i },
+    { path: "/preview/practices", ctaName: /Create account to unlock practices/i },
+    { path: "/preview/dashboard", ctaName: /Create account to unlock dashboard/i },
+  ];
+
+  for (const check of checks) {
+    await page.goto(check.path);
+    const cta = check.mainOnly
+      ? page.getByRole("main").getByRole("link", { name: check.ctaName })
+      : page.getByRole("link", { name: check.ctaName });
+    await cta.click();
+    await expect(page).toHaveURL(/\/auth\/signup\?source=preview&from=/, { timeout: 15000 });
+  }
+});
+
 test("cookie consent gate redirects protected routes until accepted", async ({ page }) => {
   await page.goto("/dashboard");
   await expectUrl(page, /\/legal\/cookies\?next=/);

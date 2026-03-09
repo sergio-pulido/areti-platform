@@ -48,6 +48,7 @@ import {
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import {
   apiAdminAudit,
+  apiAdminPreviewAnalytics,
   apiAdminContent,
   type ContentStatus,
 } from "@/lib/backend-api";
@@ -95,9 +96,10 @@ export default async function CmsPage() {
   }
 
   const token = session.accessToken;
-  const [content, auditLogs] = await Promise.all([
+  const [content, auditLogs, previewAnalytics] = await Promise.all([
     apiAdminContent(token),
     apiAdminAudit(token, 14),
+    apiAdminPreviewAnalytics(token, 30),
   ]);
 
   return (
@@ -135,6 +137,40 @@ export default async function CmsPage() {
               ))
             )}
           </div>
+        </SurfaceCard>
+
+        <SurfaceCard title="Preview Conversion (30d)" subtitle="Guest preview to signup funnel">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">Preview sessions</p>
+              <p className="mt-1 text-lg font-semibold text-sand-100">
+                {previewAnalytics.totals.sessionsPreviewed}
+              </p>
+            </article>
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">Reached signup</p>
+              <p className="mt-1 text-lg font-semibold text-sand-100">
+                {previewAnalytics.totals.sessionsReachedSignup}
+              </p>
+            </article>
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">Conversion rate</p>
+              <p className="mt-1 text-lg font-semibold text-sand-100">
+                {(previewAnalytics.totals.signupConversionRate * 100).toFixed(1)}%
+              </p>
+            </article>
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">Tracked events</p>
+              <p className="mt-1 text-lg font-semibold text-sand-100">
+                {previewAnalytics.totals.events}
+              </p>
+            </article>
+          </div>
+          <p className="mt-3 text-xs text-night-300">
+            page views: {previewAnalytics.countsByType.preview_page_view ?? 0} · signup clicks:{" "}
+            {previewAnalytics.countsByType.preview_signup_click ?? 0} · signup views:{" "}
+            {previewAnalytics.countsByType.preview_signup_view ?? 0}
+          </p>
         </SurfaceCard>
       </section>
 

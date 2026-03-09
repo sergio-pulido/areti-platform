@@ -6,7 +6,7 @@ import { ChatConversation } from "@/components/chat/chat-conversation";
 import type { ChatMessage } from "@/components/chat/types";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { trackPreviewEvent } from "@/lib/preview-analytics";
+import { getPreviewInteractionMs, trackPreviewEvent } from "@/lib/preview-analytics";
 
 const TOTAL_TOKEN_BUDGET = 220;
 const MAX_PROMPT_TOKENS = 72;
@@ -58,7 +58,12 @@ async function requestPreviewAnswer(
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, maxResponseTokens }),
+    body: JSON.stringify({
+      prompt,
+      maxResponseTokens,
+      honeypot: "",
+      interactionMs: getPreviewInteractionMs(),
+    }),
   });
 
   const payload = (await response.json().catch(() => ({}))) as PreviewPayload;
