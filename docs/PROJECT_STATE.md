@@ -30,6 +30,7 @@
 - Library and practices now also expose explicit path templates (`starter/applied/mastery` and `daily/focus/evening`) to guide structured progression.
 - Rewards is now an active, light-gamification milestone page (earned/in-progress badges from real progress signals) instead of a deferred placeholder.
 - Rewards state is now computed server-side and exposed via dedicated authenticated progress endpoint for consistent milestone logic across clients.
+- Added scheduler-ready notification digest job (`npm run job:notification-digest`) for daily/weekly reminder generation based on user digest preferences.
 - Signup now requires mandatory Terms/Privacy acceptance, stores auditable legal consent records, and defers session creation until email verification.
 - Auth pages are now conversion-optimized with simplified auth-only topbar nav, clearer value-focused hero copy, stronger field/CTA hierarchy, and premium high-contrast form states.
 - Signup now removes `name` and `confirmPassword` from first step, uses a single required legal consent checkbox, and keeps passkey as a first-class secondary path.
@@ -210,6 +211,7 @@
 ## Known Gaps
 - External production error-monitoring provider credentials/integration are not yet configured (wiring point exists, provider choice pending).
 - Final production infrastructure QA (real domain, TLS, deployment config, runtime observability thresholds) is pending.
+- Background scheduler infrastructure (cron/worker trigger) is still required in production to execute digest jobs automatically.
 
 ## Next Milestones
 1. Configure production monitoring provider and alerting policy.

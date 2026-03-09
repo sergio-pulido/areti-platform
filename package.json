@@ -13,6 +13,7 @@
     "dev:restart": "npm run dev:stop && npm run dev",
     "dev:api": "npm run dev --workspace @ataraxia/api",
     "dev:web": "npm run dev --workspace @ataraxia/web",
+    "job:notification-digest": "npm run job:notification-digest --workspace @ataraxia/api",
     "build": "npm run build --workspace @ataraxia/web && npm run typecheck --workspace @ataraxia/api && npm run typecheck --workspace @ataraxia/db",
     "lint": "npm run lint --workspace @ataraxia/web && npm run typecheck --workspace @ataraxia/api && npm run typecheck --workspace @ataraxia/db",
     "db:generate": "npm run db:generate --workspace @ataraxia/db",

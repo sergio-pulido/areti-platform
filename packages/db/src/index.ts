@@ -84,6 +84,7 @@ export {
   listChatMessagesForThread,
   listChatEvents,
   listChatThreadsByUser,
+  listActiveUserIds,
   listRecentContentCompletionsByUser,
   listContentCompletionsByUser,
   listJournalEntriesByUser,

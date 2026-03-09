@@ -802,6 +802,18 @@ export function countUsers(): number {
   return row?.count ?? 0;
 }
 
+export function listActiveUserIds(limit = 2000): string[] {
+  const rows = db
+    .select({ id: users.id })
+    .from(users)
+    .where(isNull(users.deletedAt))
+    .orderBy(asc(users.createdAt))
+    .limit(Math.max(1, Math.min(limit, 10000)))
+    .all();
+
+  return rows.map((row) => row.id);
+}
+
 export function countVerifiedUsers(): number {
   const row = db
     .select({ count: count() })

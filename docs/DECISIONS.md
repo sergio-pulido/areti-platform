@@ -18,6 +18,12 @@
 - **Why:** Keeps milestone rules in one source of truth, reduces frontend drift risk, and simplifies future channel expansion (mobile/app widgets).
 - **Tradeoff:** Slightly larger API surface area and one additional authenticated request for rewards page load.
 
+## 2026-03-09 - Scheduler-ready notification digest job
+- **Context:** Behavior notifications were generated only during interactive app activity, so daily/weekly reminder timing was session-dependent.
+- **Decision:** Add `apps/api/src/jobs/notification-digest.ts` and npm scripts (`job:notification-digest`) to create deduped daily/weekly in-app reminders for users with `digest=daily|weekly` preferences.
+- **Why:** Enables reliable reminder generation through external cron/workers without adding new infrastructure dependencies immediately.
+- **Tradeoff:** Job execution is not automatic until deployment wiring provides a scheduler trigger.
+
 ## 2026-03-09 - Public preview section with no-auth feature walkthroughs
 - **Context:** Product needed a low-friction way for guests to explore key experiences before signup, while preserving existing authenticated flows.
 - **Decision:** Add a dedicated public preview section (`/preview`) with unauthenticated preview pages for chat, dashboard, journal, library, and practices; back `/preview/chat` with a no-auth preview API (`/api/preview/chat`) using provider-backed responses with strict guest rate limits and token caps; add preview analytics event ingestion (`/api/v1/preview/events`) plus admin conversion summary endpoint (`/api/v1/admin/preview/analytics`), retention cleanup (90 days), and lightweight anti-bot heuristics (honeypot + minimum interaction time).
