@@ -54,6 +54,12 @@
 - **Why:** Enables immediate integration with cron monitors and host-level alerting.
 - **Tradeoff:** Health semantics are intentionally narrow (stale lock + recent error window), so broader SLA checks may still require external monitoring.
 
+## 2026-03-09 - Add admin scheduler health summary API + CMS cards
+- **Context:** Filterable run lists improved triage, but operators still needed at-a-glance health signals for the digest job.
+- **Decision:** Add `GET /api/v1/admin/system/jobs/summary` (latest status/age, last error, runs last 24h, health flag) and display these in CMS system-job summary cards.
+- **Why:** Reduces time-to-detection and keeps operational checks actionable from a single admin surface.
+- **Tradeoff:** One additional admin API call on CMS page load.
+
 ## 2026-03-09 - Public preview section with no-auth feature walkthroughs
 - **Context:** Product needed a low-friction way for guests to explore key experiences before signup, while preserving existing authenticated flows.
 - **Decision:** Add a dedicated public preview section (`/preview`) with unauthenticated preview pages for chat, dashboard, journal, library, and practices; back `/preview/chat` with a no-auth preview API (`/api/preview/chat`) using provider-backed responses with strict guest rate limits and token caps; add preview analytics event ingestion (`/api/v1/preview/events`) plus admin conversion summary endpoint (`/api/v1/admin/preview/analytics`), retention cleanup (90 days), and lightweight anti-bot heuristics (honeypot + minimum interaction time).

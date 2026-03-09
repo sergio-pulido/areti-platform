@@ -638,6 +638,15 @@ describe("API integration", () => {
 
     expect(filteredRuns.status).toBe(200);
     expect(Array.isArray(filteredRuns.body.data)).toBe(true);
+
+    const summary = await request(app)
+      .get("/api/v1/admin/system/jobs/summary?jobName=notification_digest&failureWindowMinutes=120")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(summary.status).toBe(200);
+    expect(summary.body.data.jobName).toBe("notification_digest");
+    expect(typeof summary.body.data.healthy).toBe("boolean");
+    expect(typeof summary.body.data.runsLast24h).toBe("number");
   });
 
   it("keeps draft lesson private until published", async () => {

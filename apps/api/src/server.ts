@@ -1642,6 +1642,11 @@ const adminSystemJobRunsQuerySchema = z.object({
   days: z.coerce.number().int().positive().max(365).optional(),
 });
 
+const adminSystemJobSummaryQuerySchema = z.object({
+  jobName: z.string().trim().min(1).max(120).default("notification_digest"),
+  failureWindowMinutes: z.coerce.number().int().positive().max(24 * 60).default(120),
+});
+
 function parseIdOrFail(request: Request, response: Response): number | null {
   const parsed = integerIdSchema.safeParse(request.params);
 
@@ -3909,6 +3914,66 @@ export function createApp() {
         days: parsed.data.days,
         limit: parsed.data.limit,
       }),
+    });
+  });
+
+  app.get("/api/v1/admin/system/jobs/summary", requireAuth, requireAdmin, (req, res) => {
+    const parsed = adminSystemJobSummaryQuerySchema.safeParse(req.query);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    const latestRun = listSystemJobRuns({
+      jobName: parsed.data.jobName,
+      limit: 1,
+    })[0] ?? null;
+    const latestSuccess = listSystemJobRuns({
+      jobName: parsed.data.jobName,
+      status: "success",
+      limit: 1,
+    })[0] ?? null;
+    const latestError = listSystemJobRuns({
+      jobName: parsed.data.jobName,
+      status: "error",
+      limit: 1,
+    })[0] ?? null;
+    const runsLast24h = listSystemJobRuns({
+      jobName: parsed.data.jobName,
+      days: 1,
+      limit: 500,
+    }).length;
+    const minutesSinceLatestRun =
+      latestRun && !Number.isNaN(Date.parse(latestRun.startedAt))
+        ? Math.max(0, Math.floor((Date.now() - Date.parse(latestRun.startedAt)) / (60 * 1000)))
+        : null;
+    const minutesSinceLatestError =
+      latestError && !Number.isNaN(Date.parse(latestError.startedAt))
+        ? Math.max(0, Math.floor((Date.now() - Date.parse(latestError.startedAt)) / (60 * 1000)))
+        : null;
+
+    const healthy =
+      latestRun !== null &&
+      !(
+        latestRun.status === "error" &&
+        minutesSinceLatestError !== null &&
+        minutesSinceLatestError <= parsed.data.failureWindowMinutes
+      );
+
+    res.json({
+      data: {
+        jobName: parsed.data.jobName,
+        failureWindowMinutes: parsed.data.failureWindowMinutes,
+        healthy,
+        latestStatus: latestRun?.status ?? null,
+        latestRunAt: latestRun?.startedAt ?? null,
+        latestRunAgeMinutes: minutesSinceLatestRun,
+        latestSuccessAt: latestSuccess?.startedAt ?? null,
+        latestErrorAt: latestError?.startedAt ?? null,
+        latestErrorMessage: latestError?.errorMessage ?? null,
+        runsLast24h,
+      },
     });
   });
 

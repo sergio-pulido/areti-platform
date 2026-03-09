@@ -332,6 +332,19 @@ export type ApiAdminSystemJobRun = {
   errorMessage: string | null;
 };
 
+export type ApiAdminSystemJobSummary = {
+  jobName: string;
+  failureWindowMinutes: number;
+  healthy: boolean;
+  latestStatus: string | null;
+  latestRunAt: string | null;
+  latestRunAgeMinutes: number | null;
+  latestSuccessAt: string | null;
+  latestErrorAt: string | null;
+  latestErrorMessage: string | null;
+  runsLast24h: number;
+};
+
 export type ContentStatus = "DRAFT" | "PUBLISHED";
 
 export type AdminContentBundle = {
@@ -842,6 +855,24 @@ export async function apiAdminSystemJobRuns(
   const qs = params.toString();
   return requestJson<ApiAdminSystemJobRun[]>(
     `/api/v1/admin/system/jobs/runs${qs ? `?${qs}` : ""}`,
+    withAuth(token),
+  );
+}
+
+export async function apiAdminSystemJobSummary(
+  token: string,
+  input?: { jobName?: string; failureWindowMinutes?: number },
+): Promise<ApiAdminSystemJobSummary> {
+  const params = new URLSearchParams();
+  if (input?.jobName) {
+    params.set("jobName", input.jobName);
+  }
+  if (input?.failureWindowMinutes) {
+    params.set("failureWindowMinutes", String(input.failureWindowMinutes));
+  }
+  const qs = params.toString();
+  return requestJson<ApiAdminSystemJobSummary>(
+    `/api/v1/admin/system/jobs/summary${qs ? `?${qs}` : ""}`,
     withAuth(token),
   );
 }

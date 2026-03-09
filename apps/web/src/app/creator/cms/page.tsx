@@ -50,6 +50,7 @@ import { SurfaceCard } from "@/components/dashboard/surface-card";
 import {
   apiAdminAudit,
   apiAdminPreviewAnalytics,
+  apiAdminSystemJobSummary,
   apiAdminSystemJobRuns,
   apiAdminContent,
   type ContentStatus,
@@ -140,10 +141,14 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
   }
 
   const token = session.accessToken;
-  const [content, auditLogs, previewAnalytics, systemJobRuns] = await Promise.all([
+  const [content, auditLogs, previewAnalytics, systemJobSummary, systemJobRuns] = await Promise.all([
     apiAdminContent(token),
     apiAdminAudit(token, 14),
     apiAdminPreviewAnalytics(token, 30),
+    apiAdminSystemJobSummary(token, {
+      jobName: "notification_digest",
+      failureWindowMinutes: 120,
+    }),
     apiAdminSystemJobRuns(token, {
       limit: 20,
       jobName: "notification_digest",
@@ -224,6 +229,45 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
         </SurfaceCard>
 
         <SurfaceCard title="System Job Runs" subtitle="Recent scheduler execution telemetry">
+          <div className="mb-3 grid gap-2 sm:grid-cols-2">
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">Health</p>
+              <p
+                className={`mt-1 text-base font-semibold ${
+                  systemJobSummary.healthy ? "text-sage-100" : "text-amber-100"
+                }`}
+              >
+                {systemJobSummary.healthy ? "Healthy" : "Attention needed"}
+              </p>
+            </article>
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">Latest run age</p>
+              <p className="mt-1 text-base font-semibold text-sand-100">
+                {systemJobSummary.latestRunAgeMinutes === null
+                  ? "n/a"
+                  : `${systemJobSummary.latestRunAgeMinutes} min`}
+              </p>
+            </article>
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">Runs (24h)</p>
+              <p className="mt-1 text-base font-semibold text-sand-100">
+                {systemJobSummary.runsLast24h}
+              </p>
+            </article>
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">Last error</p>
+              <p className="mt-1 text-base font-semibold text-sand-100">
+                {systemJobSummary.latestErrorAt
+                  ? new Date(systemJobSummary.latestErrorAt).toLocaleString()
+                  : "none"}
+              </p>
+            </article>
+          </div>
+          {systemJobSummary.latestErrorMessage ? (
+            <p className="mb-3 rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+              {systemJobSummary.latestErrorMessage}
+            </p>
+          ) : null}
           <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
             <span className="text-night-300">Status</span>
             <Link href={buildCmsFilterHref({ status: "all", days: runDays })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
