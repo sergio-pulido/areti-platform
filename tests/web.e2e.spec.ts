@@ -69,6 +69,14 @@ async function createJournalReflection(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { name: "Momentum checkpoint" })).toBeVisible();
 }
 
+async function expectFocusedRoundedContainer(page: Page, selector: string): Promise<void> {
+  const target = page.locator(selector);
+  await expect(target).toBeVisible();
+  await expect(target).toHaveClass(/account-focus-highlight/);
+  const radius = await target.evaluate((element) => getComputedStyle(element).borderTopLeftRadius);
+  expect(Number.parseFloat(radius)).toBeGreaterThan(0);
+}
+
 test("landing loads API content and signup reaches dashboard", async ({ page }) => {
   await page.goto("/");
 
@@ -220,6 +228,19 @@ test("dashboard prioritizes next action and adapts from new user to returning us
 
   await expect(page.getByRole("heading", { name: "Continue your path" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Momentum checkpoint" }).first()).toBeVisible();
+});
+
+test("account focus query highlights rounded target containers", async ({ page }) => {
+  await signupAndGoDashboard(page);
+
+  await page.goto("/account/security?focus=totp");
+  await expectFocusedRoundedContainer(page, "#totp");
+
+  await page.goto("/account/security?focus=passkeys");
+  await expectFocusedRoundedContainer(page, "#passkeys");
+
+  await page.goto("/account/privacy?focus=deletion");
+  await expectFocusedRoundedContainer(page, "#deletion-card");
 });
 
 test("companion supports thread lifecycle and persisted messaging", async ({ page }) => {

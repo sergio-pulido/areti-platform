@@ -7,9 +7,13 @@ import type {
 } from "@simplewebauthn/browser";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { parseClientApiData } from "@/lib/client-api";
+import { cn } from "@/lib/cn";
 
 type PasskeyManagerProps = {
   enabled: boolean;
+  id?: string;
+  className?: string;
 };
 
 type RegistrationOptionsResponse = {
@@ -17,17 +21,7 @@ type RegistrationOptionsResponse = {
   options: PublicKeyCredentialCreationOptionsJSON;
 };
 
-async function parseJsonOrThrow<T>(response: Response): Promise<T> {
-  const payload = (await response.json()) as { data?: T; error?: string };
-
-  if (!response.ok || !payload.data) {
-    throw new Error(payload.error ?? "Request failed");
-  }
-
-  return payload.data;
-}
-
-export function PasskeyManager({ enabled }: PasskeyManagerProps) {
+export function PasskeyManager({ enabled, id, className }: PasskeyManagerProps) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +40,7 @@ export function PasskeyManager({ enabled }: PasskeyManagerProps) {
         },
       });
 
-      const optionsPayload = await parseJsonOrThrow<RegistrationOptionsResponse>(optionsResponse);
+      const optionsPayload = await parseClientApiData<RegistrationOptionsResponse>(optionsResponse);
 
       const registration = (await startRegistration({
         optionsJSON: optionsPayload.options,
@@ -63,7 +57,7 @@ export function PasskeyManager({ enabled }: PasskeyManagerProps) {
         }),
       });
 
-      await parseJsonOrThrow<{ verified: boolean; passkeyEnabled: boolean }>(verifyResponse);
+      await parseClientApiData<{ verified: boolean; passkeyEnabled: boolean }>(verifyResponse);
 
       setNotice("Passkey registered successfully for this account.");
       router.refresh();
@@ -79,7 +73,7 @@ export function PasskeyManager({ enabled }: PasskeyManagerProps) {
   }
 
   return (
-    <div className="rounded-xl border border-night-700 bg-night-950/70 p-3">
+    <div id={id} className={cn("rounded-xl border border-night-700 bg-night-950/70 p-3", className)}>
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-sand-100">Passkey registration</p>

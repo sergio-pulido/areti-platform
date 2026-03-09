@@ -87,6 +87,11 @@ Good references are products that feel intentional and composed, not “fun” i
 - rhythm over clutter
 - progression over randomness
 
+### Focus and selection state consistency
+- Any focused, selected, or deep-linked container must preserve the same corner radius as the base component.
+- Focus styling (ring, border, glow, shadow) should wrap and follow the component shape, never introduce square corners on rounded UI.
+- This applies across account, security, settings, and dashboard cards.
+
 ---
 
 ## 4. Information architecture rules

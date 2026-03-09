@@ -317,3 +317,21 @@
 - **Decision:** Keep startup seed checks but make seed inserts use conflict-ignore semantics so duplicate writes become no-ops.
 - **Why:** Preserves deterministic startup in local/dev/test without adding locking complexity.
 - **Tradeoff:** Seed conflicts are now tolerated by design, so accidental duplicate intent in seed data can be less visible unless explicitly validated.
+
+## 2026-03-09 - Continue UI dedup pass for shared topbar and auth client helpers
+- **Context:** Topbar/auth/security client code still had redundant files and repeated helper logic, increasing maintenance cost for styling and behavior updates.
+- **Decision:** Keep `AppTopbar` as the single topbar implementation, extract guest CTA/legal actions into a dedicated shared component, delete unreferenced duplicate UI files, and centralize client API-response parsing plus auth validation helpers.
+- **Why:** Reduces duplicate maintenance, keeps behavior consistent across routes, and lowers regression risk for future visual/theme changes.
+- **Tradeoff:** Shared helpers/components now have broader usage, so changes in one place affect more flows and require focused verification.
+
+## 2026-03-09 - Make email delivery transport explicit to protect test quotas
+- **Context:** E2E signup/resend flows could use configured Resend credentials during local test runs, consuming provider quota.
+- **Decision:** Add `EMAIL_TRANSPORT` modes (`disabled`, `resend`, `smtp`) with safe non-production default (`disabled`), keep production default (`resend`), and wire optional SMTP settings for MailHog/local inbox capture.
+- **Why:** Prevents accidental external sends in automated/local testing while preserving production-grade delivery options.
+- **Tradeoff:** Delivery behavior is now config-driven and requires explicit transport selection when testing real email inbox flows.
+
+## 2026-03-09 - Standardize rounded deep-link focus highlight in account surfaces
+- **Context:** Account pages accepted `?focus=*` parameters, but target emphasis was inconsistent and could render non-rounded highlight edges around rounded containers.
+- **Decision:** Introduce a shared account focus highlight contract (`account-focus-highlight` + helper utility), apply it to all active account deep-link targets (Security + Privacy), and add e2e assertions for `focus=totp`, `focus=passkeys`, and `focus=deletion`.
+- **Why:** Ensures deterministic, accessible visual orientation when users are redirected into dense settings screens, without per-page style drift.
+- **Tradeoff:** Adds a small shared styling/API surface that must remain aligned with global design tokens.

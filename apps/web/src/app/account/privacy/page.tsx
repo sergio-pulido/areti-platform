@@ -3,6 +3,7 @@ import { deleteAccountAction } from "@/actions/account";
 import { logoutAction } from "@/actions/auth";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
+import { getAccountFocusHighlightClass } from "@/lib/account-focus";
 import { requireSession } from "@/lib/auth/session";
 
 type AccountPrivacyPageProps = {
@@ -17,6 +18,7 @@ export default async function AccountPrivacyPage({ searchParams }: AccountPrivac
   const session = await requireSession();
   const params = ((await searchParams) ?? {}) as Record<string, string | string[] | undefined>;
   const error = first(params.error);
+  const focus = first(params.focus);
 
   return (
     <div>
@@ -85,7 +87,12 @@ export default async function AccountPrivacyPage({ searchParams }: AccountPrivac
           </form>
         </SurfaceCard>
 
-        <SurfaceCard title="Delete account" subtitle="Permanent account deletion and anonymization">
+        <SurfaceCard
+          id="deletion-card"
+          title="Delete account"
+          subtitle="Permanent account deletion and anonymization"
+          className={getAccountFocusHighlightClass(focus === "deletion")}
+        >
           <p className="text-sm text-night-200">
             This action permanently anonymizes your profile and revokes all active sessions.
           </p>

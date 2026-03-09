@@ -84,6 +84,13 @@ body {
   outline-offset: 2px;
 }
 
+.account-focus-highlight {
+  border-color: color-mix(in srgb, var(--color-sage-300) 70%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-sage-300) 58%, transparent),
+    0 0 28px color-mix(in srgb, var(--color-sage-400) 24%, transparent);
+}
+
 @keyframes fade-in-up {
   from {
     opacity: 0;

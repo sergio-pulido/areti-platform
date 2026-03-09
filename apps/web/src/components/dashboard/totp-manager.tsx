@@ -2,9 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { parseClientApiData } from "@/lib/client-api";
+import { cn } from "@/lib/cn";
 
 type TotpManagerProps = {
   enabled: boolean;
+  id?: string;
+  className?: string;
 };
 
 type SetupPayload = {
@@ -12,16 +16,7 @@ type SetupPayload = {
   otpAuthUrl: string;
 };
 
-async function parseJsonOrThrow<T>(response: Response): Promise<T> {
-  const payload = (await response.json().catch(() => ({}))) as { data?: T; error?: string };
-  if (!response.ok || payload.data === undefined) {
-    throw new Error(payload.error ?? "Request failed");
-  }
-
-  return payload.data;
-}
-
-export function TotpManager({ enabled }: TotpManagerProps) {
+export function TotpManager({ enabled, id, className }: TotpManagerProps) {
   const router = useRouter();
   const [setup, setSetup] = useState<SetupPayload | null>(null);
   const [code, setCode] = useState("");
@@ -35,7 +30,7 @@ export function TotpManager({ enabled }: TotpManagerProps) {
     setNotice(null);
 
     try {
-      const nextSetup = await parseJsonOrThrow<SetupPayload>(
+      const nextSetup = await parseClientApiData<SetupPayload>(
         await fetch("/api/security/mfa/totp/setup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -56,7 +51,7 @@ export function TotpManager({ enabled }: TotpManagerProps) {
     setNotice(null);
 
     try {
-      await parseJsonOrThrow<{ mfaEnabled: boolean }>(
+      await parseClientApiData<{ mfaEnabled: boolean }>(
         await fetch("/api/security/mfa/totp/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -80,7 +75,7 @@ export function TotpManager({ enabled }: TotpManagerProps) {
     setNotice(null);
 
     try {
-      await parseJsonOrThrow<{ ok: true }>(
+      await parseClientApiData<{ ok: true }>(
         await fetch("/api/security/mfa/totp", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
@@ -98,7 +93,7 @@ export function TotpManager({ enabled }: TotpManagerProps) {
   }
 
   return (
-    <div className="rounded-xl border border-night-700 bg-night-950/70 p-3">
+    <div id={id} className={cn("rounded-xl border border-night-700 bg-night-950/70 p-3", className)}>
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-sand-100">TOTP MFA</p>

@@ -9,8 +9,10 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { PasskeyManager } from "@/components/dashboard/passkey-manager";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { TotpManager } from "@/components/dashboard/totp-manager";
+import { getAccountFocusHighlightClass } from "@/lib/account-focus";
 import { apiDevices, apiSecurityPasskeys, apiSecuritySettings } from "@/lib/backend-api";
 import { requireSession } from "@/lib/auth/session";
+import { cn } from "@/lib/cn";
 
 type AccountSecurityPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -55,9 +57,24 @@ export default async function AccountSecurityPage({ searchParams }: AccountSecur
       <div className="grid gap-4 xl:grid-cols-2">
         <SurfaceCard title="Authentication methods" subtitle="Login protections for your account">
           <div className="space-y-3">
-            <TotpManager enabled={security.mfaEnabled} />
-            <PasskeyManager enabled={security.passkeyEnabled} />
-            <form action={setPasskeyEnabledAction} className="rounded-xl border border-night-700 bg-night-950/70 p-3">
+            <TotpManager
+              id="totp"
+              enabled={security.mfaEnabled}
+              className={getAccountFocusHighlightClass(focus === "totp")}
+            />
+            <PasskeyManager
+              id="passkeys"
+              enabled={security.passkeyEnabled}
+              className={getAccountFocusHighlightClass(focus === "passkeys")}
+            />
+            <form
+              action={setPasskeyEnabledAction}
+              className={cn(
+                "rounded-xl border border-night-700 bg-night-950/70 p-3",
+                getAccountFocusHighlightClass(focus === "passkey-policy"),
+              )}
+              id="passkey-policy"
+            >
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-sand-100">Passkey sign-in policy</p>
@@ -84,7 +101,11 @@ export default async function AccountSecurityPage({ searchParams }: AccountSecur
           </div>
         </SurfaceCard>
 
-        <SurfaceCard title="Password" subtitle="Update your password with current-password verification">
+        <SurfaceCard
+          title="Password"
+          subtitle="Update your password with current-password verification"
+          className={getAccountFocusHighlightClass(focus === "password")}
+        >
           <form action={changePasswordAction} className="grid gap-3" id="password">
             <input type="hidden" name="focus" value="password" />
             <label className="space-y-1 text-sm text-sand-200">
@@ -132,7 +153,11 @@ export default async function AccountSecurityPage({ searchParams }: AccountSecur
           </form>
         </SurfaceCard>
 
-        <SurfaceCard title="Registered passkeys" subtitle="Rename or revoke existing passkeys">
+        <SurfaceCard
+          title="Registered passkeys"
+          subtitle="Rename or revoke existing passkeys"
+          className={getAccountFocusHighlightClass(focus === "passkey-list")}
+        >
           <div className="space-y-2">
             {passkeys.length === 0 ? (
               <p className="rounded-lg border border-night-700 bg-night-950/70 p-3 text-xs text-night-300">
@@ -173,7 +198,11 @@ export default async function AccountSecurityPage({ searchParams }: AccountSecur
           </div>
         </SurfaceCard>
 
-        <SurfaceCard title="Active sessions and devices" subtitle="Review and revoke devices currently connected">
+        <SurfaceCard
+          title="Active sessions and devices"
+          subtitle="Review and revoke devices currently connected"
+          className={getAccountFocusHighlightClass(focus === "sessions")}
+        >
           <div className="space-y-2" id="sessions">
             {devices.length === 0 ? (
               <p className="rounded-lg border border-night-700 bg-night-950/70 p-3 text-xs text-night-300">

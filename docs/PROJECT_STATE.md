@@ -23,6 +23,7 @@
 - Required onboarding is now enforced before app access (`/onboarding`) and persisted for personalization and prompt shaping.
 - Cookie consent is now enforced for app routes via route middleware/proxy redirect to `/legal/cookies?next=...`.
 - A unified thin topbar component now spans secured, auth, legal, and landing surfaces with mobile action consolidation.
+- Guest topbar actions are now extracted into a dedicated shared component and topbar styling/brand shell is centralized in a single implementation.
 - Secured-shell pages now render the topbar as a true full-width global header above the sidebar/content frame.
 - Account IA now keeps legal policy pages in `/legal/*`; account navigation is simplified for B2C use.
 - Account domain is now platform-native and API-backed for core lifecycle flows (`/auth/me` patch, password change, account deletion, notification preferences).
@@ -94,7 +95,7 @@
     - `DELETE /api/v1/security/mfa/totp`
     - `GET/DELETE /api/v1/security/devices*`
   - Added chat rate limiting and API env validation.
-  - Added Resend delivery integration for account verification with environment-based enforcement (`WEB_APP_URL`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`).
+  - Added explicit auth email transport selection (`EMAIL_TRANSPORT=disabled|resend|smtp`) with optional SMTP/MailHog support (`SMTP_*`) and production-time enforcement.
 - Web:
   - Community and creator pages now consume backend content APIs (no hardcoded arrays).
   - Creator root (`/creator`) now renders actionable overview page (no redirect).
@@ -108,6 +109,10 @@
   - Added `/auth/verify-email` flow and enforced onboarding completion routing before secured shell access.
   - Added global cookie consent banner with acceptance persistence and app-route gate redirect behavior.
 - Replaced page-specific headers with a shared AppTopbar (guest + authenticated variants with mobile action handling).
+- Removed unreferenced duplicate header/starter components (`dashboard-topnav`, `chat-starters-panel`) to reduce dead UI surface.
+- Centralized repeated client helper logic into:
+  - `apps/web/src/lib/client-api.ts` (`parseClientApiData`)
+  - `apps/web/src/lib/auth/client-validation.ts` (`isValidEmail`, `isValidPassword`)
 - Updated topbar search language toward command-palette intent ("search or jump"), including desktop and mobile search prompts.
   - Moved secured-shell topbar out of content column so it spans full page width on authenticated routes.
   - Refocused account sidenav on profile/settings only and canonicalized policy links to `/legal/*`.
@@ -126,6 +131,7 @@
   - `/account/sessions` -> `/account/security?focus=sessions`
   - `/account/danger` -> `/account/privacy?focus=deletion`
   - `/account/billing` -> `/account/subscription`
+- Account deep-link focus states now share a reusable rounded highlight contract (`account-focus-highlight`) so `?focus=*` targets remain visually consistent across Security/Privacy pages.
 - Deferred routes exist but are intentionally hidden from account navigation until promoted to core scope.
   - Split account settings responsibilities across focused pages while preserving existing security actions and notification actions.
   - Replaced placeholder account forms with persisted forms for profile/contact/professional/settings/password/danger/notifications.
@@ -155,9 +161,11 @@
   - Added API integration coverage for account patch persistence, notification preferences persistence, password-change validation/success, and delete-account lifecycle blocking re-auth.
   - Added web e2e coverage for account data persistence, disabled account tabs behavior, and password-change flow.
   - Added/updated web e2e coverage for dashboard action-first hierarchy and new-user-to-returning-user continuity behavior.
+  - Added web e2e coverage for account deep-link focus highlight behavior (`totp`, `passkeys`, `deletion`) including rounded-container rendering assertions.
   - Added API integration assertions for new dashboard completion-history payload (`recentCompletions`).
   - Hardened dashboard e2e selectors for prompt starter and journal form targeting to reduce strict-mode ambiguities.
   - Updated e2e/a11y signup helpers for legal consent, email verification, onboarding completion, and cookie gate behavior.
+  - Forced Playwright API startup to `EMAIL_TRANSPORT=disabled` so signup/resend tests never consume external email quotas.
   - Stabilized chat archive/restore e2e and a11y flows around thread action menus; fixed DB startup seed race by making startup seed inserts conflict-safe under concurrent process boots.
   - Added GitHub Actions CI workflow and `npm run ci` aggregate command.
 
