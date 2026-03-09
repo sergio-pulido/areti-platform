@@ -5,17 +5,21 @@ import {
   markNotificationReadAction,
   readAllNotificationsAction,
 } from "@/actions/notifications";
+import {
+  TopbarGuestActions,
+  type TopbarGuestAuthSwitch,
+} from "@/components/layout/topbar-guest-actions";
 import type { CurrentUser } from "@/lib/auth/session";
 import { apiNotifications } from "@/lib/backend-api";
 import { getTopbarSectionsForRole } from "@/lib/navigation";
 
+const TOPBAR_CLASSNAME =
+  "sticky top-0 z-40 border-b border-night-800/80 bg-night-950/95 px-4 py-2 backdrop-blur lg:px-8";
+
 type AppTopbarProps = {
   user?: CurrentUser | null;
   accessToken?: string;
-  guestAuthSwitch?: {
-    href: string;
-    label: string;
-  };
+  guestAuthSwitch?: TopbarGuestAuthSwitch;
 };
 
 function initials(name: string): string {
@@ -27,54 +31,28 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
+function TopbarBrand() {
+  return (
+    <Link href="/" className="font-title text-xl text-sand-100">
+      Areti
+    </Link>
+  );
+}
+
+function UnauthenticatedTopbar({ guestAuthSwitch }: { guestAuthSwitch?: TopbarGuestAuthSwitch }) {
+  return (
+    <header className={TOPBAR_CLASSNAME}>
+      <div className="flex w-full items-center justify-between gap-3">
+        <TopbarBrand />
+        <TopbarGuestActions guestAuthSwitch={guestAuthSwitch} />
+      </div>
+    </header>
+  );
+}
+
 export async function AppTopbar({ user, accessToken, guestAuthSwitch }: AppTopbarProps) {
   if (!user || !accessToken) {
-    return (
-      <header className="sticky top-0 z-40 border-b border-night-800/80 bg-night-950/95 px-4 py-2 backdrop-blur lg:px-8">
-        <div className="flex w-full items-center justify-between gap-3">
-          <Link href="/" className="font-title text-xl text-sand-100">
-            Areti
-          </Link>
-          <nav className="flex items-center gap-2 text-sm">
-            <Link
-              href="/legal/privacy"
-              className="rounded-lg border border-night-700 px-3 py-1.5 text-sand-200 hover:border-night-500"
-            >
-              Privacy
-            </Link>
-            <Link
-              href="/legal/terms"
-              className="rounded-lg border border-night-700 px-3 py-1.5 text-sand-200 hover:border-night-500"
-            >
-              Terms
-            </Link>
-            {guestAuthSwitch ? (
-              <Link
-                href={guestAuthSwitch.href}
-                className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-1.5 font-semibold text-night-950 hover:bg-sand-50"
-              >
-                {guestAuthSwitch.label}
-              </Link>
-            ) : (
-              <>
-                <Link
-                  href="/auth/signin"
-                  className="rounded-lg border border-night-700 px-3 py-1.5 text-sand-200 hover:border-night-500"
-                >
-                  Sign in
-                </Link>
-                <Link
-                  href="/auth/signup"
-                  className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-1.5 font-semibold text-night-950 hover:bg-sand-50"
-                >
-                  Get started
-                </Link>
-              </>
-            )}
-          </nav>
-        </div>
-      </header>
-    );
+    return <UnauthenticatedTopbar guestAuthSwitch={guestAuthSwitch} />;
   }
 
   const topbarSections = getTopbarSectionsForRole(user.role);
@@ -91,7 +69,7 @@ export async function AppTopbar({ user, accessToken, guestAuthSwitch }: AppTopba
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-night-800/80 bg-night-950/95 px-4 py-2 backdrop-blur lg:px-8">
+    <header className={TOPBAR_CLASSNAME}>
       <div className="flex w-full items-center gap-3">
         <div className="flex items-center gap-2">
           <details className="relative lg:hidden">
@@ -120,9 +98,7 @@ export async function AppTopbar({ user, accessToken, guestAuthSwitch }: AppTopba
             </div>
           </details>
 
-          <Link href="/" className="font-title text-xl text-sand-100">
-            Areti
-          </Link>
+          <TopbarBrand />
         </div>
 
         <div className="hidden flex-1 lg:block">

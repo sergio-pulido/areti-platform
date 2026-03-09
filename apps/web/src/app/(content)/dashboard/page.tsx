@@ -529,7 +529,6 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6 md:space-y-7">
       <PageHeader
-        eyebrow="Dashboard"
         title={`${getGreetingHour()}, ${firstName}`}
         description="Start with the most useful next step, then keep momentum with focused actions."
       />

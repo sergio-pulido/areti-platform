@@ -18,6 +18,8 @@ import { AuthTrustMicrocopy } from "@/components/auth/auth-trust-microcopy";
 import { PasskeyButton } from "@/components/auth/passkey-button";
 import { PasswordField } from "@/components/auth/password-field";
 import { Input } from "@/components/ui/input";
+import { isValidEmail } from "@/lib/auth/client-validation";
+import { parseClientApiData } from "@/lib/client-api";
 import { cn } from "@/lib/cn";
 
 type PasskeyAuthOptionsData = {
@@ -42,20 +44,6 @@ function SubmitButton({ mfaRequired }: { mfaRequired: boolean }) {
       {pending ? (mfaRequired ? "Verifying..." : "Signing in...") : mfaRequired ? "Verify code" : "Sign in"}
     </button>
   );
-}
-
-async function parseApiData<T>(response: Response): Promise<T> {
-  const payload = (await response.json()) as { data?: T; error?: string };
-
-  if (!response.ok || !payload.data) {
-    throw new Error(payload.error ?? "Request failed");
-  }
-
-  return payload.data;
-}
-
-function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
 function humanizePasskeyError(error: unknown): string {
@@ -139,7 +127,7 @@ export function SigninForm({ initialEmail = "", autoStartPasskey = false }: Sign
         body: JSON.stringify({ email: normalizedEmail }),
       });
 
-      const optionsPayload = await parseApiData<PasskeyAuthOptionsData>(optionsResponse);
+      const optionsPayload = await parseClientApiData<PasskeyAuthOptionsData>(optionsResponse);
 
       const assertion = (await startAuthentication({
         optionsJSON: optionsPayload.options,
@@ -156,7 +144,7 @@ export function SigninForm({ initialEmail = "", autoStartPasskey = false }: Sign
         }),
       });
 
-      await parseApiData<{ user: { id: string } }>(verifyResponse);
+      await parseClientApiData<{ user: { id: string } }>(verifyResponse);
 
       router.push("/dashboard");
       router.refresh();

@@ -13,6 +13,7 @@ import {
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import argon2 from "argon2";
 import cors from "cors";
+import nodemailer, { type Transporter } from "nodemailer";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import {
@@ -225,6 +226,8 @@ type ProviderFailureDetail = {
   reason: string;
 };
 
+type EmailTransportMode = "disabled" | "resend" | "smtp";
+
 class ChatProvidersFailedError extends Error {
   constructor(readonly failures: ProviderFailureDetail[]) {
     super("All configured chat providers failed.");
@@ -247,6 +250,13 @@ const envSchema = z.object({
   CHAT_GLOBAL_SYSTEM_PROMPT: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM_EMAIL: z.string().optional(),
+  EMAIL_TRANSPORT: z.string().optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.string().optional(),
+  SMTP_SECURE: z.string().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM_EMAIL: z.string().optional(),
   WEB_APP_URL: z.string().optional(),
 });
 
@@ -1413,10 +1423,25 @@ function normalizeCustomInstructions(value: string): string {
   return value.trim();
 }
 
+function resolveEmailTransportMode(rawValue: string | undefined, nodeEnv: string): EmailTransportMode {
+  const normalized = rawValue?.trim().toLowerCase();
+
+  if (!normalized) {
+    return nodeEnv === "production" ? "resend" : "disabled";
+  }
+
+  if (normalized === "disabled" || normalized === "resend" || normalized === "smtp") {
+    return normalized;
+  }
+
+  throw new Error(`Unsupported EMAIL_TRANSPORT value "${rawValue}". Use: disabled, resend, or smtp.`);
+}
+
 export function createApp() {
   const app = express();
   const env = envSchema.parse(process.env);
   const chatConfig = createChatRuntimeConfig(env);
+  const nodeEnv = process.env.NODE_ENV ?? "development";
 
   async function resolveEffectiveSystemPromptForUser(userId: string): Promise<string> {
     const onboardingProfile = getUserOnboardingProfile(userId);
@@ -1468,13 +1493,52 @@ export function createApp() {
   const resendApiKey = env.RESEND_API_KEY?.trim() ?? "";
   const resendFromEmail = env.RESEND_FROM_EMAIL?.trim() ?? "";
   const isResendConfigured = resendApiKey.length > 0 && resendFromEmail.length > 0;
+  const emailTransport = resolveEmailTransportMode(env.EMAIL_TRANSPORT, nodeEnv);
+  const smtpHost = env.SMTP_HOST?.trim() ?? "";
+  const smtpPortRaw = env.SMTP_PORT?.trim() ?? "";
+  const smtpPort = smtpPortRaw ? Number(smtpPortRaw) : 1025;
+  const smtpSecure = (env.SMTP_SECURE?.trim().toLowerCase() ?? "false") === "true";
+  const smtpUser = env.SMTP_USER?.trim() ?? "";
+  const smtpPass = env.SMTP_PASS?.trim() ?? "";
+  const smtpFromEmail = env.SMTP_FROM_EMAIL?.trim() || resendFromEmail;
+  const hasSmtpAuth = smtpUser.length > 0;
 
-  if (process.env.NODE_ENV === "production") {
+  if (!Number.isInteger(smtpPort) || smtpPort <= 0 || smtpPort > 65535) {
+    throw new Error("SMTP_PORT must be an integer between 1 and 65535.");
+  }
+
+  if (hasSmtpAuth && !smtpPass) {
+    throw new Error("SMTP_PASS is required when SMTP_USER is set.");
+  }
+
+  let smtpTransport: Transporter | null = null;
+  if (emailTransport === "smtp") {
+    if (!smtpHost) {
+      throw new Error("SMTP_HOST is required when EMAIL_TRANSPORT=smtp.");
+    }
+    if (!smtpFromEmail) {
+      throw new Error("SMTP_FROM_EMAIL (or RESEND_FROM_EMAIL fallback) is required when EMAIL_TRANSPORT=smtp.");
+    }
+
+    smtpTransport = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      ...(hasSmtpAuth ? { auth: { user: smtpUser, pass: smtpPass } } : {}),
+    });
+  }
+  let hasLoggedDisabledEmailDelivery = false;
+
+  if (nodeEnv === "production") {
     if (!env.WEB_APP_URL?.trim()) {
       throw new Error("WEB_APP_URL is required in production.");
     }
 
-    if (!isResendConfigured) {
+    if (emailTransport === "disabled") {
+      throw new Error("EMAIL_TRANSPORT cannot be disabled in production.");
+    }
+
+    if (emailTransport === "resend" && !isResendConfigured) {
       throw new Error("RESEND_API_KEY and RESEND_FROM_EMAIL are required in production.");
     }
   }
@@ -1496,16 +1560,60 @@ export function createApp() {
     token: string;
     code: string;
   }): Promise<void> {
-    if (process.env.NODE_ENV === "test") {
-      return;
-    }
-
-    if (!isResendConfigured) {
-      console.warn("[auth] RESEND_API_KEY or RESEND_FROM_EMAIL missing; skipping verification email delivery.");
+    if (nodeEnv === "test") {
       return;
     }
 
     const verifyUrl = `${webAppUrl}/auth/verify-email?token=${encodeURIComponent(input.token)}&email=${encodeURIComponent(input.email)}`;
+    const subject = "Verify your Areti account";
+    const html = `
+      <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.5; color: #1f2937;">
+        <h2 style="margin: 0 0 12px;">Verify your email</h2>
+        <p>Hello ${input.name || "there"},</p>
+        <p>Use this verification code:</p>
+        <p style="font-size: 28px; letter-spacing: 6px; font-weight: 700; margin: 8px 0 16px;">${input.code}</p>
+        <p>Or click this secure link:</p>
+        <p><a href="${verifyUrl}" style="color: #0f766e;">Verify email</a></p>
+        <p style="font-size: 12px; color: #6b7280;">This link and code expire in ${EMAIL_VERIFICATION_TTL_MINUTES} minutes.</p>
+      </div>
+    `.trim();
+    const text = [
+      `Hello ${input.name || "there"},`,
+      "",
+      `Use this verification code: ${input.code}`,
+      "",
+      `Or verify with this secure link: ${verifyUrl}`,
+      "",
+      `This link and code expire in ${EMAIL_VERIFICATION_TTL_MINUTES} minutes.`,
+    ].join("\n");
+
+    if (emailTransport === "disabled") {
+      if (!hasLoggedDisabledEmailDelivery) {
+        console.warn("[auth] EMAIL_TRANSPORT=disabled; skipping verification email delivery.");
+        hasLoggedDisabledEmailDelivery = true;
+      }
+      return;
+    }
+
+    if (emailTransport === "smtp") {
+      if (!smtpTransport || !smtpFromEmail) {
+        throw new Error("SMTP transport is not configured.");
+      }
+
+      await smtpTransport.sendMail({
+        from: smtpFromEmail,
+        to: input.email,
+        subject,
+        text,
+        html,
+      });
+      return;
+    }
+
+    if (!isResendConfigured) {
+      throw new Error("RESEND_API_KEY or RESEND_FROM_EMAIL is missing while EMAIL_TRANSPORT=resend.");
+    }
+
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -1515,18 +1623,8 @@ export function createApp() {
       body: JSON.stringify({
         from: resendFromEmail,
         to: input.email,
-        subject: "Verify your Areti account",
-        html: `
-          <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.5; color: #1f2937;">
-            <h2 style="margin: 0 0 12px;">Verify your email</h2>
-            <p>Hello ${input.name || "there"},</p>
-            <p>Use this verification code:</p>
-            <p style="font-size: 28px; letter-spacing: 6px; font-weight: 700; margin: 8px 0 16px;">${input.code}</p>
-            <p>Or click this secure link:</p>
-            <p><a href="${verifyUrl}" style="color: #0f766e;">Verify email</a></p>
-            <p style="font-size: 12px; color: #6b7280;">This link and code expire in ${EMAIL_VERIFICATION_TTL_MINUTES} minutes.</p>
-          </div>
-        `.trim(),
+        subject,
+        html,
       }),
     });
 

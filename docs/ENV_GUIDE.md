@@ -111,16 +111,53 @@ npm run dev
 - Used by: API prompt composition.
 - Recommendation: leave empty unless you intentionally want to replace default behavior.
 
+### `EMAIL_TRANSPORT`
+- Purpose: selects verification email delivery backend.
+- Used by: API auth verification delivery.
+- Options: `disabled` | `resend` | `smtp`.
+- Default:
+  - production: `resend`
+  - non-production: `disabled`
+
 ### `RESEND_API_KEY`
 - Purpose: sends signup email verification messages.
 - Used by: API auth verification delivery.
-- Required: production.
+- Required when `EMAIL_TRANSPORT=resend` in production.
 
 ### `RESEND_FROM_EMAIL`
 - Purpose: sender identity for Resend email delivery.
 - Used by: API auth verification delivery.
 - Must be verified in your Resend account.
 - Example: `Areti <no-reply@yourdomain.com>`.
+
+### `SMTP_HOST`
+- Purpose: SMTP host for verification email delivery.
+- Used by: API auth verification delivery.
+- Required when `EMAIL_TRANSPORT=smtp`.
+
+### `SMTP_PORT`
+- Purpose: SMTP port.
+- Used by: API auth verification delivery.
+- Default: `1025`.
+
+### `SMTP_SECURE`
+- Purpose: toggles TLS for SMTP transport.
+- Used by: API auth verification delivery.
+- Options: `true` | `false` (default: `false`).
+
+### `SMTP_USER`
+- Purpose: SMTP auth username.
+- Used by: API auth verification delivery when SMTP auth is enabled.
+
+### `SMTP_PASS`
+- Purpose: SMTP auth password.
+- Used by: API auth verification delivery when SMTP auth is enabled.
+- Required when `SMTP_USER` is set.
+
+### `SMTP_FROM_EMAIL`
+- Purpose: sender identity for SMTP delivery.
+- Used by: API auth verification delivery.
+- Required when `EMAIL_TRANSPORT=smtp` (falls back to `RESEND_FROM_EMAIL` if unset).
 
 ## External Provider Setup
 
@@ -158,18 +195,25 @@ npm run dev
 - Minimum typically needed:
   - `API_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`
   - one chat provider key (`DEEPSEEK_API_KEY` or `OPENAI_API_KEY`)
-- Optional for auth email testing: Resend variables.
+- Optional for auth email testing:
+  - `EMAIL_TRANSPORT=smtp`
+  - `SMTP_HOST=localhost`
+  - `SMTP_PORT=1025`
+  - `SMTP_SECURE=false`
+  - `SMTP_FROM_EMAIL=Areti <no-reply@localhost>`
+  - Run MailHog (`docker run -d -p 1025:1025 -p 8025:8025 mailhog/mailhog`) and open `http://localhost:8025`.
 
 ### CI / tests
 - Integration tests set their own test-specific values in code.
-- E2E can run without Resend credentials (non-production fallback behavior).
+- E2E forces `EMAIL_TRANSPORT=disabled`, so no external verification emails are sent.
 
 ### Production
 - Must set:
   - `NODE_ENV=production`
   - `WEB_APP_URL`
-  - `RESEND_API_KEY`
-  - `RESEND_FROM_EMAIL`
+  - `EMAIL_TRANSPORT` (`resend` or `smtp`)
+  - `RESEND_API_KEY` + `RESEND_FROM_EMAIL` when using `resend`
+  - `SMTP_HOST` + `SMTP_FROM_EMAIL` (and optional auth vars) when using `smtp`
   - `PASSKEY_RP_ID`, `PASSKEY_ORIGINS`
   - at least one chat provider key matching `CHAT_PROVIDER_ORDER`
 

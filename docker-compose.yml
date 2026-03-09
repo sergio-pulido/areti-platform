@@ -5,9 +5,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+    depends_on:
+      - mailhog
     environment:
       API_PORT: 4000
       CORS_ORIGINS: http://localhost:3000,http://web:3000
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
       ATARAXIA_DB_PATH: /app/data/ataraxia.docker.db
       CHAT_PROVIDER_ORDER: ${CHAT_PROVIDER_ORDER:-deepseek,openai}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
@@ -16,6 +19,15 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4.1-mini}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-disabled}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-Areti <no-reply@localhost>}
     ports:
       - "4000:4000"
     volumes:
@@ -34,3 +46,9 @@ services:
       - "3000:3000"
     volumes:
       - ./data:/app/data
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      - "1025:1025"
+      - "8025:8025"

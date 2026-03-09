@@ -132,6 +132,8 @@ npm run build
 npm run test
 ```
 
+E2E test startup forces `EMAIL_TRANSPORT=disabled`, so signup/resend flows do not hit external email providers.
+
 ## Docker Compose
 Run everything with one command:
 
@@ -142,6 +144,7 @@ docker compose up --build
 Services:
 - Web: [http://localhost:3000](http://localhost:3000)
 - API: [http://localhost:4000](http://localhost:4000)
+- MailHog UI: [http://localhost:8025](http://localhost:8025)
 
 ## Key Environment Variables
 - `API_PORT` (default: `4000`)
@@ -160,8 +163,10 @@ Services:
 - `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
 - `CHAT_GLOBAL_SYSTEM_PROMPT` (optional override for Areti global Companion doctrine/system prompt)
 - `WEB_APP_URL` (canonical web origin used in verification links)
+- `EMAIL_TRANSPORT` (`disabled` | `resend` | `smtp`; non-prod default: `disabled`, prod default: `resend`)
 - `RESEND_API_KEY` (Resend API key for verification email delivery)
 - `RESEND_FROM_EMAIL` (verified sender identity for Resend email delivery)
+- `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM_EMAIL` (SMTP delivery, e.g. MailHog)
 
 Chat provider keys are read by `apps/api` from process environment on startup.
 

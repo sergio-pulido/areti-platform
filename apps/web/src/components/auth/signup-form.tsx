@@ -14,6 +14,8 @@ import { PasskeyButton } from "@/components/auth/passkey-button";
 import { PasswordField } from "@/components/auth/password-field";
 import { PasswordStrengthChecklist } from "@/components/auth/password-strength-checklist";
 import { Input } from "@/components/ui/input";
+import { PASSWORD_MIN_LENGTH } from "@/lib/auth/constants";
+import { isValidEmail, isValidPassword } from "@/lib/auth/client-validation";
 import { cn } from "@/lib/cn";
 
 function SubmitButton() {
@@ -27,16 +29,6 @@ function SubmitButton() {
     >
       {pending ? "Creating account..." : "Create free account"}
     </button>
-  );
-}
-
-function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-}
-
-function isValidPassword(password: string): boolean {
-  return (
-    password.length >= 10 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password)
   );
 }
 
@@ -61,7 +53,7 @@ export function SignupForm() {
 
     if ((shouldShow || touched.password) && !isValidPassword(password)) {
       errors.password =
-        "Use at least 10 characters, including upper and lower case letters and a number.";
+        `Use at least ${PASSWORD_MIN_LENGTH} characters, including upper and lower case letters and a number.`;
     }
 
     if ((shouldShow || touched.acceptLegal) && !acceptLegal) {
@@ -120,7 +112,7 @@ export function SignupForm() {
           onChange={setPassword}
           onBlur={() => setTouched((current) => ({ ...current, password: true }))}
           error={passwordError}
-          hint="Use at least 10 characters, including upper and lower case letters and a number."
+          hint={`Use at least ${PASSWORD_MIN_LENGTH} characters, including upper and lower case letters and a number.`}
           placeholder="Create a password"
         />
         <PasswordStrengthChecklist password={password} />

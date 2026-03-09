@@ -1,4 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
+import path from "node:path";
+
+const nodeBinDir = path.dirname(process.execPath);
 
 export default defineConfig({
   testDir: "./tests",
@@ -21,14 +24,14 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "E2E_DB_PATH=$(pwd)/data/ataraxia.e2e.db && rm -f \"$E2E_DB_PATH\" && ATARAXIA_DB_PATH=\"$E2E_DB_PATH\" npm run db:seed:library-practices && ATARAXIA_DB_PATH=\"$E2E_DB_PATH\" API_PORT=43101 CORS_ORIGINS=http://localhost:43100 npm run dev:api",
+        `PATH="${nodeBinDir}:$PATH" && E2E_DB_PATH=$(pwd)/data/ataraxia.e2e.db && rm -f "$E2E_DB_PATH" && ATARAXIA_DB_PATH="$E2E_DB_PATH" npm run db:seed:library-practices && EMAIL_TRANSPORT=disabled RESEND_API_KEY= RESEND_FROM_EMAIL= ATARAXIA_DB_PATH="$E2E_DB_PATH" API_PORT=43101 CORS_ORIGINS=http://localhost:43100 npm run dev:api`,
       port: 43101,
       reuseExistingServer: false,
       timeout: 120000,
     },
     {
       command:
-        "rm -rf ./apps/web/.next && API_BASE_URL=http://localhost:43101 NEXT_PUBLIC_API_BASE_URL=http://localhost:43101 npm run dev --workspace @ataraxia/web -- --port 43100",
+        `PATH="${nodeBinDir}:$PATH" && rm -rf ./apps/web/.next && API_BASE_URL=http://localhost:43101 NEXT_PUBLIC_API_BASE_URL=http://localhost:43101 npm run dev --workspace @ataraxia/web -- --port 43100`,
       port: 43100,
       reuseExistingServer: false,
       timeout: 120000,
