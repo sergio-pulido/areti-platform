@@ -24,6 +24,12 @@
 - **Why:** Enables reliable reminder generation through external cron/workers without adding new infrastructure dependencies immediately.
 - **Tradeoff:** Job execution is not automatic until deployment wiring provides a scheduler trigger.
 
+## 2026-03-09 - Add lock safety and run metrics to digest job execution
+- **Context:** Scheduler-triggered jobs can overlap during retries or slow runs, which risks duplicate writes and noisy reminder volume.
+- **Decision:** Add exclusive file-lock acquisition (`.notification-digest.lock`) with stale-lock recovery and structured run summary metrics (`scanned`, `digestEnabled`, `created`, `dedupeSkipped`) in digest job output.
+- **Why:** Prevents overlapping executions in a simple deployment model while improving observability for cron/worker operations.
+- **Tradeoff:** File-lock semantics are host-local; multi-host deployments still need distributed locking if the job runs on more than one machine.
+
 ## 2026-03-09 - Public preview section with no-auth feature walkthroughs
 - **Context:** Product needed a low-friction way for guests to explore key experiences before signup, while preserving existing authenticated flows.
 - **Decision:** Add a dedicated public preview section (`/preview`) with unauthenticated preview pages for chat, dashboard, journal, library, and practices; back `/preview/chat` with a no-auth preview API (`/api/preview/chat`) using provider-backed responses with strict guest rate limits and token caps; add preview analytics event ingestion (`/api/v1/preview/events`) plus admin conversion summary endpoint (`/api/v1/admin/preview/analytics`), retention cleanup (90 days), and lightweight anti-bot heuristics (honeypot + minimum interaction time).
