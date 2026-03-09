@@ -33,6 +33,17 @@ Example pattern:
 2. Trigger alert when exit code is non-zero.
 3. Route alerts to on-call paging policy.
 
+### GitHub Actions monitor (in-repo)
+
+Workflow: `.github/workflows/notification-digest-monitor.yml`
+
+- Runs every 30 minutes
+- Executes:
+  1. `npm run job:notification-digest`
+  2. `npm run job:notification-digest:healthcheck`
+
+If healthcheck fails, the workflow run fails and can be used as an alert source.
+
 ### In-app triage
 
 Use CMS:

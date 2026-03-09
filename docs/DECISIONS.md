@@ -66,6 +66,12 @@
 - **Why:** Enables in-product tuning and safe remediation without shell access while preserving privileged-action traceability.
 - **Tradeoff:** Slightly broader admin surface area and additional URL/query-state complexity in CMS.
 
+## 2026-03-09 - Add scheduled in-repo monitor workflow for digest health
+- **Context:** Healthcheck command existed, but required manual or external scheduling setup to be useful.
+- **Decision:** Add `.github/workflows/notification-digest-monitor.yml` scheduled every 30 minutes to run digest + healthcheck.
+- **Why:** Provides immediate recurring monitoring with failure visibility in repository operations.
+- **Tradeoff:** GitHub-hosted checks run against workflow environment, not production runtime state, so production paging still needs environment-specific monitor wiring.
+
 ## 2026-03-09 - Public preview section with no-auth feature walkthroughs
 - **Context:** Product needed a low-friction way for guests to explore key experiences before signup, while preserving existing authenticated flows.
 - **Decision:** Add a dedicated public preview section (`/preview`) with unauthenticated preview pages for chat, dashboard, journal, library, and practices; back `/preview/chat` with a no-auth preview API (`/api/preview/chat`) using provider-backed responses with strict guest rate limits and token caps; add preview analytics event ingestion (`/api/v1/preview/events`) plus admin conversion summary endpoint (`/api/v1/admin/preview/analytics`), retention cleanup (90 days), and lightweight anti-bot heuristics (honeypot + minimum interaction time).

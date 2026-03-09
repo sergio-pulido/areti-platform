@@ -39,6 +39,7 @@
 - Added admin job summary endpoint (`GET /api/v1/admin/system/jobs/summary`) and CMS summary cards (health, latest run age, runs in 24h, last error).
 - Job summary now also reports stale-lock state and 7-day success-rate metrics; CMS supports threshold tuning via URL query filters.
 - Added admin-safe stale-lock remediation endpoint (`POST /api/v1/admin/system/jobs/unlock`) with audit-log recording.
+- Added scheduled GitHub workflow monitor (`.github/workflows/notification-digest-monitor.yml`) for periodic digest + healthcheck execution.
 - Signup now requires mandatory Terms/Privacy acceptance, stores auditable legal consent records, and defers session creation until email verification.
 - Auth pages are now conversion-optimized with simplified auth-only topbar nav, clearer value-focused hero copy, stronger field/CTA hierarchy, and premium high-contrast form states.
 - Signup now removes `name` and `confirmPassword` from first step, uses a single required legal consent checkbox, and keeps passkey as a first-class secondary path.
