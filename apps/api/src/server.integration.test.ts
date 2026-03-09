@@ -631,6 +631,13 @@ describe("API integration", () => {
 
     expect(runs.status).toBe(200);
     expect(Array.isArray(runs.body.data)).toBe(true);
+
+    const filteredRuns = await request(app)
+      .get("/api/v1/admin/system/jobs/runs?limit=25&jobName=notification_digest&status=success&days=90")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(filteredRuns.status).toBe(200);
+    expect(Array.isArray(filteredRuns.body.data)).toBe(true);
   });
 
   it("keeps draft lesson private until published", async () => {

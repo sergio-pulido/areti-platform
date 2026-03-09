@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   createChallengeAdminAction,
   createCommunityAdminAction,
@@ -55,6 +56,45 @@ import {
 } from "@/lib/backend-api";
 import { requireSession } from "@/lib/auth/session";
 
+type CmsPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+type JobRunStatusFilter = "all" | "running" | "success" | "error" | "skipped";
+type JobRunDaysFilter = "all" | "1" | "7" | "30" | "90";
+
+function first(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? "" : (value ?? "");
+}
+
+function normalizeStatusFilter(value: string): JobRunStatusFilter {
+  if (value === "running" || value === "success" || value === "error" || value === "skipped") {
+    return value;
+  }
+
+  return "all";
+}
+
+function normalizeDaysFilter(value: string): JobRunDaysFilter {
+  if (value === "1" || value === "7" || value === "30" || value === "90") {
+    return value;
+  }
+
+  return "all";
+}
+
+function buildCmsFilterHref(filters: { status: JobRunStatusFilter; days: JobRunDaysFilter }): string {
+  const params = new URLSearchParams();
+  if (filters.status !== "all") {
+    params.set("runStatus", filters.status);
+  }
+  if (filters.days !== "all") {
+    params.set("runDays", filters.days);
+  }
+  const qs = params.toString();
+  return qs ? `/creator/cms?${qs}` : "/creator/cms";
+}
+
 function statusClasses(status: ContentStatus): string {
   return status === "PUBLISHED"
     ? "border-sage-300/40 bg-sage-500/15 text-sage-100"
@@ -74,9 +114,12 @@ function StatusSelect() {
   );
 }
 
-export default async function CmsPage() {
+export default async function CmsPage({ searchParams }: CmsPageProps) {
   const session = await requireSession();
   const user = session.user;
+  const params = ((await searchParams) ?? {}) as Record<string, string | string[] | undefined>;
+  const runStatus = normalizeStatusFilter(first(params.runStatus));
+  const runDays = normalizeDaysFilter(first(params.runDays));
 
   if (user.role !== "ADMIN") {
     return (
@@ -101,7 +144,12 @@ export default async function CmsPage() {
     apiAdminContent(token),
     apiAdminAudit(token, 14),
     apiAdminPreviewAnalytics(token, 30),
-    apiAdminSystemJobRuns(token, { limit: 8, jobName: "notification_digest" }),
+    apiAdminSystemJobRuns(token, {
+      limit: 20,
+      jobName: "notification_digest",
+      status: runStatus === "all" ? undefined : runStatus,
+      days: runDays === "all" ? undefined : Number(runDays),
+    }),
   ]);
 
   return (
@@ -176,6 +224,40 @@ export default async function CmsPage() {
         </SurfaceCard>
 
         <SurfaceCard title="System Job Runs" subtitle="Recent scheduler execution telemetry">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="text-night-300">Status</span>
+            <Link href={buildCmsFilterHref({ status: "all", days: runDays })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              All
+            </Link>
+            <Link href={buildCmsFilterHref({ status: "running", days: runDays })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              Running
+            </Link>
+            <Link href={buildCmsFilterHref({ status: "success", days: runDays })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              Success
+            </Link>
+            <Link href={buildCmsFilterHref({ status: "error", days: runDays })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              Error
+            </Link>
+            <Link href={buildCmsFilterHref({ status: "skipped", days: runDays })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              Skipped
+            </Link>
+            <span className="ml-2 text-night-300">Window</span>
+            <Link href={buildCmsFilterHref({ status: runStatus, days: "all" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              All time
+            </Link>
+            <Link href={buildCmsFilterHref({ status: runStatus, days: "1" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              24h
+            </Link>
+            <Link href={buildCmsFilterHref({ status: runStatus, days: "7" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              7d
+            </Link>
+            <Link href={buildCmsFilterHref({ status: runStatus, days: "30" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              30d
+            </Link>
+            <Link href={buildCmsFilterHref({ status: runStatus, days: "90" })} className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500">
+              90d
+            </Link>
+          </div>
           <div className="space-y-2">
             {systemJobRuns.length === 0 ? (
               <p className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-sm text-night-200">

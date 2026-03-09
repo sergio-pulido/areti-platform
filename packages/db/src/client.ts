@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { and, asc, count, desc, eq, gt, isNotNull, isNull, like, lt, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, isNotNull, isNull, like, lt, or, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import {
@@ -3615,18 +3615,42 @@ export function finishSystemJobRun(
 
 export function listSystemJobRuns(input: {
   jobName?: string;
+  status?: string;
+  days?: number;
   limit: number;
 }): SystemJobRunRecord[] {
   const safeLimit = Math.max(1, Math.min(input.limit, 500));
-  const base = db.select().from(systemJobRuns);
+  let whereClause: SQL<unknown> | undefined;
 
-  const rows = input.jobName
-    ? base
-        .where(eq(systemJobRuns.jobName, input.jobName))
+  if (input.jobName) {
+    whereClause = eq(systemJobRuns.jobName, input.jobName);
+  }
+
+  if (input.status) {
+    const statusClause = eq(systemJobRuns.status, input.status);
+    whereClause = whereClause ? and(whereClause, statusClause) : statusClause;
+  }
+
+  if (input.days && Number.isFinite(input.days) && input.days > 0) {
+    const floor = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000).toISOString();
+    const daysClause = gt(systemJobRuns.startedAt, floor);
+    whereClause = whereClause ? and(whereClause, daysClause) : daysClause;
+  }
+
+  const rows = whereClause
+    ? db
+        .select()
+        .from(systemJobRuns)
+        .where(whereClause)
         .orderBy(desc(systemJobRuns.startedAt))
         .limit(safeLimit)
         .all()
-    : base.orderBy(desc(systemJobRuns.startedAt)).limit(safeLimit).all();
+    : db
+        .select()
+        .from(systemJobRuns)
+        .orderBy(desc(systemJobRuns.startedAt))
+        .limit(safeLimit)
+        .all();
 
   return rows;
 }

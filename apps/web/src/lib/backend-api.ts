@@ -819,7 +819,12 @@ export async function apiAdminPreviewAnalytics(
 
 export async function apiAdminSystemJobRuns(
   token: string,
-  input?: { limit?: number; jobName?: string },
+  input?: {
+    limit?: number;
+    jobName?: string;
+    status?: "running" | "success" | "error" | "skipped";
+    days?: number;
+  },
 ): Promise<ApiAdminSystemJobRun[]> {
   const params = new URLSearchParams();
   if (input?.limit) {
@@ -827,6 +832,12 @@ export async function apiAdminSystemJobRuns(
   }
   if (input?.jobName) {
     params.set("jobName", input.jobName);
+  }
+  if (input?.status) {
+    params.set("status", input.status);
+  }
+  if (input?.days) {
+    params.set("days", String(input.days));
   }
   const qs = params.toString();
   return requestJson<ApiAdminSystemJobRun[]>(

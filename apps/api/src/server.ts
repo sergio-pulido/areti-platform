@@ -1638,6 +1638,8 @@ const adminPreviewAnalyticsQuerySchema = z.object({
 const adminSystemJobRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).default(100),
   jobName: z.string().trim().min(1).max(120).optional(),
+  status: z.enum(["running", "success", "error", "skipped"]).optional(),
+  days: z.coerce.number().int().positive().max(365).optional(),
 });
 
 function parseIdOrFail(request: Request, response: Response): number | null {
@@ -3903,6 +3905,8 @@ export function createApp() {
     res.json({
       data: listSystemJobRuns({
         jobName: parsed.data.jobName,
+        status: parsed.data.status,
+        days: parsed.data.days,
         limit: parsed.data.limit,
       }),
     });

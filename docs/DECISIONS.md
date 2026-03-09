@@ -42,6 +42,12 @@
 - **Why:** Reduces operational friction and improves release-day confidence from a single admin dashboard.
 - **Tradeoff:** CMS page now performs one additional admin API request.
 
+## 2026-03-09 - Add server/query-backed run filters for scheduler telemetry
+- **Context:** Raw run listings were useful, but operations still needed quick narrowing (failures only, recent window) during incidents.
+- **Decision:** Extend `GET /api/v1/admin/system/jobs/runs` with optional `status` and `days` filters; wire matching controls into `/creator/cms` (`runStatus`, `runDays` query params).
+- **Why:** Improves mean time to diagnosis by reducing visual/manual filtering overhead.
+- **Tradeoff:** Slightly larger query contract and CMS URL-state handling complexity.
+
 ## 2026-03-09 - Public preview section with no-auth feature walkthroughs
 - **Context:** Product needed a low-friction way for guests to explore key experiences before signup, while preserving existing authenticated flows.
 - **Decision:** Add a dedicated public preview section (`/preview`) with unauthenticated preview pages for chat, dashboard, journal, library, and practices; back `/preview/chat` with a no-auth preview API (`/api/preview/chat`) using provider-backed responses with strict guest rate limits and token caps; add preview analytics event ingestion (`/api/v1/preview/events`) plus admin conversion summary endpoint (`/api/v1/admin/preview/analytics`), retention cleanup (90 days), and lightweight anti-bot heuristics (honeypot + minimum interaction time).
