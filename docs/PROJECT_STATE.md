@@ -14,8 +14,12 @@
 - First-message chat flow now auto-titles untitled threads after assistant response, then persists that title in thread history.
 - Companion history now supports `Active` and `Archived` views with restore flow, while preserving active-only default thread listing API behavior.
 - Companion now supports account-level user custom instructions appended to the global Areti system prompt.
-- Chat telemetry is now persisted (`chat_events`) and exposed to admins via API for lifecycle observability.
+- Chat telemetry is now persisted (`chat_events`) and exposed to admins via API for lifecycle observability, including memory-only event filtering.
+- Companion thread execution now includes server-side rolling memory context (`chat_thread_contexts`) with estimated token telemetry and summary compaction (automatic and user-triggered) for long sessions.
+- Companion chat now surfaces context health in UI (estimated usage %, warning/degraded states, auto-summary timestamp) plus manual "Summarize now" and degraded-state guidance to start a fresh thread.
 - Companion chat UX now prioritizes guided reflective conversation: lighter hierarchy, compact thread controls, structured assistant rendering, continuity snippets, follow-up chips, and a mode-driven composer.
+- Companion composer now follows a ChatGPT-style compact layout: icon-first tool row, reduced-height input area, context usage moved from inline card to a `%` chip near Send, and a click-open context modal for summarize controls.
+- Active-thread workspace layout now enforces a dedicated scroll region above the composer row, preventing message content from being obscured by the input area.
 - Public preview section is now available at `/preview` (no auth), including lightweight previews for chat, journal, library, and practices to let guests evaluate core UX before signup.
 - Public preview now also includes `/preview/dashboard` to demonstrate the action-first member home with sample momentum data.
 - `/preview/chat` now runs on a no-auth preview chat API with strict token-budget testing (fixed session budget, per-turn input/output caps, response clipping, resettable sandbox session).
@@ -45,6 +49,7 @@
 - Signup now removes `name` and `confirmPassword` from first step, uses a single required legal consent checkbox, and keeps passkey as a first-class secondary path.
 - Auth now supports verification-link + 6-digit-code flows via Resend (`/api/v1/auth/verify-email`, `/api/v1/auth/resend-verification`) with first-verified-user admin promotion.
 - Required onboarding is now enforced before app access (`/onboarding`) and persisted for personalization and prompt shaping.
+- Onboarding is now activation-first: a 3-step card-based wizard (intention, realistic daily time, best way to begin) with progressive-step UI and immediate personalized routing into the first meaningful experience.
 - Cookie consent is now enforced for app routes via route middleware/proxy redirect to `/legal/cookies?next=...`.
 - A unified thin topbar component now spans secured, auth, legal, and landing surfaces with mobile action consolidation.
 - Guest topbar actions are now extracted into a dedicated shared component and topbar styling/brand shell is centralized in a single implementation.
@@ -58,6 +63,7 @@
 - Deferred account sections are currently hidden from sidenav while implementation is deferred.
 - Security controls are consolidated under `/account/security` (password + sessions/devices merged), with legacy routes redirected.
 - Security settings now include production-ready TOTP enrollment/verification/removal, passkey lifecycle controls, and device/session revocation.
+- Security passkey UX now separates setup-state guidance from inventory management: top authentication cards surface "not configured" state, while passkey registration/additional enrollment is handled inside the "Registered passkeys" panel.
 - Chat is productized with persisted threads/messages and user controls (create/switch/rename/archive/delete).
 - Chat provider runtime now supports ordered fallback (`deepseek,openai` by default) with provider-specific key/model/base-url env wiring.
 - API now auto-loads chat provider env from `apps/api/.env` and repo-root `.env`, and returns explicit `502` when configured providers are unreachable.
@@ -73,6 +79,7 @@
   - Added tables for notifications, chat threads/messages, TOTP secrets, and device tracking.
   - Added session-refresh linkage to device identity and passkey lifecycle fields.
   - Added `user_companion_preferences` and `chat_events` tables for user prompt customization and chat telemetry.
+  - Added `chat_thread_contexts` table for rolling summary memory, summarized message offsets, and per-thread token-capacity telemetry.
   - Added `content` and `protocol` fields to library/practice tables for full detail rendering.
   - Added `email_verified_at` and `onboarding_completed_at` user lifecycle columns.
   - Added `deleted_at` and `anonymized_at` user lifecycle columns.
@@ -94,6 +101,7 @@
     - `POST /api/v1/auth/resend-verification`
     - `GET /api/v1/onboarding`
     - `PUT /api/v1/onboarding`
+  - Updated onboarding write contract to activation-focused inputs (`primaryObjective`, `dailyTimeCommitment`, `preferredPracticeFormat`) while preserving existing profile storage compatibility.
   - Added account-domain endpoints:
     - `PATCH /api/v1/auth/me`
     - `POST /api/v1/auth/change-password`
@@ -111,10 +119,13 @@
     - `GET/POST /api/v1/chat/threads`
     - `PATCH/DELETE /api/v1/chat/threads/:id`
     - `GET/POST /api/v1/chat/threads/:id/messages`
+    - `POST /api/v1/chat/threads/:id/context/summarize`
   - Added ordered multi-provider chat resolution with env-driven provider order (`CHAT_PROVIDER_ORDER`) and DeepSeek/OpenAI provider configs.
   - Added `GET/PATCH /api/v1/chat/preferences` for per-user Companion instruction customization.
-  - Added `GET /api/v1/admin/chat/events` for admin chat lifecycle telemetry inspection.
+  - Added `GET /api/v1/admin/chat/events` for admin chat lifecycle telemetry inspection, including event/thread/user/memory filters.
   - Added thread listing scopes via `GET /api/v1/chat/threads?scope=active|archived|all`.
+  - Enhanced Companion thread messaging with rolling-context assembly (system + summary + recent turns), blended token estimation heuristics, summary compaction thresholds, and context telemetry on thread/message responses.
+  - Added configurable Companion context controls (`CHAT_CONTEXT_*`) for capacity, summarize/warn/degraded thresholds, and retained raw-message window.
   - Added security hardening endpoints:
     - `GET/PATCH/DELETE /api/v1/security/passkeys*`
     - `POST /api/v1/security/mfa/totp/setup`
@@ -145,6 +156,7 @@
   - Added reusable auth UI primitives (`AuthHeroPanel`, `AuthCard`, `AuthField`, `PasswordField`, `PasswordStrengthChecklist`, `LegalConsent`, `AuthDivider`, `PasskeyButton`, `AuthFooterLink`, `AuthTrustMicrocopy`).
   - Simplified signup contract in UI to `email + password + acceptLegal`, with live password criteria checklist and show/hide password controls on both sign-in and signup.
   - Added `/auth/verify-email` flow and enforced onboarding completion routing before secured shell access.
+  - Rebuilt `/onboarding` into a 3-step activation wizard with reusable option-card, step-shell, and progress-indicator components plus route personalization into first session.
   - Added global cookie consent banner with acceptance persistence and app-route gate redirect behavior.
 - Replaced page-specific headers with a shared AppTopbar (guest + authenticated variants with mobile action handling).
 - Removed unreferenced duplicate header/starter components (`dashboard-topnav`, `chat-starters-panel`) to reduce dead UI surface.
@@ -186,6 +198,10 @@
   - Companion history now includes Active/Archived tabs, debounced search, and list virtualization for larger histories.
   - Thread details panel now shows status and supports restore for archived threads; archived threads disable composer until restored.
   - Companion chat UI now has lighter framing, compact overflow thread actions, preview-rich thread rows, guided empty state starters, structured assistant message sections, follow-up action chips, and a ritual-style composer with mode pills + rotating prompts.
+  - Companion chat UI now shows context usage telemetry (estimated prompt tokens/capacity), memory health states, auto/manual summary notices, and degraded continuity guidance.
+  - Companion composer now uses a ChatGPT-style compact control pattern (tool icons + reduced input), with context telemetry shown as a state-colored `%` chip that opens a modal for full context details and manual summarization.
+  - Companion message viewport now sits in an explicit scrollable region above the composer to avoid overlap/hiding under the input surface.
+  - CMS admin UI now includes a Companion memory events panel with scope/type filters for context lifecycle monitoring.
   - Added a public preview section:
     - `/preview` hub page linking to all previews
     - `/preview/chat` token-limited companion demo
@@ -210,6 +226,7 @@
   - Expanded web e2e coverage for progression markers and rewards surface rendering.
   - Added milestone transition coverage (locked -> earned after real user actions) for rewards.
   - Added web e2e coverage for account deep-link focus highlight behavior (`totp`, `passkeys`, `deletion`) including rounded-container rendering assertions.
+  - Added web e2e coverage to ensure passkey registration action is anchored in the "Registered passkeys" panel (not duplicated in top authentication setup cards).
   - Added API integration assertions for new dashboard completion-history payload (`recentCompletions`).
   - Hardened dashboard e2e selectors for prompt starter and journal form targeting to reduce strict-mode ambiguities.
   - Updated e2e/a11y signup helpers for legal consent, email verification, onboarding completion, and cookie gate behavior.

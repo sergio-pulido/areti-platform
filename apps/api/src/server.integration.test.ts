@@ -23,6 +23,11 @@ beforeAll(async () => {
   process.env.CHAT_PROVIDER_ORDER = "deepseek,openai";
   process.env.DEEPSEEK_API_KEY = "";
   process.env.OPENAI_API_KEY = "";
+  process.env.CHAT_CONTEXT_CAPACITY = "1800";
+  process.env.CHAT_CONTEXT_RECENT_RAW_MESSAGES = "4";
+  process.env.CHAT_CONTEXT_SUMMARIZE_PERCENT = "45";
+  process.env.CHAT_CONTEXT_WARNING_PERCENT = "60";
+  process.env.CHAT_CONTEXT_DEGRADED_PERCENT = "80";
 
   const module = await import("./server.js");
   app = module.createApp();
@@ -108,13 +113,8 @@ describe("API integration", () => {
       .set("Authorization", `Bearer ${adminToken}`)
       .send({
         primaryObjective: "Calm anxiety",
-        biggestDifficulty: "Overthinking",
-        mainNeed: "Clarity",
         dailyTimeCommitment: "10 min",
-        coachingStyle: "Direct",
-        contemplativeExperience: "New",
-        preferredPracticeFormat: "Mixed",
-        successDefinition30d: "Greater inner calm",
+        preferredPracticeFormat: "A short practice",
         notes: "Need focused weekday routines.",
       });
 
@@ -477,6 +477,9 @@ describe("API integration", () => {
     const threadId = createdThread.body.data.id as string;
     expect(typeof threadId).toBe("string");
     expect((createdThread.body.data.title as string).startsWith("Thread")).toBe(true);
+    expect(createdThread.body.data.context.contextCapacity).toBe(1800);
+    expect(createdThread.body.data.context.state).toBe("ok");
+    expect(createdThread.body.data.context.usagePercent).toBe(0);
 
     const sendMessage = await request(app)
       .post(`/api/v1/chat/threads/${threadId}/messages`)
@@ -485,6 +488,10 @@ describe("API integration", () => {
 
     expect(sendMessage.status).toBe(201);
     expect(typeof sendMessage.body.data.answer).toBe("string");
+    expect(typeof sendMessage.body.data.context.usagePercent).toBe("number");
+    expect(typeof sendMessage.body.data.context.estimatedPromptTokens).toBe("number");
+    expect(typeof sendMessage.body.data.context.contextCapacity).toBe("number");
+    expect(["ok", "warning", "degraded"]).toContain(sendMessage.body.data.context.state);
 
     const messages = await request(app)
       .get(`/api/v1/chat/threads/${threadId}/messages`)
@@ -554,6 +561,135 @@ describe("API integration", () => {
     expect(eventTypes).toContain("thread_auto_titled");
     expect(eventTypes).toContain("thread_archived");
     expect(eventTypes).toContain("thread_restored");
+  });
+
+  it("auto-summarizes long chat context and records memory telemetry events", async () => {
+    const createdThread = await request(app)
+      .post("/api/v1/chat/threads")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ title: "Memory Stress Test" });
+
+    expect(createdThread.status).toBe(201);
+    const threadId = createdThread.body.data.id as string;
+    expect(typeof threadId).toBe("string");
+
+    let observedSummarizedTurn = false;
+    let observedWarningOrDegraded = false;
+
+    for (let index = 0; index < 10; index += 1) {
+      const prompt = [
+        `Turn ${index + 1}: keep track of commitments, blockers, and deadlines.`,
+        "I need the plan to remain consistent with previous constraints while adapting to new risks.",
+        "Summarize what should happen next week and remind me what I promised to do today.",
+        "Include references to emotional state, team concerns, and decisions already made.",
+      ].join(" ");
+
+      const send = await request(app)
+        .post(`/api/v1/chat/threads/${threadId}/messages`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ prompt });
+
+      expect(send.status).toBe(201);
+      expect(typeof send.body.data.context.usagePercent).toBe("number");
+      expect(typeof send.body.data.context.summarizedMessageCount).toBe("number");
+      expect(typeof send.body.data.context.autoSummariesCount).toBe("number");
+      if (send.body.data.context.summarizedThisTurn) {
+        observedSummarizedTurn = true;
+      }
+      if (
+        send.body.data.context.state === "warning" ||
+        send.body.data.context.state === "degraded"
+      ) {
+        observedWarningOrDegraded = true;
+      }
+    }
+
+    expect(observedSummarizedTurn).toBe(true);
+    expect(observedWarningOrDegraded).toBe(true);
+
+    const threads = await request(app)
+      .get("/api/v1/chat/threads?scope=all")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(threads.status).toBe(200);
+
+    const updatedThread = threads.body.data.find((item: { id: string }) => item.id === threadId);
+    expect(updatedThread).toBeDefined();
+    expect(updatedThread.context.autoSummariesCount).toBeGreaterThan(0);
+    expect(updatedThread.context.summarizedMessageCount).toBeGreaterThan(0);
+    expect(updatedThread.context.contextCapacity).toBe(1800);
+    expect(typeof updatedThread.context.lastSummarizedAt).toBe("string");
+
+    const chatEvents = await request(app)
+      .get("/api/v1/admin/chat/events?limit=400")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(chatEvents.status).toBe(200);
+
+    const eventTypesForThread = chatEvents.body.data
+      .filter((event: { threadId: string | null }) => event.threadId === threadId)
+      .map((event: { eventType: string }) => event.eventType);
+
+    expect(eventTypesForThread).toContain("context_auto_summarized");
+    expect(
+      eventTypesForThread.includes("context_warning") ||
+        eventTypesForThread.includes("context_degraded"),
+    ).toBe(true);
+  });
+
+  it("supports manual context summarization and admin chat-event filters", async () => {
+    const createdThread = await request(app)
+      .post("/api/v1/chat/threads")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ title: "Manual Summary Test" });
+
+    expect(createdThread.status).toBe(201);
+    const threadId = createdThread.body.data.id as string;
+
+    for (let index = 0; index < 3; index += 1) {
+      const send = await request(app)
+        .post(`/api/v1/chat/threads/${threadId}/messages`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ prompt: `Short turn ${index + 1}: keep this in memory.` });
+
+      expect(send.status).toBe(201);
+    }
+
+    const summarize = await request(app)
+      .post(`/api/v1/chat/threads/${threadId}/context/summarize`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({});
+
+    expect(summarize.status).toBe(200);
+    expect(summarize.body.data.context.summarizedThisTurn).toBe(true);
+    expect(summarize.body.data.context.autoSummariesCount).toBeGreaterThan(0);
+    expect(typeof summarize.body.data.context.lastSummarizedAt).toBe("string");
+
+    const manualOnly = await request(app)
+      .get(`/api/v1/admin/chat/events?limit=200&threadId=${threadId}&eventType=context_manual_summarized`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(manualOnly.status).toBe(200);
+    expect(manualOnly.body.data.length).toBeGreaterThanOrEqual(1);
+    expect(
+      manualOnly.body.data.every(
+        (event: { threadId: string | null; eventType: string }) =>
+          event.threadId === threadId && event.eventType === "context_manual_summarized",
+      ),
+    ).toBe(true);
+
+    const memoryOnly = await request(app)
+      .get("/api/v1/admin/chat/events?limit=200&memoryOnly=true")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(memoryOnly.status).toBe(200);
+    expect(memoryOnly.body.data.length).toBeGreaterThanOrEqual(1);
+    expect(
+      memoryOnly.body.data.every((event: { eventType: string }) =>
+        [
+          "context_auto_summarized",
+          "context_manual_summarized",
+          "context_warning",
+          "context_degraded",
+        ].includes(event.eventType),
+      ),
+    ).toBe(true);
   });
 
   it("supports public preview chat and analytics conversion reporting", async () => {

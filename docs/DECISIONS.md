@@ -1,5 +1,29 @@
 # Decisions
 
+## 2026-03-10 - Activation-first onboarding wizard with personalized first destination
+- **Context:** The previous onboarding required eight upfront profile fields via stacked dropdowns, creating unnecessary cognitive load before users experienced value.
+- **Decision:** Replace onboarding with a three-step activation wizard (`intention`, `daily time`, `best first format`) using selectable card options, progress indicator, step navigation, and a personalized post-submit destination (`/practices`, `/journal`, `/library`, or `/chat`) derived from selected answers.
+- **Why:** Reduces friction, shortens time-to-value, and keeps first-session personalization tied only to data that changes the immediate next experience.
+- **Tradeoff:** Legacy onboarding profile columns remain in persistence for compatibility and are now auto-filled with deferred placeholders pending a dedicated progressive-profiling surface.
+
+## 2026-03-09 - Move context telemetry to on-demand modal and harden chat viewport/composer layering
+- **Context:** The always-visible context usage card consumed excessive vertical space, and sticky composer behavior allowed conversation content to slip under the input surface.
+- **Decision:** Replace the inline context card with a state-colored `%` chip beside `Send` that opens a modal for full context details and manual summarization; refactor chat workspace layout into explicit rows (`scrollable conversation area` + `composer row`) and adopt a more compact ChatGPT-style composer control pattern.
+- **Why:** Preserves context observability while prioritizing reading space and prevents hidden message content in long responses.
+- **Tradeoff:** Context details require one extra click, and composer interactions now rely on compact menus/buttons rather than always-visible mode controls.
+
+## 2026-03-09 - Add manual summarize control, filtered memory observability, and blended token estimation
+- **Context:** Auto-summary + telemetry existed, but users could not force compaction proactively and admins lacked fast filtering for context lifecycle events.
+- **Decision:** Add `POST /api/v1/chat/threads/:id/context/summarize`, extend admin chat-events query filters (`eventType`, `threadId`, `userId`, `memoryOnly`), and upgrade token estimation from `chars/4` to a blended heuristic (chars + words + punctuation/newline + CJK floor).
+- **Why:** Improves long-session control for users, shortens incident triage for admins, and stabilizes context-capacity signals across varied prompt shapes.
+- **Tradeoff:** Token telemetry remains estimate-based (not tokenizer-exact), and manual compaction introduces one extra chat action path to maintain.
+
+## 2026-03-09 - Companion rolling-memory context with token-aware auto-summarization
+- **Context:** Thread/message persistence existed, but provider calls still used only the latest prompt, causing continuity loss in longer conversations and no visibility into effective context saturation.
+- **Decision:** Add a dedicated `chat_thread_contexts` memory layer and thread-time context assembly (`system + rolling summary + recent raw turns`) with estimated token telemetry, plus automatic summary compaction at `70%` usage, warning at `85%`, and degraded-state guidance at `95%`.
+- **Why:** Preserves long-session coherence while controlling context growth and making memory health explicit in product UX.
+- **Tradeoff:** Token telemetry is estimation-based (`chars/4`) rather than tokenizer-exact; summaries prioritize compact continuity over verbatim replay.
+
 ## 2026-03-09 - Completion-aware progression + light gamification + deduped behavior notifications
 - **Context:** Core content, notifications, and rewards existed but progression clarity and behavioral loops were weak: users could finish items without visible pathing, rewards was deferred, and notifications were mostly passive.
 - **Decision:** Add completion-aware progression UX in `/library` and `/practices` (recommended-next + completion badges), expose authenticated completion inventory via `GET /api/v1/progress/completions`, replace `/account/rewards` placeholder with live milestone badges driven by journal/completion signals, and generate behavior notifications (content completion milestones and momentum reminders) with duplicate suppression windows.
@@ -431,3 +455,9 @@
 - **Decision:** Add `docs/PWA_RELEASE_CHECKLIST.md` and a Playwright smoke test (`tests/pwa.e2e.spec.ts`) validating manifest, `sw.js` headers, and offline route availability.
 - **Why:** Makes cache/version/install verification explicit and automatable in CI/local release flow.
 - **Tradeoff:** Slightly longer QA flow and one more e2e file to maintain as PWA behavior evolves.
+
+## 2026-03-09 - Reframe passkey security UX around multi-passkey management
+- **Context:** Security page showed a top-level "Register a passkey" card even when users already had registered passkeys, creating ambiguity about completion state and where to add additional passkeys.
+- **Decision:** Move passkey enrollment action into the "Registered passkeys" panel (as first/additional enrollment), keep top authentication cards focused on unmet setup state, and show passkey policy controls only when at least one passkey exists.
+- **Why:** Better matches WebAuthn best practice (multiple passkeys per account), clarifies what is already configured, and places add/manage actions where inventory is already visible.
+- **Tradeoff:** Registration CTA is no longer duplicated in multiple cards, so users must manage passkeys from a single section.

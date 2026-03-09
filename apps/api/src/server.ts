@@ -64,6 +64,7 @@ import {
   deleteSessionByTokenHash,
   deleteUserTotpSecret,
   getChatThreadByIdForUser,
+  getChatThreadContextByThreadId,
   getCommunityChallenges,
   getCommunityCircles,
   getCommunityEvents,
@@ -146,6 +147,7 @@ import {
   updatePractice,
   updateUserName,
   updateUserPasswordHash,
+  upsertChatThreadContext,
   upsertUserNotificationPreferences,
   upsertUserDevice,
   upsertUserCompanionPreferences,
@@ -153,7 +155,9 @@ import {
   upsertUserPreferences,
   upsertUserProfile,
   upsertUserTotpSecret,
+  type ChatEventType,
   type ChatThreadScope,
+  type ChatContextState,
   type ContentStatus,
   type CurrentUser,
   type OnboardingProfileRecord,
@@ -222,10 +226,55 @@ const EMAIL_VERIFICATION_TTL_MINUTES = 30;
 const EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS = 45;
 const TERMS_POLICY_VERSION = "2026-03-01";
 const PRIVACY_POLICY_VERSION = "2026-03-01";
+const DEFAULT_CHAT_CONTEXT_CAPACITY = 24000;
+const DEFAULT_CHAT_CONTEXT_SUMMARIZE_PERCENT = 70;
+const DEFAULT_CHAT_CONTEXT_WARNING_PERCENT = 85;
+const DEFAULT_CHAT_CONTEXT_DEGRADED_PERCENT = 95;
+const DEFAULT_CHAT_CONTEXT_RECENT_RAW_MESSAGES = 12;
+const CHAT_TOKEN_ESTIMATE_MESSAGE_OVERHEAD = 4;
+const CHAT_TOKEN_ESTIMATE_BASE_OVERHEAD = 3;
+const CHAT_TOKEN_ESTIMATE_WORD_RATIO = 1.35;
+const CHAT_TOKEN_ESTIMATE_PUNCTUATION_RATIO = 0.4;
+const CHAT_TOKEN_ESTIMATE_NEWLINE_RATIO = 0.2;
+const CHAT_SUMMARY_MAX_CHARS = 5000;
+const CHAT_SUMMARIZER_SYSTEM_PROMPT = `
+You summarize long conversations for memory retention.
+Preserve user goals, constraints, decisions, open questions, and concrete commitments.
+Keep a compact, factual tone in plain text.
+Do not add facts not present in the transcript.
+`.trim();
+const CHAT_CONTEXT_MEMORY_PREFIX =
+  "Conversation memory summary (earlier turns compressed for token efficiency):";
+const CHAT_EVENT_TYPES = [
+  "thread_first_message_created",
+  "thread_auto_titled",
+  "thread_renamed",
+  "thread_archived",
+  "thread_restored",
+  "thread_deleted",
+  "message_provider_error",
+  "context_auto_summarized",
+  "context_manual_summarized",
+  "context_warning",
+  "context_degraded",
+] as const;
+const CHAT_MEMORY_EVENT_TYPES = [
+  "context_auto_summarized",
+  "context_manual_summarized",
+  "context_warning",
+  "context_degraded",
+] as const;
 
 type AuthenticatedRequest = Request & {
   authUser: CurrentUser;
   authAccessToken: string;
+};
+
+type ChatModelMessageRole = "system" | "user" | "assistant";
+
+type ChatModelMessage = {
+  role: ChatModelMessageRole;
+  content: string;
 };
 
 type ChatProvider = (typeof DEFAULT_CHAT_PROVIDER_ORDER)[number];
@@ -240,6 +289,25 @@ type ChatProviderRuntime = {
 type ChatRuntimeConfig = {
   providers: ChatProviderRuntime[];
   globalSystemPrompt: string;
+};
+
+type ChatContextRuntimeConfig = {
+  capacity: number;
+  summarizePercent: number;
+  warningPercent: number;
+  degradedPercent: number;
+  recentRawMessages: number;
+};
+
+type ChatThreadContextTelemetry = {
+  summarizedMessageCount: number;
+  estimatedPromptTokens: number;
+  contextCapacity: number;
+  usagePercent: number;
+  state: ChatContextState;
+  autoSummariesCount: number;
+  lastSummarizedAt: string | null;
+  updatedAt: string;
 };
 
 type ProviderFailureDetail = {
@@ -270,6 +338,11 @@ const envSchema = z.object({
   DEEPSEEK_CHAT_MODEL: z.string().optional(),
   DEEPSEEK_BASE_URL: z.string().optional(),
   CHAT_GLOBAL_SYSTEM_PROMPT: z.string().optional(),
+  CHAT_CONTEXT_CAPACITY: z.string().optional(),
+  CHAT_CONTEXT_SUMMARIZE_PERCENT: z.string().optional(),
+  CHAT_CONTEXT_WARNING_PERCENT: z.string().optional(),
+  CHAT_CONTEXT_DEGRADED_PERCENT: z.string().optional(),
+  CHAT_CONTEXT_RECENT_RAW_MESSAGES: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM_EMAIL: z.string().optional(),
   EMAIL_TRANSPORT: z.string().optional(),
@@ -591,14 +664,9 @@ function formatOnboardingContext(profile: OnboardingProfileRecord | null): strin
   }
 
   const lines = [
-    `Primary objective: ${profile.primaryObjective}`,
-    `Biggest difficulty: ${profile.biggestDifficulty}`,
-    `Main need: ${profile.mainNeed}`,
-    `Daily time commitment: ${profile.dailyTimeCommitment}`,
-    `Preferred coaching style: ${profile.coachingStyle}`,
-    `Contemplative experience: ${profile.contemplativeExperience}`,
-    `Preferred practice format: ${profile.preferredPracticeFormat}`,
-    `30-day success definition: ${profile.successDefinition30d}`,
+    `Current intention: ${profile.primaryObjective}`,
+    `Daily time available: ${profile.dailyTimeCommitment}`,
+    `Preferred first step: ${profile.preferredPracticeFormat}`,
   ];
 
   if (profile.notes?.trim()) {
@@ -800,13 +868,31 @@ function fallbackThreadTitle(prompt: string): string {
 }
 
 function estimateApproxTokens(value: string): number {
-  const trimmed = value.trim();
+  const normalized = value.replace(/\r\n/g, "\n").trim();
 
-  if (!trimmed) {
+  if (!normalized) {
     return 0;
   }
 
-  return Math.ceil(trimmed.length / APPROX_CHARS_PER_TOKEN);
+  const charEstimate = Math.ceil(normalized.length / APPROX_CHARS_PER_TOKEN);
+  const wordCount = (normalized.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu) ?? []).length;
+  const punctuationCount = (normalized.match(/[^\p{L}\p{N}\s]/gu) ?? []).length;
+  const cjkCount =
+    (
+      normalized.match(
+        /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu,
+      ) ?? []
+    ).length;
+  const newlineCount = (normalized.match(/\n/g) ?? []).length;
+
+  const wordEstimate = Math.ceil(wordCount * CHAT_TOKEN_ESTIMATE_WORD_RATIO);
+  const punctuationEstimate = Math.ceil(
+    punctuationCount * CHAT_TOKEN_ESTIMATE_PUNCTUATION_RATIO,
+  );
+  const newlineEstimate = Math.ceil(newlineCount * CHAT_TOKEN_ESTIMATE_NEWLINE_RATIO);
+  const blendedEstimate = wordEstimate + punctuationEstimate + newlineEstimate;
+
+  return Math.max(1, charEstimate, wordEstimate, cjkCount, blendedEstimate);
 }
 
 function clipToApproxTokenLimit(value: string, maxTokens: number): string {
@@ -814,8 +900,145 @@ function clipToApproxTokenLimit(value: string, maxTokens: number): string {
     return value;
   }
 
-  const maxChars = Math.max(maxTokens * APPROX_CHARS_PER_TOKEN, 16);
-  return `${value.slice(0, maxChars).trimEnd()}...`;
+  let low = 0;
+  let high = value.length;
+  let best = "";
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const candidate = value.slice(0, mid).trimEnd();
+    const estimate = estimateApproxTokens(candidate);
+
+    if (estimate <= maxTokens) {
+      best = candidate;
+      low = mid + 1;
+      continue;
+    }
+
+    high = mid - 1;
+  }
+
+  if (!best) {
+    return "...";
+  }
+
+  return `${best}...`;
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function estimatePromptTokensForMessages(messages: ChatModelMessage[]): number {
+  return messages.reduce((sum, message) => {
+    return sum + estimateApproxTokens(message.content) + CHAT_TOKEN_ESTIMATE_MESSAGE_OVERHEAD;
+  }, CHAT_TOKEN_ESTIMATE_BASE_OVERHEAD);
+}
+
+function computeContextUsagePercent(estimatedPromptTokens: number, contextCapacity: number): number {
+  if (contextCapacity <= 0) {
+    return 100;
+  }
+  return Math.max(0, Math.min(100, Math.round((estimatedPromptTokens / contextCapacity) * 100)));
+}
+
+function deriveChatContextState(
+  usagePercent: number,
+  contextConfig: ChatContextRuntimeConfig,
+): ChatContextState {
+  if (usagePercent >= contextConfig.degradedPercent) {
+    return "degraded";
+  }
+  if (usagePercent >= contextConfig.warningPercent) {
+    return "warning";
+  }
+  return "ok";
+}
+
+function buildFallbackConversationSummary(
+  existingSummary: string,
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+): string {
+  const nextLines = messages
+    .map((message) => {
+      const normalized = normalizeWhitespace(message.content);
+      if (!normalized) {
+        return null;
+      }
+      const prefix = message.role === "user" ? "User" : "Assistant";
+      return `${prefix}: ${normalized.slice(0, 220)}`;
+    })
+    .filter((line): line is string => Boolean(line))
+    .slice(0, 16);
+
+  const previous = normalizeWhitespace(existingSummary);
+  const sections: string[] = [];
+  if (previous) {
+    sections.push(`Previous memory: ${previous.slice(0, 1500)}`);
+  }
+
+  if (nextLines.length > 0) {
+    sections.push(`Compressed turns:\n- ${nextLines.join("\n- ")}`);
+  }
+
+  const fallback = sections.join("\n\n").trim();
+  if (!fallback) {
+    return previous.slice(0, CHAT_SUMMARY_MAX_CHARS);
+  }
+
+  return fallback.slice(0, CHAT_SUMMARY_MAX_CHARS).trim();
+}
+
+async function summarizeConversationMemory(input: {
+  existingSummary: string;
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  chatConfig: ChatRuntimeConfig;
+}): Promise<string> {
+  if (input.messages.length === 0) {
+    return normalizeWhitespace(input.existingSummary).slice(0, CHAT_SUMMARY_MAX_CHARS);
+  }
+
+  const transcript = input.messages
+    .map((message) => {
+      const speaker = message.role === "user" ? "User" : "Assistant";
+      return `${speaker}: ${normalizeWhitespace(message.content)}`;
+    })
+    .join("\n")
+    .slice(0, 12000);
+
+  const userPrompt = `
+Existing summary:
+${input.existingSummary.trim() || "(none)"}
+
+Transcript segment to compress:
+${transcript}
+
+Create an updated merged memory summary in plain text.
+Include:
+- user goals and constraints
+- commitments and concrete actions
+- unresolved questions
+- any key personal preferences/context
+Keep it compact and factual.
+`.trim();
+
+  if (input.chatConfig.providers.length > 0) {
+    for (const provider of input.chatConfig.providers) {
+      const { answer } = await resolveProviderAnswer(
+        [
+          { role: "system", content: CHAT_SUMMARIZER_SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        provider,
+        { temperature: 0.2, maxTokens: 420 },
+      );
+      if (answer && answer.trim().length > 0) {
+        return answer.trim().slice(0, CHAT_SUMMARY_MAX_CHARS);
+      }
+    }
+  }
+
+  return buildFallbackConversationSummary(input.existingSummary, input.messages);
 }
 
 function composeEffectiveSystemPrompt(
@@ -1125,6 +1348,60 @@ function createChatRuntimeConfig(env: AppEnv): ChatRuntimeConfig {
   };
 }
 
+function parseBoundedInteger(
+  raw: string | undefined,
+  fallback: number,
+  limits: { min: number; max: number },
+): number {
+  if (!raw || raw.trim().length === 0) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(limits.min, Math.min(limits.max, parsed));
+}
+
+function createChatContextRuntimeConfig(env: AppEnv): ChatContextRuntimeConfig {
+  const capacity = parseBoundedInteger(env.CHAT_CONTEXT_CAPACITY, DEFAULT_CHAT_CONTEXT_CAPACITY, {
+    min: 512,
+    max: 200000,
+  });
+  const summarizePercent = parseBoundedInteger(
+    env.CHAT_CONTEXT_SUMMARIZE_PERCENT,
+    DEFAULT_CHAT_CONTEXT_SUMMARIZE_PERCENT,
+    { min: 20, max: 95 },
+  );
+  const warningPercentRaw = parseBoundedInteger(
+    env.CHAT_CONTEXT_WARNING_PERCENT,
+    DEFAULT_CHAT_CONTEXT_WARNING_PERCENT,
+    { min: 30, max: 98 },
+  );
+  const warningPercent = Math.max(summarizePercent + 1, warningPercentRaw);
+  const degradedPercentRaw = parseBoundedInteger(
+    env.CHAT_CONTEXT_DEGRADED_PERCENT,
+    DEFAULT_CHAT_CONTEXT_DEGRADED_PERCENT,
+    { min: 40, max: 99 },
+  );
+  const degradedPercent = Math.max(warningPercent + 1, degradedPercentRaw);
+  const recentRawMessages = parseBoundedInteger(
+    env.CHAT_CONTEXT_RECENT_RAW_MESSAGES,
+    DEFAULT_CHAT_CONTEXT_RECENT_RAW_MESSAGES,
+    { min: 4, max: 40 },
+  );
+
+  return {
+    capacity,
+    summarizePercent,
+    warningPercent: Math.min(warningPercent, 98),
+    degradedPercent: Math.min(degradedPercent, 99),
+    recentRawMessages,
+  };
+}
+
 type ChatCompletionPayload = {
   choices?: Array<{
     message?: {
@@ -1156,10 +1433,9 @@ function extractAssistantMessage(payload: ChatCompletionPayload): string | null 
 }
 
 async function resolveProviderAnswer(
-  prompt: string,
+  messages: ChatModelMessage[],
   provider: ChatProviderRuntime,
   options?: {
-    systemPrompt?: string;
     temperature?: number;
     maxTokens?: number;
   },
@@ -1176,16 +1452,7 @@ async function resolveProviderAnswer(
       },
       body: JSON.stringify({
         model: provider.model,
-        messages: [
-          {
-            role: "system",
-            content: options?.systemPrompt ?? DEFAULT_CHAT_GLOBAL_SYSTEM_PROMPT,
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
+        messages,
         temperature: options?.temperature ?? 0.6,
         max_tokens: options?.maxTokens,
       }),
@@ -1226,14 +1493,25 @@ async function resolveProviderAnswer(
   }
 }
 
+function getLatestUserPrompt(messages: ChatModelMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const candidate = messages[index];
+    if (candidate?.role === "user" && candidate.content.trim().length > 0) {
+      return candidate.content.trim();
+    }
+  }
+  return "";
+}
+
 async function resolveChatAnswer(
-  prompt: string,
+  messages: ChatModelMessage[],
   chatConfig: ChatRuntimeConfig,
-  systemPrompt: string,
   options?: {
     maxTokens?: number;
   },
 ): Promise<string> {
+  const prompt = getLatestUserPrompt(messages);
+
   if (chatConfig.providers.length === 0) {
     return fallbackChatAnswer(prompt);
   }
@@ -1241,8 +1519,7 @@ async function resolveChatAnswer(
   const failures: ProviderFailureDetail[] = [];
 
   for (const provider of chatConfig.providers) {
-    const { answer, failure } = await resolveProviderAnswer(prompt, provider, {
-      systemPrompt,
+    const { answer, failure } = await resolveProviderAnswer(messages, provider, {
       maxTokens: options?.maxTokens,
     });
     if (answer) {
@@ -1271,10 +1548,16 @@ async function resolveChatThreadTitle(
   const titlePrompt = `User prompt:\n${prompt}\n\nAssistant reply:\n${answer}\n\nGenerate the best short title for this conversation.`;
 
   for (const provider of chatConfig.providers) {
-    const { answer: candidate } = await resolveProviderAnswer(titlePrompt, provider, {
-      systemPrompt: CHAT_TITLE_SYSTEM_PROMPT,
+    const { answer: candidate } = await resolveProviderAnswer(
+      [
+        { role: "system", content: CHAT_TITLE_SYSTEM_PROMPT },
+        { role: "user", content: titlePrompt },
+      ],
+      provider,
+      {
       temperature: 0.2,
-    });
+      },
+    );
     if (!candidate) {
       continue;
     }
@@ -1590,46 +1873,46 @@ const chatPreferencesPatchSchema = z.object({
   customInstructions: z.string().max(1500),
 });
 
+const chatEventTypeSchema = z.enum(CHAT_EVENT_TYPES);
+
 const onboardingSchema = z.object({
-  primaryObjective: z
-    .enum([
-      "Calm anxiety",
-      "Build discipline",
-      "Better decisions",
-      "Improve relationships",
-      "Meaning & purpose",
-    ]),
-  biggestDifficulty: z
-    .enum([
-      "Overthinking",
-      "Procrastination",
-      "Emotional reactivity",
-      "Lack of consistency",
-      "Burnout",
-    ]),
-  mainNeed: z.enum(["Clarity", "Stability", "Motivation", "Accountability", "Better habits"]),
-  dailyTimeCommitment: z.enum(["5 min", "10 min", "20 min", "30+ min"]),
-  coachingStyle: z.enum(["Direct", "Gentle", "Question-led", "Structured step-by-step"]),
-  contemplativeExperience: z.enum(["New", "Some experience", "Advanced"]),
-  preferredPracticeFormat: z.enum([
-    "Journaling",
-    "Breath-grounding",
-    "Reflection prompts",
-    "Action plans",
-    "Mixed",
+  primaryObjective: z.enum([
+    "Calm anxiety",
+    "Build discipline",
+    "Make better decisions",
+    "Improve relationships",
+    "Find meaning",
   ]),
-  successDefinition30d: z.enum([
-    "Less reactivity",
-    "Consistent routine",
-    "Better focus",
-    "Better relationships",
-    "Greater inner calm",
+  dailyTimeCommitment: z.enum(["2 min", "5 min", "10 min", "20+ min"]),
+  preferredPracticeFormat: z.enum([
+    "A short practice",
+    "A reflection prompt",
+    "A lesson",
+    "A conversation with the Companion",
   ]),
   notes: z.string().trim().max(500).optional().default(""),
 });
 
 const adminChatEventsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).default(200),
+  threadId: z.string().uuid().optional(),
+  userId: z.string().uuid().optional(),
+  eventType: chatEventTypeSchema.optional(),
+  memoryOnly: z
+    .preprocess((value) => {
+      if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === "true" || normalized === "1") {
+          return true;
+        }
+        if (normalized === "false" || normalized === "0" || normalized === "") {
+          return false;
+        }
+      }
+      return value;
+    }, z.boolean())
+    .optional()
+    .default(false),
 });
 
 const adminPreviewAnalyticsQuerySchema = z.object({
@@ -1747,6 +2030,7 @@ export function createApp() {
   const app = express();
   const env = envSchema.parse(process.env);
   const chatConfig = createChatRuntimeConfig(env);
+  const chatContextConfig = createChatContextRuntimeConfig(env);
   const nodeEnv = process.env.NODE_ENV ?? "development";
 
   async function resolveEffectiveSystemPromptForUser(userId: string): Promise<string> {
@@ -1764,14 +2048,7 @@ export function createApp() {
   function recordChatEvent(input: {
     userId: string;
     threadId?: string | null;
-    eventType:
-      | "thread_first_message_created"
-      | "thread_auto_titled"
-      | "thread_renamed"
-      | "thread_archived"
-      | "thread_restored"
-      | "thread_deleted"
-      | "message_provider_error";
+    eventType: ChatEventType;
     payload?: Record<string, unknown>;
   }): void {
     try {
@@ -1789,6 +2066,74 @@ export function createApp() {
         }`,
       );
     }
+  }
+
+  function buildThreadPromptMessages(input: {
+    effectiveSystemPrompt: string;
+    summary: string;
+    messages: Array<{ role: "user" | "assistant"; content: string }>;
+  }): ChatModelMessage[] {
+    const modelMessages: ChatModelMessage[] = [
+      { role: "system", content: input.effectiveSystemPrompt },
+    ];
+
+    const trimmedSummary = input.summary.trim();
+    if (trimmedSummary) {
+      modelMessages.push({
+        role: "system",
+        content: `${CHAT_CONTEXT_MEMORY_PREFIX}\n${trimmedSummary}`,
+      });
+    }
+
+    for (const message of input.messages) {
+      modelMessages.push({
+        role: message.role,
+        content: message.content,
+      });
+    }
+
+    return modelMessages;
+  }
+
+  function contextNoticeMessage(input: {
+    state: ChatContextState;
+    summarizedThisTurn: boolean;
+  }): string | null {
+    if (input.state === "degraded") {
+      return "Context window is near full capacity. Start a new conversation for best continuity.";
+    }
+
+    if (input.summarizedThisTurn) {
+      return "Context auto-summarized to preserve long-term memory efficiency.";
+    }
+
+    if (input.state === "warning") {
+      return "Context usage is high. A summary may run automatically on upcoming turns.";
+    }
+
+    return null;
+  }
+
+  function toContextTelemetry(input: {
+    summarizedMessageCount: number;
+    estimatedPromptTokens: number;
+    contextCapacity: number;
+    usagePercent: number;
+    state: ChatContextState;
+    autoSummariesCount: number;
+    lastSummarizedAt: string | null;
+    updatedAt: string;
+  }): ChatThreadContextTelemetry {
+    return {
+      summarizedMessageCount: input.summarizedMessageCount,
+      estimatedPromptTokens: input.estimatedPromptTokens,
+      contextCapacity: input.contextCapacity,
+      usagePercent: input.usagePercent,
+      state: input.state,
+      autoSummariesCount: input.autoSummariesCount,
+      lastSummarizedAt: input.lastSummarizedAt,
+      updatedAt: input.updatedAt,
+    };
   }
 
   const allowedOrigins = (env.CORS_ORIGINS ?? "http://localhost:3000")
@@ -2717,13 +3062,8 @@ export function createApp() {
       id: randomUUID(),
       userId: authReq.authUser.id,
       primaryObjective: parsed.data.primaryObjective,
-      biggestDifficulty: parsed.data.biggestDifficulty,
-      mainNeed: parsed.data.mainNeed,
       dailyTimeCommitment: parsed.data.dailyTimeCommitment,
-      coachingStyle: parsed.data.coachingStyle,
-      contemplativeExperience: parsed.data.contemplativeExperience,
       preferredPracticeFormat: parsed.data.preferredPracticeFormat,
-      successDefinition30d: parsed.data.successDefinition30d,
       notes: parsed.data.notes,
     });
     const updatedUser = markUserOnboardingCompleted(authReq.authUser.id);
@@ -3142,9 +3482,11 @@ export function createApp() {
 
     try {
       const resolvedAnswer = await resolveChatAnswer(
-        parsed.data.prompt,
+        [
+          { role: "system", content: PREVIEW_CHAT_SYSTEM_PROMPT },
+          { role: "user", content: parsed.data.prompt },
+        ],
         chatConfig,
-        PREVIEW_CHAT_SYSTEM_PROMPT,
         { maxTokens: maxResponseTokens },
       );
       const answer = clipToApproxTokenLimit(resolvedAnswer, maxResponseTokens);
@@ -3246,7 +3588,13 @@ export function createApp() {
     let answer = "";
     try {
       const effectiveSystemPrompt = await resolveEffectiveSystemPromptForUser(authReq.authUser.id);
-      answer = await resolveChatAnswer(parsed.data.prompt, chatConfig, effectiveSystemPrompt);
+      answer = await resolveChatAnswer(
+        [
+          { role: "system", content: effectiveSystemPrompt },
+          { role: "user", content: parsed.data.prompt },
+        ],
+        chatConfig,
+      );
     } catch (error) {
       if (error instanceof ChatProvidersFailedError) {
         recordChatEvent({
@@ -3287,7 +3635,11 @@ export function createApp() {
     }
 
     const scope = parsed.data.scope as ChatThreadScope;
-    res.json({ data: listChatThreadsByUser(authReq.authUser.id, scope) });
+    const threads = listChatThreadsByUser(authReq.authUser.id, scope).map((thread) => ({
+      ...thread,
+      context: toContextTelemetry(thread.context),
+    }));
+    res.json({ data: threads });
   });
 
   app.post("/api/v1/chat/threads", requireAuth, (req, res) => {
@@ -3300,21 +3652,33 @@ export function createApp() {
     }
 
     const title = parsed.data.title?.trim() || `Thread ${new Date().toLocaleString()}`;
-    const thread = createChatThread({
+    const createdThread = createChatThread({
       id: randomUUID(),
       userId: authReq.authUser.id,
       title,
+    });
+    const threadContext = upsertChatThreadContext({
+      threadId: createdThread.id,
+      contextCapacity: chatContextConfig.capacity,
+      usagePercent: 0,
+      estimatedPromptTokens: 0,
+      state: "ok",
     });
 
     createNotification({
       id: randomUUID(),
       userId: authReq.authUser.id,
       title: "New chat thread created",
-      body: thread.title,
-      href: `/chat?thread=${thread.id}`,
+      body: createdThread.title,
+      href: `/chat?thread=${createdThread.id}`,
     });
 
-    res.status(201).json({ data: thread });
+    res.status(201).json({
+      data: {
+        ...createdThread,
+        context: toContextTelemetry(threadContext),
+      },
+    });
   });
 
   app.patch("/api/v1/chat/threads/:id", requireAuth, (req, res) => {
@@ -3436,6 +3800,148 @@ export function createApp() {
     res.json({ data: messages });
   });
 
+  app.post("/api/v1/chat/threads/:id/context/summarize", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const thread = getChatThreadByIdForUser(authReq.authUser.id, req.params.id);
+
+    if (!thread) {
+      res.status(404).json({ error: "Thread not found" });
+      return;
+    }
+
+    try {
+      const effectiveSystemPrompt = await resolveEffectiveSystemPromptForUser(authReq.authUser.id);
+      const allMessages = listChatMessagesForThread(authReq.authUser.id, thread.id) ?? [];
+      const persistedContext = getChatThreadContextByThreadId(thread.id);
+      const previousState = persistedContext?.state ?? "ok";
+      let summary = persistedContext?.summary ?? "";
+      let summarizedMessageCount = Math.min(
+        Math.max(0, persistedContext?.summarizedMessageCount ?? 0),
+        allMessages.length,
+      );
+      let autoSummariesCount = Math.max(0, persistedContext?.autoSummariesCount ?? 0);
+      let lastSummarizedAt = persistedContext?.lastSummarizedAt ?? null;
+
+      const liveMessages = allMessages.slice(summarizedMessageCount);
+      const summarizeCount = Math.max(0, liveMessages.length - chatContextConfig.recentRawMessages);
+      let summarizedThisTurn = false;
+      let summarizedTurnsThisRun = 0;
+
+      if (summarizeCount > 0) {
+        const toSummarize = liveMessages.slice(0, summarizeCount);
+        if (toSummarize.length > 0) {
+          summary = await summarizeConversationMemory({
+            existingSummary: summary,
+            messages: toSummarize.map((message) => ({
+              role: message.role,
+              content: message.content,
+            })),
+            chatConfig,
+          });
+          summarizedMessageCount = Math.min(allMessages.length, summarizedMessageCount + toSummarize.length);
+          autoSummariesCount += 1;
+          lastSummarizedAt = new Date().toISOString();
+          summarizedThisTurn = true;
+          summarizedTurnsThisRun = toSummarize.length;
+        }
+      }
+
+      const nextLiveMessages = allMessages.slice(summarizedMessageCount);
+      const modelMessages = buildThreadPromptMessages({
+        effectiveSystemPrompt,
+        summary,
+        messages: nextLiveMessages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+      });
+      const estimatedPromptTokens = estimatePromptTokensForMessages(modelMessages);
+      const usagePercent = computeContextUsagePercent(
+        estimatedPromptTokens,
+        chatContextConfig.capacity,
+      );
+      const state = deriveChatContextState(usagePercent, chatContextConfig);
+      const persistedUpdate = upsertChatThreadContext({
+        threadId: thread.id,
+        summary,
+        summarizedMessageCount,
+        estimatedPromptTokens,
+        contextCapacity: chatContextConfig.capacity,
+        usagePercent,
+        state,
+        autoSummariesCount,
+        lastSummarizedAt,
+      });
+
+      if (summarizedThisTurn) {
+        recordChatEvent({
+          userId: authReq.authUser.id,
+          threadId: thread.id,
+          eventType: "context_manual_summarized",
+          payload: {
+            summarizedMessageCount,
+            summarizedTurns: summarizedTurnsThisRun,
+            usagePercent,
+            estimatedPromptTokens,
+          },
+        });
+      }
+
+      if (state === "warning" && previousState === "ok") {
+        recordChatEvent({
+          userId: authReq.authUser.id,
+          threadId: thread.id,
+          eventType: "context_warning",
+          payload: {
+            usagePercent,
+            estimatedPromptTokens,
+            contextCapacity: chatContextConfig.capacity,
+          },
+        });
+      }
+
+      if (state === "degraded" && previousState !== "degraded") {
+        recordChatEvent({
+          userId: authReq.authUser.id,
+          threadId: thread.id,
+          eventType: "context_degraded",
+          payload: {
+            usagePercent,
+            estimatedPromptTokens,
+            contextCapacity: chatContextConfig.capacity,
+          },
+        });
+      }
+
+      const notice =
+        state === "degraded"
+          ? contextNoticeMessage({ state, summarizedThisTurn }) ??
+            "Context window is near full capacity. Start a new conversation for best continuity."
+          : summarizedThisTurn
+          ? "Context summarized manually to preserve long-term memory efficiency."
+          : `No compaction yet. Keep at least ${chatContextConfig.recentRawMessages} recent messages raw.`;
+
+      res.json({
+        data: {
+          context: {
+            ...toContextTelemetry(persistedUpdate),
+            summarizedThisTurn,
+            notice,
+          },
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(502).json({
+          error:
+            "Unable to summarize thread context right now. Retry in a moment.",
+        });
+        return;
+      }
+      throw error;
+    }
+  });
+
   app.post("/api/v1/chat/threads/:id/messages", requireAuth, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatSchema.safeParse(req.body);
@@ -3495,9 +4001,138 @@ export function createApp() {
     }
 
     let answer = "";
+    let responseContext: ChatThreadContextTelemetry & {
+      summarizedThisTurn: boolean;
+      notice: string | null;
+    } = {
+      summarizedMessageCount: thread.context.summarizedMessageCount,
+      estimatedPromptTokens: thread.context.estimatedPromptTokens,
+      contextCapacity: thread.context.contextCapacity,
+      usagePercent: thread.context.usagePercent,
+      state: thread.context.state,
+      autoSummariesCount: thread.context.autoSummariesCount,
+      lastSummarizedAt: thread.context.lastSummarizedAt,
+      updatedAt: thread.context.updatedAt,
+      summarizedThisTurn: false,
+      notice: null,
+    };
     try {
       const effectiveSystemPrompt = await resolveEffectiveSystemPromptForUser(authReq.authUser.id);
-      answer = await resolveChatAnswer(parsed.data.prompt, chatConfig, effectiveSystemPrompt);
+      const allMessages = listChatMessagesForThread(authReq.authUser.id, thread.id) ?? [];
+      const persistedContext = getChatThreadContextByThreadId(thread.id);
+      const previousState = persistedContext?.state ?? "ok";
+      let summary = persistedContext?.summary ?? "";
+      let summarizedMessageCount = Math.min(
+        Math.max(0, persistedContext?.summarizedMessageCount ?? 0),
+        allMessages.length,
+      );
+      let autoSummariesCount = Math.max(0, persistedContext?.autoSummariesCount ?? 0);
+      let lastSummarizedAt = persistedContext?.lastSummarizedAt ?? null;
+      let summarizedThisTurn = false;
+
+      const buildState = () => {
+        const liveMessages = allMessages.slice(summarizedMessageCount);
+        const modelMessages = buildThreadPromptMessages({
+          effectiveSystemPrompt,
+          summary,
+          messages: liveMessages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        });
+        const estimatedPromptTokens = estimatePromptTokensForMessages(modelMessages);
+        const usagePercent = computeContextUsagePercent(
+          estimatedPromptTokens,
+          chatContextConfig.capacity,
+        );
+        return { liveMessages, modelMessages, estimatedPromptTokens, usagePercent };
+      };
+
+      let built = buildState();
+
+      if (
+        built.usagePercent >= chatContextConfig.summarizePercent &&
+        built.liveMessages.length > chatContextConfig.recentRawMessages
+      ) {
+        const summarizeCount = built.liveMessages.length - chatContextConfig.recentRawMessages;
+        const toSummarize = built.liveMessages.slice(0, summarizeCount);
+
+        if (toSummarize.length > 0) {
+          summary = await summarizeConversationMemory({
+            existingSummary: summary,
+            messages: toSummarize.map((message) => ({
+              role: message.role,
+              content: message.content,
+            })),
+            chatConfig,
+          });
+
+          summarizedMessageCount = Math.min(allMessages.length, summarizedMessageCount + toSummarize.length);
+          autoSummariesCount += 1;
+          lastSummarizedAt = new Date().toISOString();
+          summarizedThisTurn = true;
+          built = buildState();
+        }
+      }
+
+      const state = deriveChatContextState(built.usagePercent, chatContextConfig);
+      const persistedUpdate = upsertChatThreadContext({
+        threadId: thread.id,
+        summary,
+        summarizedMessageCount,
+        estimatedPromptTokens: built.estimatedPromptTokens,
+        contextCapacity: chatContextConfig.capacity,
+        usagePercent: built.usagePercent,
+        state,
+        autoSummariesCount,
+        lastSummarizedAt,
+      });
+
+      if (summarizedThisTurn) {
+        recordChatEvent({
+          userId: authReq.authUser.id,
+          threadId: thread.id,
+          eventType: "context_auto_summarized",
+          payload: {
+            summarizedMessageCount,
+            usagePercent: built.usagePercent,
+            estimatedPromptTokens: built.estimatedPromptTokens,
+          },
+        });
+      }
+
+      if (state === "warning" && previousState === "ok") {
+        recordChatEvent({
+          userId: authReq.authUser.id,
+          threadId: thread.id,
+          eventType: "context_warning",
+          payload: {
+            usagePercent: built.usagePercent,
+            estimatedPromptTokens: built.estimatedPromptTokens,
+            contextCapacity: chatContextConfig.capacity,
+          },
+        });
+      }
+
+      if (state === "degraded" && previousState !== "degraded") {
+        recordChatEvent({
+          userId: authReq.authUser.id,
+          threadId: thread.id,
+          eventType: "context_degraded",
+          payload: {
+            usagePercent: built.usagePercent,
+            estimatedPromptTokens: built.estimatedPromptTokens,
+            contextCapacity: chatContextConfig.capacity,
+          },
+        });
+      }
+
+      answer = await resolveChatAnswer(built.modelMessages, chatConfig);
+      responseContext = {
+        ...toContextTelemetry(persistedUpdate),
+        summarizedThisTurn,
+        notice: contextNoticeMessage({ state, summarizedThisTurn }),
+      };
     } catch (error) {
       if (error instanceof ChatProvidersFailedError) {
         recordChatEvent({
@@ -3533,7 +4168,7 @@ export function createApp() {
       content: answer,
     });
 
-    res.status(201).json({ data: { answer } });
+    res.status(201).json({ data: { answer, context: responseContext } });
 
     if (!isUntitledThread) {
       return;
@@ -3908,7 +4543,33 @@ export function createApp() {
       return;
     }
 
-    res.json({ data: listChatEvents(parsed.data.limit) });
+    const memoryOnlyEventTypes = CHAT_MEMORY_EVENT_TYPES.map(
+      (eventType) => eventType as ChatEventType,
+    );
+    let eventTypes: ChatEventType[] | undefined;
+
+    if (parsed.data.memoryOnly) {
+      eventTypes = [...memoryOnlyEventTypes];
+    }
+
+    if (parsed.data.eventType) {
+      const selected = parsed.data.eventType as ChatEventType;
+      eventTypes = eventTypes ? eventTypes.filter((eventType) => eventType === selected) : [selected];
+    }
+
+    if (eventTypes && eventTypes.length === 0) {
+      res.json({ data: [] });
+      return;
+    }
+
+    res.json({
+      data: listChatEvents({
+        limit: parsed.data.limit,
+        threadId: parsed.data.threadId,
+        userId: parsed.data.userId,
+        eventTypes,
+      }),
+    });
   });
 
   app.get("/api/v1/admin/preview/analytics", requireAuth, requireAdmin, (req, res) => {

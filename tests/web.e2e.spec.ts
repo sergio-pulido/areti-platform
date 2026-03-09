@@ -14,6 +14,16 @@ async function openUserMenu(page: Page): Promise<void> {
   await expect(accountLink).toBeVisible();
 }
 
+async function completeOnboarding(page: Page): Promise<void> {
+  await page.getByText("Calm anxiety", { exact: true }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByText("5 min", { exact: true }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByText("A short practice", { exact: true }).click();
+  await page.getByRole("button", { name: "Create my path" }).click();
+  await expectUrl(page, /\/(practices|journal|library|chat)(\?|$)/);
+}
+
 async function signupAndGoDashboard(page: Page): Promise<void> {
   await page.goto("/auth/signup");
   const cookieAccept = page.getByRole("button", { name: "Accept cookies" });
@@ -37,24 +47,16 @@ async function signupAndGoDashboard(page: Page): Promise<void> {
     // Retry once if client-side validation state de-syncs during first hydration pass.
     await emailInput.fill(email);
     await expect(emailInput).toHaveValue(email);
+    await page.getByLabel("Password", { exact: true }).fill("StrongPass123");
+    await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
     await page.getByRole("button", { name: "Create free account" }).click();
   }
   await expectUrl(page, /\/auth\/verify-email/);
   await page.getByRole("button", { name: "Verify Email" }).click();
   await expectUrl(page, /\/onboarding/);
 
-  await page.getByLabel("Primary objective").selectOption("Calm anxiety");
-  await page.getByLabel("Current biggest difficulty").selectOption("Overthinking");
-  await page.getByLabel("Main need right now").selectOption("Clarity");
-  await page.getByLabel("Daily time available").selectOption("10 min");
-  await page.getByLabel("Preferred coaching style").selectOption("Direct");
-  await page
-    .getByLabel("Experience with contemplative practice")
-    .selectOption("New");
-  await page.getByLabel("Preferred practice format").selectOption("Mixed");
-  await page.getByLabel("30-day success definition").selectOption("Greater inner calm");
-
-  await page.getByRole("button", { name: "Continue to dashboard" }).click();
+  await completeOnboarding(page);
+  await page.goto("/dashboard");
   await expectUrl(page, /\/dashboard/);
 }
 
@@ -214,6 +216,8 @@ test("signin unverified state offers resend link and opens code verification", a
   } catch {
     await pendingEmailInput.fill(email);
     await expect(pendingEmailInput).toHaveValue(email);
+    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
     await page.getByRole("button", { name: "Create free account" }).click();
   }
   await expectUrl(page, /\/auth\/verify-email/);
@@ -766,16 +770,7 @@ test("account password flow validates failure and success", async ({ page }) => 
   await page.getByRole("button", { name: "Verify Email" }).click();
   await expectUrl(page, /\/onboarding/);
 
-  await page.getByLabel("Primary objective").selectOption("Calm anxiety");
-  await page.getByLabel("Current biggest difficulty").selectOption("Overthinking");
-  await page.getByLabel("Main need right now").selectOption("Clarity");
-  await page.getByLabel("Daily time available").selectOption("10 min");
-  await page.getByLabel("Preferred coaching style").selectOption("Direct");
-  await page.getByLabel("Experience with contemplative practice").selectOption("New");
-  await page.getByLabel("Preferred practice format").selectOption("Mixed");
-  await page.getByLabel("30-day success definition").selectOption("Greater inner calm");
-  await page.getByRole("button", { name: "Continue to dashboard" }).click();
-  await expectUrl(page, /\/dashboard/);
+  await completeOnboarding(page);
 
   await page.goto("/account/security");
   await page.getByLabel("Current password").fill("wrong-pass");

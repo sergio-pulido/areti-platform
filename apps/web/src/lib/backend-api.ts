@@ -204,6 +204,22 @@ export type ApiChatThread = {
   archived: boolean;
   createdAt: string;
   updatedAt: string;
+  context: ApiChatContextTelemetry;
+};
+
+export type ApiChatContextState = "ok" | "warning" | "degraded";
+
+export type ApiChatContextTelemetry = {
+  summarizedMessageCount: number;
+  estimatedPromptTokens: number;
+  contextCapacity: number;
+  usagePercent: number;
+  state: ApiChatContextState;
+  autoSummariesCount: number;
+  lastSummarizedAt: string | null;
+  updatedAt: string;
+  summarizedThisTurn?: boolean;
+  notice?: string | null;
 };
 
 export type ApiChatMessage = {
@@ -222,13 +238,8 @@ export type ApiOnboardingProfile = {
   id: string;
   userId: string;
   primaryObjective: string;
-  biggestDifficulty: string;
-  mainNeed: string;
   dailyTimeCommitment: string;
-  coachingStyle: string;
-  contemplativeExperience: string;
   preferredPracticeFormat: string;
-  successDefinition30d: string;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -243,17 +254,23 @@ export type ApiChatEvent = {
   id: string;
   userId: string;
   threadId: string | null;
-  eventType:
-    | "thread_first_message_created"
-    | "thread_auto_titled"
-    | "thread_renamed"
-    | "thread_archived"
-    | "thread_restored"
-    | "thread_deleted"
-    | "message_provider_error";
+  eventType: ApiChatEventType;
   payloadJson: string;
   createdAt: string;
 };
+
+export type ApiChatEventType =
+  | "thread_first_message_created"
+  | "thread_auto_titled"
+  | "thread_renamed"
+  | "thread_archived"
+  | "thread_restored"
+  | "thread_deleted"
+  | "message_provider_error"
+  | "context_auto_summarized"
+  | "context_manual_summarized"
+  | "context_warning"
+  | "context_degraded";
 
 export type ApiChatThreadScope = "active" | "archived" | "all";
 
@@ -824,11 +841,33 @@ export async function apiAdminAudit(token: string, limit = 40): Promise<ApiAdmin
   return requestJson<ApiAdminAuditLog[]>(`/api/v1/admin/audit?limit=${limit}`, withAuth(token));
 }
 
-export async function apiAdminChatEvents(token: string, limit = 200): Promise<ApiChatEvent[]> {
-  return requestJson<ApiChatEvent[]>(
-    `/api/v1/admin/chat/events?limit=${limit}`,
-    withAuth(token),
-  );
+export async function apiAdminChatEvents(
+  token: string,
+  input?: {
+    limit?: number;
+    threadId?: string;
+    userId?: string;
+    eventType?: ApiChatEventType;
+    memoryOnly?: boolean;
+  },
+): Promise<ApiChatEvent[]> {
+  const params = new URLSearchParams();
+  const limit = input?.limit ?? 200;
+  params.set("limit", String(limit));
+  if (input?.threadId) {
+    params.set("threadId", input.threadId);
+  }
+  if (input?.userId) {
+    params.set("userId", input.userId);
+  }
+  if (input?.eventType) {
+    params.set("eventType", input.eventType);
+  }
+  if (input?.memoryOnly) {
+    params.set("memoryOnly", "true");
+  }
+
+  return requestJson<ApiChatEvent[]>(`/api/v1/admin/chat/events?${params.toString()}`, withAuth(token));
 }
 
 export async function apiAdminPreviewAnalytics(
@@ -1408,8 +1447,8 @@ export async function apiChatPostMessage(
   token: string,
   threadId: string,
   prompt: string,
-): Promise<{ answer: string }> {
-  return requestJson<{ answer: string }>(
+): Promise<{ answer: string; context: ApiChatContextTelemetry }> {
+  return requestJson<{ answer: string; context: ApiChatContextTelemetry }>(
     `/api/v1/chat/threads/${threadId}/messages`,
     withAuth(token, {
       method: "POST",
@@ -1430,13 +1469,8 @@ export async function apiUpsertOnboarding(
   token: string,
   input: {
     primaryObjective: string;
-    biggestDifficulty: string;
-    mainNeed: string;
     dailyTimeCommitment: string;
-    coachingStyle: string;
-    contemplativeExperience: string;
     preferredPracticeFormat: string;
-    successDefinition30d: string;
     notes?: string;
   },
 ): Promise<ApiOnboardingResponse> {

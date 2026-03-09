@@ -9,6 +9,7 @@ import {
   adminAuditLogs,
   chatEvents,
   chatMessages,
+  chatThreadContexts,
   chatThreads,
   communityChallenges,
   communityCircles,
@@ -131,6 +132,7 @@ export type ChatThreadRecord = {
   archived: boolean;
   createdAt: string;
   updatedAt: string;
+  context: ChatThreadContextRecord;
 };
 
 export type ChatMessageRecord = {
@@ -142,6 +144,23 @@ export type ChatMessageRecord = {
 };
 
 export type ChatThreadScope = "active" | "archived" | "all";
+
+export type ChatContextState = "ok" | "warning" | "degraded";
+
+export type ChatThreadContextRecord = {
+  id: string;
+  threadId: string;
+  summary: string;
+  summarizedMessageCount: number;
+  estimatedPromptTokens: number;
+  contextCapacity: number;
+  usagePercent: number;
+  state: ChatContextState;
+  autoSummariesCount: number;
+  lastSummarizedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type CompanionPreferencesRecord = {
   id: string;
@@ -158,7 +177,11 @@ export type ChatEventType =
   | "thread_archived"
   | "thread_restored"
   | "thread_deleted"
-  | "message_provider_error";
+  | "message_provider_error"
+  | "context_auto_summarized"
+  | "context_manual_summarized"
+  | "context_warning"
+  | "context_degraded";
 
 export type ChatEventRecord = {
   id: string;
@@ -407,6 +430,26 @@ const defaultUserProfile: Omit<UserProfileRecord, "id" | "userId" | "createdAt" 
   socialLinks: [],
 };
 
+const DEFAULT_CHAT_CONTEXT_CAPACITY = 24000;
+
+function buildDefaultChatThreadContext(threadId: string): ChatThreadContextRecord {
+  const timestamp = nowIso();
+  return {
+    id: `virtual-${threadId}`,
+    threadId,
+    summary: "",
+    summarizedMessageCount: 0,
+    estimatedPromptTokens: 0,
+    contextCapacity: DEFAULT_CHAT_CONTEXT_CAPACITY,
+    usagePercent: 0,
+    state: "ok",
+    autoSummariesCount: 0,
+    lastSummarizedAt: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
 function seedWelcomeNotifications(userId: string): void {
   const timestamp = nowIso();
 
@@ -540,6 +583,7 @@ const db = drizzle(sqlite, {
     userNotifications,
     chatThreads,
     chatMessages,
+    chatThreadContexts,
     userCompanionPreferences,
     chatEvents,
     journalEntries,
@@ -589,6 +633,24 @@ function ensureCompatibilitySchema(): void {
   sqlite.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS user_content_completions_user_kind_slug_unique
       ON user_content_completions (user_id, content_kind, content_slug);
+  `);
+
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS chat_thread_contexts (
+      id text PRIMARY KEY NOT NULL,
+      thread_id text NOT NULL UNIQUE,
+      summary text DEFAULT '' NOT NULL,
+      summarized_message_count integer DEFAULT 0 NOT NULL,
+      estimated_prompt_tokens integer DEFAULT 0 NOT NULL,
+      context_capacity integer DEFAULT 24000 NOT NULL,
+      usage_percent integer DEFAULT 0 NOT NULL,
+      state text DEFAULT 'ok' NOT NULL,
+      auto_summaries_count integer DEFAULT 0 NOT NULL,
+      last_summarized_at text,
+      created_at text NOT NULL,
+      updated_at text NOT NULL,
+      FOREIGN KEY (thread_id) REFERENCES chat_threads(id) ON DELETE cascade
+    );
   `);
 }
 
@@ -1544,15 +1606,22 @@ export function upsertUserOnboardingProfile(input: {
   id: string;
   userId: string;
   primaryObjective: string;
-  biggestDifficulty: string;
-  mainNeed: string;
+  biggestDifficulty?: string | null;
+  mainNeed?: string | null;
   dailyTimeCommitment: string;
-  coachingStyle: string;
-  contemplativeExperience: string;
+  coachingStyle?: string | null;
+  contemplativeExperience?: string | null;
   preferredPracticeFormat: string;
-  successDefinition30d: string;
+  successDefinition30d?: string | null;
   notes?: string | null;
 }): OnboardingProfileRecord {
+  const defaultDeferredValue = "Deferred to progressive profiling";
+  const biggestDifficulty = input.biggestDifficulty ?? defaultDeferredValue;
+  const mainNeed = input.mainNeed ?? defaultDeferredValue;
+  const coachingStyle = input.coachingStyle ?? defaultDeferredValue;
+  const contemplativeExperience = input.contemplativeExperience ?? defaultDeferredValue;
+  const successDefinition30d = input.successDefinition30d ?? defaultDeferredValue;
+
   const existing = db
     .select({ id: userOnboardingProfiles.id })
     .from(userOnboardingProfiles)
@@ -1566,13 +1635,13 @@ export function upsertUserOnboardingProfile(input: {
     db.update(userOnboardingProfiles)
       .set({
         primaryObjective: input.primaryObjective,
-        biggestDifficulty: input.biggestDifficulty,
-        mainNeed: input.mainNeed,
+        biggestDifficulty,
+        mainNeed,
         dailyTimeCommitment: input.dailyTimeCommitment,
-        coachingStyle: input.coachingStyle,
-        contemplativeExperience: input.contemplativeExperience,
+        coachingStyle,
+        contemplativeExperience,
         preferredPracticeFormat: input.preferredPracticeFormat,
-        successDefinition30d: input.successDefinition30d,
+        successDefinition30d,
         notes: input.notes ?? null,
         updatedAt: timestamp,
       })
@@ -1584,13 +1653,13 @@ export function upsertUserOnboardingProfile(input: {
         id: input.id,
         userId: input.userId,
         primaryObjective: input.primaryObjective,
-        biggestDifficulty: input.biggestDifficulty,
-        mainNeed: input.mainNeed,
+        biggestDifficulty,
+        mainNeed,
         dailyTimeCommitment: input.dailyTimeCommitment,
-        coachingStyle: input.coachingStyle,
-        contemplativeExperience: input.contemplativeExperience,
+        coachingStyle,
+        contemplativeExperience,
         preferredPracticeFormat: input.preferredPracticeFormat,
-        successDefinition30d: input.successDefinition30d,
+        successDefinition30d,
         notes: input.notes ?? null,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -3294,21 +3363,118 @@ export function listChatThreadsByUser(
           eq(chatThreads.archived, scope === "archived"),
         );
 
-  return db.select().from(chatThreads).where(scopeFilter).orderBy(desc(chatThreads.updatedAt)).all();
+  const rows = db
+    .select({
+      id: chatThreads.id,
+      userId: chatThreads.userId,
+      title: chatThreads.title,
+      archived: chatThreads.archived,
+      createdAt: chatThreads.createdAt,
+      updatedAt: chatThreads.updatedAt,
+      contextId: chatThreadContexts.id,
+      contextThreadId: chatThreadContexts.threadId,
+      contextSummary: chatThreadContexts.summary,
+      contextSummarizedMessageCount: chatThreadContexts.summarizedMessageCount,
+      contextEstimatedPromptTokens: chatThreadContexts.estimatedPromptTokens,
+      contextCapacity: chatThreadContexts.contextCapacity,
+      contextUsagePercent: chatThreadContexts.usagePercent,
+      contextState: chatThreadContexts.state,
+      contextAutoSummariesCount: chatThreadContexts.autoSummariesCount,
+      contextLastSummarizedAt: chatThreadContexts.lastSummarizedAt,
+      contextCreatedAt: chatThreadContexts.createdAt,
+      contextUpdatedAt: chatThreadContexts.updatedAt,
+    })
+    .from(chatThreads)
+    .leftJoin(chatThreadContexts, eq(chatThreadContexts.threadId, chatThreads.id))
+    .where(scopeFilter)
+    .orderBy(desc(chatThreads.updatedAt))
+    .all();
+
+  return rows.map((row) => ({
+    id: row.id,
+    userId: row.userId,
+    title: row.title,
+    archived: row.archived,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    context: row.contextId
+      ? {
+          id: row.contextId,
+          threadId: row.contextThreadId ?? row.id,
+          summary: row.contextSummary ?? "",
+          summarizedMessageCount: row.contextSummarizedMessageCount ?? 0,
+          estimatedPromptTokens: row.contextEstimatedPromptTokens ?? 0,
+          contextCapacity: row.contextCapacity ?? DEFAULT_CHAT_CONTEXT_CAPACITY,
+          usagePercent: row.contextUsagePercent ?? 0,
+          state: normalizeChatContextState(row.contextState),
+          autoSummariesCount: row.contextAutoSummariesCount ?? 0,
+          lastSummarizedAt: row.contextLastSummarizedAt ?? null,
+          createdAt: row.contextCreatedAt ?? row.createdAt,
+          updatedAt: row.contextUpdatedAt ?? row.updatedAt,
+        }
+      : buildDefaultChatThreadContext(row.id),
+  }));
 }
 
 export function getChatThreadByIdForUser(
   userId: string,
   threadId: string,
 ): ChatThreadRecord | null {
-  const existing = db
-    .select()
+  const row = db
+    .select({
+      id: chatThreads.id,
+      userId: chatThreads.userId,
+      title: chatThreads.title,
+      archived: chatThreads.archived,
+      createdAt: chatThreads.createdAt,
+      updatedAt: chatThreads.updatedAt,
+      contextId: chatThreadContexts.id,
+      contextThreadId: chatThreadContexts.threadId,
+      contextSummary: chatThreadContexts.summary,
+      contextSummarizedMessageCount: chatThreadContexts.summarizedMessageCount,
+      contextEstimatedPromptTokens: chatThreadContexts.estimatedPromptTokens,
+      contextCapacity: chatThreadContexts.contextCapacity,
+      contextUsagePercent: chatThreadContexts.usagePercent,
+      contextState: chatThreadContexts.state,
+      contextAutoSummariesCount: chatThreadContexts.autoSummariesCount,
+      contextLastSummarizedAt: chatThreadContexts.lastSummarizedAt,
+      contextCreatedAt: chatThreadContexts.createdAt,
+      contextUpdatedAt: chatThreadContexts.updatedAt,
+    })
     .from(chatThreads)
+    .leftJoin(chatThreadContexts, eq(chatThreadContexts.threadId, chatThreads.id))
     .where(and(eq(chatThreads.userId, userId), eq(chatThreads.id, threadId)))
     .limit(1)
     .get();
 
-  return existing ?? null;
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    userId: row.userId,
+    title: row.title,
+    archived: row.archived,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    context: row.contextId
+      ? {
+          id: row.contextId,
+          threadId: row.contextThreadId ?? row.id,
+          summary: row.contextSummary ?? "",
+          summarizedMessageCount: row.contextSummarizedMessageCount ?? 0,
+          estimatedPromptTokens: row.contextEstimatedPromptTokens ?? 0,
+          contextCapacity: row.contextCapacity ?? DEFAULT_CHAT_CONTEXT_CAPACITY,
+          usagePercent: row.contextUsagePercent ?? 0,
+          state: normalizeChatContextState(row.contextState),
+          autoSummariesCount: row.contextAutoSummariesCount ?? 0,
+          lastSummarizedAt: row.contextLastSummarizedAt ?? null,
+          createdAt: row.contextCreatedAt ?? row.createdAt,
+          updatedAt: row.contextUpdatedAt ?? row.updatedAt,
+        }
+      : buildDefaultChatThreadContext(row.id),
+  };
 }
 
 export function createChatThread(input: {
@@ -3317,17 +3483,37 @@ export function createChatThread(input: {
   title: string;
 }): ChatThreadRecord {
   const timestamp = nowIso();
+  const contextId = cryptoRandomId();
 
-  db.insert(chatThreads)
-    .values({
-      id: input.id,
-      userId: input.userId,
-      title: input.title,
-      archived: false,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-    .run();
+  db.transaction(() => {
+    db.insert(chatThreads)
+      .values({
+        id: input.id,
+        userId: input.userId,
+        title: input.title,
+        archived: false,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
+
+    db.insert(chatThreadContexts)
+      .values({
+        id: contextId,
+        threadId: input.id,
+        summary: "",
+        summarizedMessageCount: 0,
+        estimatedPromptTokens: 0,
+        contextCapacity: DEFAULT_CHAT_CONTEXT_CAPACITY,
+        usagePercent: 0,
+        state: "ok",
+        autoSummariesCount: 0,
+        lastSummarizedAt: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
+  });
 
   return {
     id: input.id,
@@ -3336,6 +3522,20 @@ export function createChatThread(input: {
     archived: false,
     createdAt: timestamp,
     updatedAt: timestamp,
+    context: {
+      id: contextId,
+      threadId: input.id,
+      summary: "",
+      summarizedMessageCount: 0,
+      estimatedPromptTokens: 0,
+      contextCapacity: DEFAULT_CHAT_CONTEXT_CAPACITY,
+      usagePercent: 0,
+      state: "ok",
+      autoSummariesCount: 0,
+      lastSummarizedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
   };
 }
 
@@ -3415,6 +3615,106 @@ export function createChatMessage(input: {
   });
 }
 
+function normalizeChatContextState(value: string | null | undefined): ChatContextState {
+  if (value === "warning" || value === "degraded") {
+    return value;
+  }
+  return "ok";
+}
+
+export function getChatThreadContextByThreadId(threadId: string): ChatThreadContextRecord | null {
+  const existing = db
+    .select()
+    .from(chatThreadContexts)
+    .where(eq(chatThreadContexts.threadId, threadId))
+    .limit(1)
+    .get();
+
+  if (!existing) {
+    return null;
+  }
+
+  return {
+    ...existing,
+    state: normalizeChatContextState(existing.state),
+  };
+}
+
+export function upsertChatThreadContext(input: {
+  threadId: string;
+  summary?: string;
+  summarizedMessageCount?: number;
+  estimatedPromptTokens?: number;
+  contextCapacity?: number;
+  usagePercent?: number;
+  state?: ChatContextState;
+  autoSummariesCount?: number;
+  lastSummarizedAt?: string | null;
+}): ChatThreadContextRecord {
+  const existing = getChatThreadContextByThreadId(input.threadId);
+  const fallback = buildDefaultChatThreadContext(input.threadId);
+  const now = nowIso();
+
+  const nextRecord: ChatThreadContextRecord = {
+    id: existing?.id ?? cryptoRandomId(),
+    threadId: input.threadId,
+    summary: input.summary ?? existing?.summary ?? fallback.summary,
+    summarizedMessageCount:
+      input.summarizedMessageCount ?? existing?.summarizedMessageCount ?? fallback.summarizedMessageCount,
+    estimatedPromptTokens:
+      input.estimatedPromptTokens ?? existing?.estimatedPromptTokens ?? fallback.estimatedPromptTokens,
+    contextCapacity: input.contextCapacity ?? existing?.contextCapacity ?? fallback.contextCapacity,
+    usagePercent: input.usagePercent ?? existing?.usagePercent ?? fallback.usagePercent,
+    state: input.state ?? existing?.state ?? fallback.state,
+    autoSummariesCount: input.autoSummariesCount ?? existing?.autoSummariesCount ?? fallback.autoSummariesCount,
+    lastSummarizedAt:
+      input.lastSummarizedAt === undefined
+        ? (existing?.lastSummarizedAt ?? fallback.lastSummarizedAt)
+        : input.lastSummarizedAt,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  };
+
+  db.transaction(() => {
+    if (existing) {
+      db.update(chatThreadContexts)
+        .set({
+          summary: nextRecord.summary,
+          summarizedMessageCount: nextRecord.summarizedMessageCount,
+          estimatedPromptTokens: nextRecord.estimatedPromptTokens,
+          contextCapacity: nextRecord.contextCapacity,
+          usagePercent: nextRecord.usagePercent,
+          state: nextRecord.state,
+          autoSummariesCount: nextRecord.autoSummariesCount,
+          lastSummarizedAt: nextRecord.lastSummarizedAt,
+          updatedAt: nextRecord.updatedAt,
+        })
+        .where(eq(chatThreadContexts.threadId, input.threadId))
+        .run();
+      return;
+    }
+
+    db.insert(chatThreadContexts)
+      .values({
+        id: nextRecord.id,
+        threadId: nextRecord.threadId,
+        summary: nextRecord.summary,
+        summarizedMessageCount: nextRecord.summarizedMessageCount,
+        estimatedPromptTokens: nextRecord.estimatedPromptTokens,
+        contextCapacity: nextRecord.contextCapacity,
+        usagePercent: nextRecord.usagePercent,
+        state: nextRecord.state,
+        autoSummariesCount: nextRecord.autoSummariesCount,
+        lastSummarizedAt: nextRecord.lastSummarizedAt,
+        createdAt: nextRecord.createdAt,
+        updatedAt: nextRecord.updatedAt,
+      })
+      .run();
+  });
+
+  return nextRecord;
+}
+
 export function getUserCompanionPreferences(userId: string): CompanionPreferencesRecord | null {
   const existing = db
     .select()
@@ -3481,17 +3781,44 @@ export function createChatEvent(input: {
     .run();
 }
 
-export function listChatEvents(limit: number): ChatEventRecord[] {
-  return db
-    .select()
-    .from(chatEvents)
-    .orderBy(desc(chatEvents.createdAt))
-    .limit(limit)
-    .all()
-    .map((row) => ({
-      ...row,
-      eventType: row.eventType as ChatEventType,
-    }));
+export function listChatEvents(input: {
+  limit: number;
+  threadId?: string;
+  userId?: string;
+  eventTypes?: ChatEventType[];
+}): ChatEventRecord[] {
+  const filters: SQL[] = [];
+  const eventTypes = input.eventTypes ?? [];
+
+  if (input.threadId) {
+    filters.push(eq(chatEvents.threadId, input.threadId));
+  }
+
+  if (input.userId) {
+    filters.push(eq(chatEvents.userId, input.userId));
+  }
+
+  if (eventTypes.length === 1) {
+    filters.push(eq(chatEvents.eventType, eventTypes[0]));
+  } else if (eventTypes.length > 1) {
+    const eventTypeFilters = eventTypes.map((eventType) => eq(chatEvents.eventType, eventType));
+    const compoundFilter = or(...eventTypeFilters);
+    if (compoundFilter) {
+      filters.push(compoundFilter);
+    }
+  }
+
+  const whereClause = filters.length > 0 ? and(...filters) : undefined;
+
+  const query = db.select().from(chatEvents);
+  const rows = whereClause
+    ? query.where(whereClause).orderBy(desc(chatEvents.createdAt)).limit(input.limit).all()
+    : query.orderBy(desc(chatEvents.createdAt)).limit(input.limit).all();
+
+  return rows.map((row) => ({
+    ...row,
+    eventType: row.eventType as ChatEventType,
+  }));
 }
 
 export function createPreviewEvent(input: {

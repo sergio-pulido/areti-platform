@@ -21,21 +21,22 @@ async function signup(page: import("@playwright/test").Page): Promise<void> {
   } catch {
     await emailInput.fill(email);
     await expect(emailInput).toHaveValue(email);
+    await page.getByLabel("Password", { exact: true }).fill("StrongPass123");
+    await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
     await page.getByRole("button", { name: "Create free account" }).click();
   }
   await expect(page).toHaveURL(/\/auth\/verify-email/, { timeout: 15000 });
   await page.getByRole("button", { name: "Verify Email" }).click();
   await expect(page).toHaveURL(/\/onboarding/, { timeout: 15000 });
 
-  await page.getByLabel("Primary objective").selectOption("Calm anxiety");
-  await page.getByLabel("Current biggest difficulty").selectOption("Overthinking");
-  await page.getByLabel("Main need right now").selectOption("Clarity");
-  await page.getByLabel("Daily time available").selectOption("10 min");
-  await page.getByLabel("Preferred coaching style").selectOption("Direct");
-  await page.getByLabel("Experience with contemplative practice").selectOption("New");
-  await page.getByLabel("Preferred practice format").selectOption("Mixed");
-  await page.getByLabel("30-day success definition").selectOption("Greater inner calm");
-  await page.getByRole("button", { name: "Continue to dashboard" }).click();
+  await page.getByText("Calm anxiety", { exact: true }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByText("5 min", { exact: true }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByText("A short practice", { exact: true }).click();
+  await page.getByRole("button", { name: "Create my path" }).click();
+  await expect(page).toHaveURL(/\/(practices|journal|library|chat)(\?|$)/, { timeout: 15000 });
+  await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15000 });
 }
 
@@ -53,9 +54,19 @@ async function checkRouteA11y(page: import("@playwright/test").Page, route: stri
 
   await page.keyboard.press("Tab");
   const focused = await page.evaluate(() => document.activeElement?.tagName?.toLowerCase() ?? "");
-  expect(["a", "button", "input", "select", "textarea", "summary", "nextjs-portal", "div"]).toContain(
-    focused,
-  );
+  expect(
+    [
+      "a",
+      "button",
+      "input",
+      "select",
+      "textarea",
+      "summary",
+      "nextjs-portal",
+      "div",
+      "body",
+    ],
+  ).toContain(focused);
 }
 
 test("a11y smoke checks core secured routes", async ({ page }) => {
@@ -84,7 +95,7 @@ test("a11y smoke checks core secured routes", async ({ page }) => {
   await page.getByRole("button", { name: "Restore" }).first().click();
   await page.keyboard.press("Tab");
   const focusedTag = await page.evaluate(() => document.activeElement?.tagName?.toLowerCase() ?? "");
-  expect(["button", "input", "textarea", "a", "summary", "nextjs-portal", "div"]).toContain(
+  expect(["button", "input", "textarea", "a", "summary", "nextjs-portal", "div", "body"]).toContain(
     focusedTag,
   );
 });

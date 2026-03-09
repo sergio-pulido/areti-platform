@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { AuthActionState } from "@/actions/auth-state";
 import { createSession, deleteCurrentSession, requireSession } from "@/lib/auth/session";
-import { onboardingSchema } from "@/lib/onboarding";
+import { onboardingSchema, resolvePersonalizedOnboardingDestination } from "@/lib/onboarding";
 import { signinSchema, signupSchema } from "@/lib/auth/validation";
 import {
   apiResendVerification,
@@ -307,21 +307,15 @@ export async function saveOnboardingAction(
 
   const input = {
     primaryObjective: getString(formData, "primaryObjective"),
-    biggestDifficulty: getString(formData, "biggestDifficulty"),
-    mainNeed: getString(formData, "mainNeed"),
     dailyTimeCommitment: getString(formData, "dailyTimeCommitment"),
-    coachingStyle: getString(formData, "coachingStyle"),
-    contemplativeExperience: getString(formData, "contemplativeExperience"),
     preferredPracticeFormat: getString(formData, "preferredPracticeFormat"),
-    successDefinition30d: getString(formData, "successDefinition30d"),
-    notes: getString(formData, "notes"),
   };
 
   const parsed = onboardingSchema.safeParse(input);
 
   if (!parsed.success) {
     return {
-      error: "Please complete all required onboarding fields.",
+      error: "Choose one option in each step to continue.",
       fieldErrors: parsed.error.flatten().fieldErrors,
     };
   }
@@ -341,8 +335,18 @@ export async function saveOnboardingAction(
   revalidatePath("/account/preferences");
 
   const redirectTo = getString(formData, "redirectTo").trim();
-  if (redirectTo.startsWith("/")) {
+  if (redirectTo.startsWith("/") && redirectTo !== "/dashboard") {
     redirect(redirectTo);
+  }
+
+  if (redirectTo === "/dashboard") {
+    redirect(
+      resolvePersonalizedOnboardingDestination({
+        primaryObjective: parsed.data.primaryObjective,
+        dailyTimeCommitment: parsed.data.dailyTimeCommitment,
+        preferredPracticeFormat: parsed.data.preferredPracticeFormat,
+      }),
+    );
   }
 
   redirect("/dashboard");
