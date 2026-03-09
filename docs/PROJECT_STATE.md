@@ -33,6 +33,7 @@
 - Added scheduler-ready notification digest job (`npm run job:notification-digest`) for daily/weekly reminder generation based on user digest preferences.
 - Notification digest job now includes single-run lock protection (with stale lock recovery) and emits richer execution metrics (`digestEnabled`, `created`, `dedupeSkipped`) for operations visibility.
 - Digest runs are now persisted in `system_job_runs` and exposed via admin API (`GET /api/v1/admin/system/jobs/runs`) for operational review.
+- CMS admin overview now includes a "System Job Runs" panel for recent notification-digest telemetry (status + counters + timing).
 - Signup now requires mandatory Terms/Privacy acceptance, stores auditable legal consent records, and defers session creation until email verification.
 - Auth pages are now conversion-optimized with simplified auth-only topbar nav, clearer value-focused hero copy, stronger field/CTA hierarchy, and premium high-contrast form states.
 - Signup now removes `name` and `confirmPassword` from first step, uses a single required legal consent checkbox, and keeps passkey as a first-class secondary path.

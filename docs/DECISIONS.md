@@ -36,6 +36,12 @@
 - **Why:** Gives lightweight historical visibility for scheduler health and output volume without external log dependencies.
 - **Tradeoff:** Adds small write overhead per job execution and modest schema/API surface growth.
 
+## 2026-03-09 - Surface job telemetry directly in CMS admin overview
+- **Context:** API-level telemetry exists, but operators needed in-product visibility without manual API calls.
+- **Decision:** Add a "System Job Runs" panel to `/creator/cms` showing recent `notification_digest` runs with status, timing, and output counters.
+- **Why:** Reduces operational friction and improves release-day confidence from a single admin dashboard.
+- **Tradeoff:** CMS page now performs one additional admin API request.
+
 ## 2026-03-09 - Public preview section with no-auth feature walkthroughs
 - **Context:** Product needed a low-friction way for guests to explore key experiences before signup, while preserving existing authenticated flows.
 - **Decision:** Add a dedicated public preview section (`/preview`) with unauthenticated preview pages for chat, dashboard, journal, library, and practices; back `/preview/chat` with a no-auth preview API (`/api/preview/chat`) using provider-backed responses with strict guest rate limits and token caps; add preview analytics event ingestion (`/api/v1/preview/events`) plus admin conversion summary endpoint (`/api/v1/admin/preview/analytics`), retention cleanup (90 days), and lightweight anti-bot heuristics (honeypot + minimum interaction time).

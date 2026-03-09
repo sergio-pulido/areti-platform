@@ -49,6 +49,7 @@ import { SurfaceCard } from "@/components/dashboard/surface-card";
 import {
   apiAdminAudit,
   apiAdminPreviewAnalytics,
+  apiAdminSystemJobRuns,
   apiAdminContent,
   type ContentStatus,
 } from "@/lib/backend-api";
@@ -96,10 +97,11 @@ export default async function CmsPage() {
   }
 
   const token = session.accessToken;
-  const [content, auditLogs, previewAnalytics] = await Promise.all([
+  const [content, auditLogs, previewAnalytics, systemJobRuns] = await Promise.all([
     apiAdminContent(token),
     apiAdminAudit(token, 14),
     apiAdminPreviewAnalytics(token, 30),
+    apiAdminSystemJobRuns(token, { limit: 8, jobName: "notification_digest" }),
   ]);
 
   return (
@@ -110,7 +112,7 @@ export default async function CmsPage() {
         description="Create, publish, unpublish, and delete all public content blocks from one page."
       />
 
-      <section className="grid gap-4 xl:grid-cols-2">
+      <section className="grid gap-4 xl:grid-cols-3">
         <SurfaceCard title="Recent Admin Audit Logs" subtitle="Latest privileged actions">
           <div className="space-y-2">
             {auditLogs.length === 0 ? (
@@ -171,6 +173,49 @@ export default async function CmsPage() {
             {previewAnalytics.countsByType.preview_signup_click ?? 0} · signup views:{" "}
             {previewAnalytics.countsByType.preview_signup_view ?? 0}
           </p>
+        </SurfaceCard>
+
+        <SurfaceCard title="System Job Runs" subtitle="Recent scheduler execution telemetry">
+          <div className="space-y-2">
+            {systemJobRuns.length === 0 ? (
+              <p className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-sm text-night-200">
+                No recorded job runs yet.
+              </p>
+            ) : (
+              systemJobRuns.map((run) => (
+                <article
+                  key={run.id}
+                  className="rounded-xl border border-night-700 bg-night-950/80 p-3 text-xs"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-semibold text-sand-100">{run.jobName}</p>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] ${
+                        run.status === "success"
+                          ? "border-sage-300/40 bg-sage-500/15 text-sage-100"
+                          : run.status === "error"
+                          ? "border-amber-300/40 bg-amber-500/15 text-amber-100"
+                          : "border-night-600 bg-night-900 text-night-200"
+                      }`}
+                    >
+                      {run.status.toUpperCase()}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-night-300">
+                    {new Date(run.startedAt).toLocaleString()}
+                    {run.finishedAt ? ` -> ${new Date(run.finishedAt).toLocaleTimeString()}` : ""}
+                  </p>
+                  <p className="mt-1 text-night-200">
+                    scanned {run.usersScanned} · digest {run.usersWithDigestEnabled} · created{" "}
+                    {run.notificationsCreated} · dedupe {run.duplicatesSkipped}
+                  </p>
+                  {run.errorMessage ? (
+                    <p className="mt-1 text-amber-200">error: {run.errorMessage}</p>
+                  ) : null}
+                </article>
+              ))
+            )}
+          </div>
         </SurfaceCard>
       </section>
 
