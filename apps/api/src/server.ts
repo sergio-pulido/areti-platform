@@ -276,6 +276,10 @@ const CHAT_EVENT_TYPES = [
   "thread_archived",
   "thread_restored",
   "thread_deleted",
+  "thread_branched",
+  "thread_branch_auto_asked",
+  "message_quoted",
+  "message_pinned",
   "message_provider_error",
   "context_auto_summarized",
   "context_manual_summarized",
@@ -1947,6 +1951,21 @@ const chatThreadPatchSchema = z.object({
 const chatThreadBranchSchema = z.object({
   messageId: z.string().uuid(),
 });
+
+const chatThreadClientEventSchema = z
+  .object({
+    eventType: z.enum(["message_quoted", "message_pinned", "thread_branch_auto_asked"]),
+    messageId: z.string().uuid().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if ((value.eventType === "message_quoted" || value.eventType === "message_pinned") && !value.messageId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "messageId is required for this event type",
+        path: ["messageId"],
+      });
+    }
+  });
 
 const chatThreadListQuerySchema = z.object({
   scope: z.enum(["active", "archived", "all"]).optional().default("active"),
@@ -4169,6 +4188,17 @@ export function createApp() {
         return;
       }
 
+      recordChatEvent({
+        userId: authReq.authUser.id,
+        threadId: branchThread.id,
+        eventType: "thread_branched",
+        payload: {
+          sourceThreadId: sourceThread.id,
+          sourceMessageId: parsed.data.messageId,
+          copiedMessagesCount: copiedMessages.length,
+        },
+      });
+
       const effectiveSystemPrompt = await resolveEffectiveSystemPromptForUser(authReq.authUser.id);
       const modelMessages = buildThreadPromptMessages({
         effectiveSystemPrompt,
@@ -4212,6 +4242,40 @@ export function createApp() {
       }
       throw error;
     }
+  });
+
+  app.post("/api/v1/chat/threads/:id/events", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = chatThreadClientEventSchema.safeParse(req.body ?? {});
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid chat event payload" });
+      return;
+    }
+
+    const thread = getChatThreadByIdForUser(authReq.authUser.id, req.params.id);
+    if (!thread) {
+      res.status(404).json({ error: "Thread not found" });
+      return;
+    }
+
+    if (parsed.data.messageId) {
+      const messages = listChatMessagesForThread(authReq.authUser.id, thread.id) ?? [];
+      const hasMessage = messages.some((message) => message.id === parsed.data.messageId);
+      if (!hasMessage) {
+        res.status(404).json({ error: "Message not found in this thread." });
+        return;
+      }
+    }
+
+    recordChatEvent({
+      userId: authReq.authUser.id,
+      threadId: thread.id,
+      eventType: parsed.data.eventType,
+      payload: parsed.data.messageId ? { messageId: parsed.data.messageId } : {},
+    });
+
+    res.status(201).json({ data: { ok: true } });
   });
 
   app.post("/api/v1/chat/threads/:id/context/summarize", requireAuth, async (req, res) => {

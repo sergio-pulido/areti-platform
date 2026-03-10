@@ -27,6 +27,9 @@
 - Companion message cards now include inline actions (`Copy`, `Quote`, `Pin insight`, `To journal`, `Branch here`, `Branch + ask`) so users can preserve insights, fork conversations, and immediately continue a branched path without manual copy/paste.
 - Companion thread lineage metadata is now persisted for branched threads and surfaced in both thread list and active-thread header (`Branched from ...` with source snippet context).
 - Companion now includes a lightweight toast feedback stack for message actions and a per-thread pinned-insights strip for quick reuse in the composer.
+- Branch + ask flow now performs optimistic turn rendering (immediate user turn + pending assistant row) so the new branch feels responsive before the first response resolves.
+- Pinned insights now support drag-to-reorder and one-click `Unpin all` cleanup per thread.
+- Companion now records additional lightweight chat action telemetry (`thread_branched`, `thread_branch_auto_asked`, `message_quoted`, `message_pinned`) without storing message content.
 - Public preview section is now available at `/preview` (no auth), including lightweight previews for chat, journal, library, and practices to let guests evaluate core UX before signup.
 - Public preview now also includes `/preview/dashboard` to demonstrate the action-first member home with sample momentum data.
 - `/preview/chat` now runs on a no-auth preview chat API with strict token-budget testing (fixed session budget, per-turn input/output caps, response clipping, resettable sandbox session).

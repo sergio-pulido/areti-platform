@@ -704,6 +704,32 @@ describe("API integration", () => {
     expect(branchedThread).toBeDefined();
     expect(branchedThread.branch.sourceThreadId).toBe(threadId);
 
+    const quotedEvent = await request(app)
+      .post(`/api/v1/chat/threads/${threadId}/events`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        eventType: "message_quoted",
+        messageId: messages.body.data[0].id,
+      });
+    expect(quotedEvent.status).toBe(201);
+
+    const pinnedEvent = await request(app)
+      .post(`/api/v1/chat/threads/${threadId}/events`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        eventType: "message_pinned",
+        messageId: messages.body.data[0].id,
+      });
+    expect(pinnedEvent.status).toBe(201);
+
+    const branchAutoAskEvent = await request(app)
+      .post(`/api/v1/chat/threads/${branchFromAssistant.body.data.threadId}/events`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        eventType: "thread_branch_auto_asked",
+      });
+    expect(branchAutoAskEvent.status).toBe(201);
+
     let autoTitledThread: { id: string; title: string } | undefined;
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const threads = await request(app)
@@ -764,6 +790,10 @@ describe("API integration", () => {
     expect(eventTypes).toContain("thread_auto_titled");
     expect(eventTypes).toContain("thread_archived");
     expect(eventTypes).toContain("thread_restored");
+    expect(eventTypes).toContain("thread_branched");
+    expect(eventTypes).toContain("thread_branch_auto_asked");
+    expect(eventTypes).toContain("message_quoted");
+    expect(eventTypes).toContain("message_pinned");
   });
 
   it("auto-summarizes long chat context and records memory telemetry events", async () => {

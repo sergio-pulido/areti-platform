@@ -123,6 +123,10 @@ function normalizeChatEventType(value: string): ChatEventTypeFilter {
     value === "thread_archived" ||
     value === "thread_restored" ||
     value === "thread_deleted" ||
+    value === "thread_branched" ||
+    value === "thread_branch_auto_asked" ||
+    value === "message_quoted" ||
+    value === "message_pinned" ||
     value === "message_provider_error" ||
     value === "context_auto_summarized" ||
     value === "context_manual_summarized" ||

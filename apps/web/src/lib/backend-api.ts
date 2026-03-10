@@ -268,6 +268,15 @@ export type ApiChatThread = {
   createdAt: string;
   updatedAt: string;
   context: ApiChatContextTelemetry;
+  branch: {
+    id: string;
+    threadId: string;
+    sourceThreadId: string;
+    sourceThreadTitle: string;
+    sourceMessageId: string;
+    sourceMessagePreview: string;
+    createdAt: string;
+  } | null;
 };
 
 export type ApiChatContextState = "ok" | "warning" | "degraded";
@@ -329,6 +338,10 @@ export type ApiChatEventType =
   | "thread_archived"
   | "thread_restored"
   | "thread_deleted"
+  | "thread_branched"
+  | "thread_branch_auto_asked"
+  | "message_quoted"
+  | "message_pinned"
   | "message_provider_error"
   | "context_auto_summarized"
   | "context_manual_summarized"

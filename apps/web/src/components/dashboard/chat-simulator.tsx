@@ -160,6 +160,7 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
   const [contextNotice, setContextNotice] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [pinsByThreadId, setPinsByThreadId] = useState<Record<string, PinnedInsight[]>>({});
+  const [draggingPinnedInsightId, setDraggingPinnedInsightId] = useState<string | null>(null);
   const consumedPromptRef = useRef<string | null>(null);
 
   const activeThread = useMemo(
@@ -210,6 +211,25 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
     window.setTimeout(() => {
       setToasts((current) => current.filter((item) => item.id !== id));
     }, 2600);
+  }
+
+  async function trackThreadEvent(input: {
+    threadId: string;
+    eventType: "message_quoted" | "message_pinned" | "thread_branch_auto_asked";
+    messageId?: string;
+  }): Promise<void> {
+    try {
+      await fetch(`/api/chat/threads/${input.threadId}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventType: input.eventType,
+          messageId: input.messageId,
+        }),
+      });
+    } catch {
+      // UI analytics should never block core chat actions.
+    }
   }
 
   async function createThreadOnServer(): Promise<ChatThread> {
@@ -500,6 +520,13 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
   function quoteMessage(message: ChatMessage): void {
     prefillComposer(quoteForComposer(message));
     pushToast("Added quote to composer.", "info");
+    if (activeThread) {
+      void trackThreadEvent({
+        threadId: activeThread.id,
+        eventType: "message_quoted",
+        messageId: message.id,
+      });
+    }
   }
 
   function pinMessage(message: ChatMessage): void {
@@ -526,6 +553,13 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
       [activeThreadId]: [insight, ...(current[activeThreadId] ?? [])].slice(0, 6),
     }));
     pushToast("Pinned as insight.");
+    if (activeThread) {
+      void trackThreadEvent({
+        threadId: activeThread.id,
+        eventType: "message_pinned",
+        messageId: message.id,
+      });
+    }
   }
 
   function removePinnedInsight(insightId: string): void {
@@ -542,6 +576,47 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
       return {
         ...current,
         [activeThreadId]: next,
+      };
+    });
+  }
+
+  function clearPinnedInsights(): void {
+    if (!activeThreadId) {
+      return;
+    }
+
+    setPinsByThreadId((current) => {
+      if (!(current[activeThreadId]?.length)) {
+        return current;
+      }
+      return {
+        ...current,
+        [activeThreadId]: [],
+      };
+    });
+    pushToast("Cleared pinned insights.", "info");
+  }
+
+  function reorderPinnedInsight(targetInsightId: string): void {
+    if (!activeThreadId || !draggingPinnedInsightId || draggingPinnedInsightId === targetInsightId) {
+      return;
+    }
+
+    setPinsByThreadId((current) => {
+      const existing = [...(current[activeThreadId] ?? [])];
+      const fromIndex = existing.findIndex((item) => item.id === draggingPinnedInsightId);
+      const toIndex = existing.findIndex((item) => item.id === targetInsightId);
+
+      if (fromIndex < 0 || toIndex < 0) {
+        return current;
+      }
+
+      const [moved] = existing.splice(fromIndex, 1);
+      existing.splice(toIndex, 0, moved);
+
+      return {
+        ...current,
+        [activeThreadId]: existing,
       };
     });
   }
@@ -587,6 +662,17 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
       emitChatThreadsInvalidated();
 
       if (autoPrompt.length > 0) {
+        const optimisticCreatedAt = new Date().toISOString();
+        const optimisticUserMessage: ChatMessage = {
+          id: `tmp-branch-user-${Date.now()}`,
+          threadId: payload.threadId,
+          role: "user",
+          content: autoPrompt,
+          createdAt: optimisticCreatedAt,
+        };
+
+        setMessages((prev) => [...prev, optimisticUserMessage]);
+        emitChatThreadPreview({ threadId: payload.threadId, preview: autoPrompt });
         setPending(true);
         try {
           const messageResult = await parseJsonOrThrow<{ answer: string; context?: ChatContextTelemetry }>(
@@ -611,12 +697,17 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
           emitChatThreadsInvalidated();
           setContextNotice("Started a new branch and sent your first prompt.");
           pushToast("Branch created and first prompt sent.");
+          void trackThreadEvent({
+            threadId: payload.threadId,
+            eventType: "thread_branch_auto_asked",
+          });
         } catch (caughtError) {
           setError(
             caughtError instanceof Error
               ? caughtError.message
               : "Branch was created, but the first prompt could not be sent.",
           );
+          await loadMessages(payload.threadId).catch(() => undefined);
           setContextNotice("Started a new branch, but the first prompt did not send.");
           pushToast("Branch created, but first prompt failed.", "error");
         } finally {
@@ -699,12 +790,14 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
       setRenameValue("");
       setContextNotice(null);
       setMessageActionPending(null);
+      setDraggingPinnedInsightId(null);
       setMessagesLoading(false);
       return;
     }
 
     setMessages([]);
     setMessageActionPending(null);
+    setDraggingPinnedInsightId(null);
     setContextNotice(null);
     void loadMessages(activeThreadId).catch((caughtError) => {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to load messages.");
@@ -936,14 +1029,34 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
         <section className="rounded-xl border border-night-800/75 bg-night-950/45 px-3 py-2">
           <div className="mb-1 flex items-center justify-between gap-2">
             <p className="text-[10px] uppercase tracking-[0.18em] text-night-300">Pinned insights</p>
-            <p className="text-[10px] text-night-400">{activePinnedInsights.length}/6</p>
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] text-night-400">{activePinnedInsights.length}/6</p>
+              <button
+                type="button"
+                onClick={clearPinnedInsights}
+                className="text-[10px] text-night-300 hover:text-night-100"
+              >
+                Unpin all
+              </button>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {activePinnedInsights.map((insight) => (
               <div
                 key={insight.id}
+                draggable
+                onDragStart={() => setDraggingPinnedInsightId(insight.id)}
+                onDragEnd={() => setDraggingPinnedInsightId(null)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => {
+                  reorderPinnedInsight(insight.id);
+                  setDraggingPinnedInsightId(null);
+                }}
                 className="group inline-flex max-w-[min(100%,28rem)] items-start gap-2 rounded-full border border-night-700/70 bg-night-900/70 px-3 py-1.5"
               >
+                <span className="cursor-grab text-night-400" title="Drag to reorder">
+                  ::
+                </span>
                 <button
                   type="button"
                   onClick={() => prefillComposer(insight.content)}

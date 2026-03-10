@@ -6,6 +6,12 @@
 - **Why:** Improves reflective workflow speed and clarity by turning notable turns into reusable artifacts (journal entries/pinned insights), enabling quick quoted follow-ups, and allowing parallel exploration paths that preserve origin traceability.
 - **Tradeoff:** Branching duplicates message content across threads, increasing storage footprint and introducing additional thread-history volume to manage.
 
+## 2026-03-10 - Track Companion message-action telemetry as chat events
+- **Context:** New message actions (quote/pin/branch flows) shipped without explicit instrumentation, limiting product insight into how users actually use reflection tooling.
+- **Decision:** Extend chat event taxonomy and logging with `thread_branched`, `thread_branch_auto_asked`, `message_quoted`, and `message_pinned`; add authenticated client-event endpoint (`POST /api/v1/chat/threads/:id/events`) that records only thread/message identifiers and event type.
+- **Why:** Enables lightweight adoption monitoring for high-value chat actions while preserving privacy boundaries (no raw message content in analytics payloads).
+- **Tradeoff:** Adds a small event-ingestion surface to the chat API and increases event volume in admin telemetry views.
+
 ## 2026-03-10 - Ship Reflections as a dedicated domain with async AI processing and secure audio handling
 - **Context:** Journal existed, but product scope required a richer reflection workflow (voice/text capture, transcript cleanup, refined writing, concise commentary, history, and companion handoff) without introducing heavy new infrastructure.
 - **Decision:** Add a dedicated Reflections domain (`/reflections`, `/reflections/new`, `/reflections/:id`) with new DB tables for entries/audio/tags/jobs/events; implement API endpoints under `/api/v1/reflections*`; extract reflections services (`repository`, `storage`, `ai`, `processing`, `service`) while keeping route registration in `server.ts`; store audio locally with auth-gated streaming; run pipeline asynchronously in-process with persisted status/job steps and retry.
