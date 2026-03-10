@@ -2390,6 +2390,616 @@ export function countJournalEntriesByUser(userId: string): number {
   return row?.count ?? 0;
 }
 
+function buildReflectionEntryWhereClause(input: {
+  userId: string;
+  search?: string;
+  favoriteOnly?: boolean;
+  status?: ReflectionStatus;
+}) {
+  const filters: SQL[] = [
+    eq(reflectionEntries.userId, input.userId),
+    isNull(reflectionEntries.deletedAt),
+  ];
+
+  if (input.favoriteOnly) {
+    filters.push(eq(reflectionEntries.isFavorite, true));
+  }
+
+  if (input.status) {
+    filters.push(eq(reflectionEntries.status, input.status));
+  }
+
+  const search = input.search?.trim();
+  if (search && search.length > 0) {
+    const pattern = `%${search}%`;
+    filters.push(
+      or(
+        like(reflectionEntries.title, pattern),
+        like(reflectionEntries.rawText, pattern),
+        like(reflectionEntries.cleanTranscript, pattern),
+        like(reflectionEntries.refinedText, pattern),
+        like(reflectionEntries.commentary, pattern),
+      ) as SQL,
+    );
+  }
+
+  return and(...filters);
+}
+
+function listReflectionTagsByReflectionIds(reflectionIds: string[]): Map<string, ReflectionTagRecord[]> {
+  const byReflectionId = new Map<string, ReflectionTagRecord[]>();
+
+  if (reflectionIds.length === 0) {
+    return byReflectionId;
+  }
+
+  const rows = db
+    .select()
+    .from(reflectionTags)
+    .where(inArray(reflectionTags.reflectionId, reflectionIds))
+    .orderBy(asc(reflectionTags.createdAt))
+    .all();
+
+  for (const row of rows) {
+    const tags = byReflectionId.get(row.reflectionId) ?? [];
+    tags.push({
+      id: row.id,
+      reflectionId: row.reflectionId,
+      tag: row.tag,
+      createdAt: row.createdAt,
+    });
+    byReflectionId.set(row.reflectionId, tags);
+  }
+
+  return byReflectionId;
+}
+
+function listReflectionAudioAssetsByReflectionIds(
+  reflectionIds: string[],
+): Map<string, ReflectionAudioAssetRecord[]> {
+  const byReflectionId = new Map<string, ReflectionAudioAssetRecord[]>();
+
+  if (reflectionIds.length === 0) {
+    return byReflectionId;
+  }
+
+  const rows = db
+    .select()
+    .from(reflectionAudioAssets)
+    .where(inArray(reflectionAudioAssets.reflectionId, reflectionIds))
+    .orderBy(asc(reflectionAudioAssets.createdAt))
+    .all();
+
+  for (const row of rows) {
+    const assets = byReflectionId.get(row.reflectionId) ?? [];
+    assets.push({
+      id: row.id,
+      reflectionId: row.reflectionId,
+      storageKey: row.storageKey,
+      fileName: row.fileName,
+      mimeType: row.mimeType,
+      sizeBytes: row.sizeBytes,
+      durationSeconds: row.durationSeconds ?? null,
+      createdAt: row.createdAt,
+    });
+    byReflectionId.set(row.reflectionId, assets);
+  }
+
+  return byReflectionId;
+}
+
+function listReflectionProcessingJobsByReflectionIds(
+  reflectionIds: string[],
+): Map<string, ReflectionProcessingJobRecord[]> {
+  const byReflectionId = new Map<string, ReflectionProcessingJobRecord[]>();
+
+  if (reflectionIds.length === 0) {
+    return byReflectionId;
+  }
+
+  const rows = db
+    .select()
+    .from(reflectionProcessingJobs)
+    .where(inArray(reflectionProcessingJobs.reflectionId, reflectionIds))
+    .orderBy(asc(reflectionProcessingJobs.createdAt))
+    .all();
+
+  for (const row of rows) {
+    const jobs = byReflectionId.get(row.reflectionId) ?? [];
+    jobs.push({
+      id: row.id,
+      reflectionId: row.reflectionId,
+      step: normalizeReflectionProcessingStep(row.step),
+      status: normalizeReflectionProcessingJobStatus(row.status),
+      errorMessage: row.errorMessage ?? null,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    });
+    byReflectionId.set(row.reflectionId, jobs);
+  }
+
+  return byReflectionId;
+}
+
+function hydrateReflectionEntryRecord(
+  row: typeof reflectionEntries.$inferSelect,
+  relations?: {
+    tags?: Map<string, ReflectionTagRecord[]>;
+    audioAssets?: Map<string, ReflectionAudioAssetRecord[]>;
+    processingJobs?: Map<string, ReflectionProcessingJobRecord[]>;
+  },
+): ReflectionEntryRecord {
+  return {
+    id: row.id,
+    userId: row.userId,
+    title: row.title,
+    sourceType: normalizeReflectionSourceType(row.sourceType),
+    rawText: row.rawText,
+    cleanTranscript: row.cleanTranscript ?? null,
+    refinedText: row.refinedText ?? null,
+    commentary: row.commentary ?? null,
+    commentaryMode: row.commentaryMode ?? null,
+    language: row.language,
+    isFavorite: row.isFavorite,
+    status: normalizeReflectionStatus(row.status),
+    processingError: row.processingError ?? null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt ?? null,
+    tags: relations?.tags?.get(row.id) ?? [],
+    audioAssets: relations?.audioAssets?.get(row.id) ?? [],
+    processingJobs: relations?.processingJobs?.get(row.id) ?? [],
+  };
+}
+
+export function createReflectionEntry(input: {
+  id: string;
+  userId: string;
+  title: string;
+  sourceType: ReflectionSourceType;
+  rawText: string;
+  commentaryMode?: string | null;
+  language?: string;
+  status?: ReflectionStatus;
+}): ReflectionEntryRecord {
+  const timestamp = nowIso();
+  const created = {
+    id: input.id,
+    userId: input.userId,
+    title: input.title.trim(),
+    sourceType: input.sourceType,
+    rawText: input.rawText.trim(),
+    cleanTranscript: null,
+    refinedText: null,
+    commentary: null,
+    commentaryMode: input.commentaryMode?.trim() || null,
+    language: input.language?.trim() || "en",
+    isFavorite: false,
+    status: input.status ?? "draft",
+    processingError: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    deletedAt: null,
+  } satisfies typeof reflectionEntries.$inferInsert;
+
+  db.insert(reflectionEntries).values(created).run();
+  return hydrateReflectionEntryRecord(created);
+}
+
+export function attachReflectionAudioAsset(input: {
+  id: string;
+  reflectionId: string;
+  storageKey: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationSeconds?: number | null;
+}): ReflectionAudioAssetRecord {
+  const created = {
+    id: input.id,
+    reflectionId: input.reflectionId,
+    storageKey: input.storageKey,
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+    sizeBytes: Math.max(0, Math.trunc(input.sizeBytes)),
+    durationSeconds: input.durationSeconds ?? null,
+    createdAt: nowIso(),
+  } satisfies typeof reflectionAudioAssets.$inferInsert;
+
+  db.insert(reflectionAudioAssets).values(created).run();
+
+  return {
+    id: created.id,
+    reflectionId: created.reflectionId,
+    storageKey: created.storageKey,
+    fileName: created.fileName,
+    mimeType: created.mimeType,
+    sizeBytes: created.sizeBytes,
+    durationSeconds: created.durationSeconds,
+    createdAt: created.createdAt,
+  };
+}
+
+export function setReflectionTags(reflectionId: string, tags: string[]): ReflectionTagRecord[] {
+  const normalized = Array.from(
+    new Set(tags.map((tag) => normalizeReflectionTag(tag)).filter((tag) => tag.length > 0)),
+  ).slice(0, 16);
+  const timestamp = nowIso();
+
+  db.transaction(() => {
+    db.delete(reflectionTags).where(eq(reflectionTags.reflectionId, reflectionId)).run();
+
+    if (normalized.length === 0) {
+      return;
+    }
+
+    db.insert(reflectionTags)
+      .values(
+        normalized.map((tag) => ({
+          id: cryptoRandomId(),
+          reflectionId,
+          tag,
+          createdAt: timestamp,
+        })),
+      )
+      .run();
+  });
+
+  return db
+    .select()
+    .from(reflectionTags)
+    .where(eq(reflectionTags.reflectionId, reflectionId))
+    .orderBy(asc(reflectionTags.createdAt))
+    .all()
+    .map((row) => ({
+      id: row.id,
+      reflectionId: row.reflectionId,
+      tag: row.tag,
+      createdAt: row.createdAt,
+    }));
+}
+
+export function countReflectionsByUser(input: {
+  userId: string;
+  search?: string;
+  favoriteOnly?: boolean;
+  status?: ReflectionStatus;
+}): number {
+  const row = db
+    .select({ count: count() })
+    .from(reflectionEntries)
+    .where(buildReflectionEntryWhereClause(input))
+    .get();
+
+  return row?.count ?? 0;
+}
+
+export function listReflectionsByUser(input: {
+  userId: string;
+  limit: number;
+  offset: number;
+  search?: string;
+  favoriteOnly?: boolean;
+  status?: ReflectionStatus;
+}): ReflectionListItemRecord[] {
+  const rows = db
+    .select()
+    .from(reflectionEntries)
+    .where(buildReflectionEntryWhereClause(input))
+    .orderBy(desc(reflectionEntries.createdAt))
+    .limit(Math.max(1, Math.min(100, input.limit)))
+    .offset(Math.max(0, input.offset))
+    .all();
+
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const reflectionIds = rows.map((row) => row.id);
+  const tagsByReflectionId = listReflectionTagsByReflectionIds(reflectionIds);
+  const assetsByReflectionId = listReflectionAudioAssetsByReflectionIds(reflectionIds);
+
+  return rows.map((row) => ({
+    id: row.id,
+    userId: row.userId,
+    title: row.title,
+    sourceType: normalizeReflectionSourceType(row.sourceType),
+    status: normalizeReflectionStatus(row.status),
+    isFavorite: row.isFavorite,
+    commentary: row.commentary ?? null,
+    cleanTranscript: row.cleanTranscript ?? null,
+    refinedText: row.refinedText ?? null,
+    rawText: row.rawText,
+    language: row.language,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    preview: buildReflectionPreview({
+      rawText: row.rawText,
+      cleanTranscript: row.cleanTranscript ?? null,
+      refinedText: row.refinedText ?? null,
+      commentary: row.commentary ?? null,
+    }),
+    tags: (tagsByReflectionId.get(row.id) ?? []).map((tag) => tag.tag),
+    hasAudio: (assetsByReflectionId.get(row.id)?.length ?? 0) > 0,
+  }));
+}
+
+export function getReflectionById(reflectionId: string): ReflectionEntryRecord | null {
+  const row = db
+    .select()
+    .from(reflectionEntries)
+    .where(eq(reflectionEntries.id, reflectionId))
+    .limit(1)
+    .get();
+
+  if (!row || row.deletedAt) {
+    return null;
+  }
+
+  const reflectionIds = [row.id];
+  const tagsByReflectionId = listReflectionTagsByReflectionIds(reflectionIds);
+  const assetsByReflectionId = listReflectionAudioAssetsByReflectionIds(reflectionIds);
+  const jobsByReflectionId = listReflectionProcessingJobsByReflectionIds(reflectionIds);
+
+  return hydrateReflectionEntryRecord(row, {
+    tags: tagsByReflectionId,
+    audioAssets: assetsByReflectionId,
+    processingJobs: jobsByReflectionId,
+  });
+}
+
+export function getReflectionByIdForUser(
+  userId: string,
+  reflectionId: string,
+): ReflectionEntryRecord | null {
+  const row = db
+    .select()
+    .from(reflectionEntries)
+    .where(
+      and(
+        eq(reflectionEntries.id, reflectionId),
+        eq(reflectionEntries.userId, userId),
+        isNull(reflectionEntries.deletedAt),
+      ),
+    )
+    .limit(1)
+    .get();
+
+  if (!row) {
+    return null;
+  }
+
+  const reflectionIds = [row.id];
+  const tagsByReflectionId = listReflectionTagsByReflectionIds(reflectionIds);
+  const assetsByReflectionId = listReflectionAudioAssetsByReflectionIds(reflectionIds);
+  const jobsByReflectionId = listReflectionProcessingJobsByReflectionIds(reflectionIds);
+
+  return hydrateReflectionEntryRecord(row, {
+    tags: tagsByReflectionId,
+    audioAssets: assetsByReflectionId,
+    processingJobs: jobsByReflectionId,
+  });
+}
+
+export function listReflectionProcessingJobs(
+  reflectionId: string,
+): ReflectionProcessingJobRecord[] {
+  return db
+    .select()
+    .from(reflectionProcessingJobs)
+    .where(eq(reflectionProcessingJobs.reflectionId, reflectionId))
+    .orderBy(asc(reflectionProcessingJobs.createdAt))
+    .all()
+    .map((row) => ({
+      id: row.id,
+      reflectionId: row.reflectionId,
+      step: normalizeReflectionProcessingStep(row.step),
+      status: normalizeReflectionProcessingJobStatus(row.status),
+      errorMessage: row.errorMessage ?? null,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }));
+}
+
+export function upsertReflectionProcessingJob(input: {
+  reflectionId: string;
+  step: ReflectionProcessingStep;
+  status: ReflectionProcessingJobStatus;
+  errorMessage?: string | null;
+}): ReflectionProcessingJobRecord {
+  const existing = db
+    .select()
+    .from(reflectionProcessingJobs)
+    .where(
+      and(
+        eq(reflectionProcessingJobs.reflectionId, input.reflectionId),
+        eq(reflectionProcessingJobs.step, input.step),
+      ),
+    )
+    .orderBy(desc(reflectionProcessingJobs.createdAt))
+    .limit(1)
+    .get();
+  const timestamp = nowIso();
+
+  if (existing) {
+    db.update(reflectionProcessingJobs)
+      .set({
+        status: input.status,
+        errorMessage: input.errorMessage ?? null,
+        updatedAt: timestamp,
+      })
+      .where(eq(reflectionProcessingJobs.id, existing.id))
+      .run();
+
+    return {
+      id: existing.id,
+      reflectionId: existing.reflectionId,
+      step: normalizeReflectionProcessingStep(existing.step),
+      status: input.status,
+      errorMessage: input.errorMessage ?? null,
+      createdAt: existing.createdAt,
+      updatedAt: timestamp,
+    };
+  }
+
+  const created = {
+    id: cryptoRandomId(),
+    reflectionId: input.reflectionId,
+    step: input.step,
+    status: input.status,
+    errorMessage: input.errorMessage ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  } satisfies typeof reflectionProcessingJobs.$inferInsert;
+
+  db.insert(reflectionProcessingJobs).values(created).run();
+
+  return {
+    id: created.id,
+    reflectionId: created.reflectionId,
+    step: created.step,
+    status: created.status,
+    errorMessage: created.errorMessage,
+    createdAt: created.createdAt,
+    updatedAt: created.updatedAt,
+  };
+}
+
+export function updateReflectionById(
+  reflectionId: string,
+  input: {
+    title?: string;
+    rawText?: string;
+    cleanTranscript?: string | null;
+    refinedText?: string | null;
+    commentary?: string | null;
+    commentaryMode?: string | null;
+    language?: string;
+    isFavorite?: boolean;
+    status?: ReflectionStatus;
+    processingError?: string | null;
+    deletedAt?: string | null;
+  },
+): ReflectionEntryRecord | null {
+  const existing = db
+    .select()
+    .from(reflectionEntries)
+    .where(eq(reflectionEntries.id, reflectionId))
+    .limit(1)
+    .get();
+
+  if (!existing) {
+    return null;
+  }
+
+  const updated = {
+    title: input.title?.trim() ?? existing.title,
+    rawText: input.rawText?.trim() ?? existing.rawText,
+    cleanTranscript:
+      input.cleanTranscript === undefined ? existing.cleanTranscript : input.cleanTranscript,
+    refinedText: input.refinedText === undefined ? existing.refinedText : input.refinedText,
+    commentary: input.commentary === undefined ? existing.commentary : input.commentary,
+    commentaryMode:
+      input.commentaryMode === undefined ? existing.commentaryMode : input.commentaryMode,
+    language: input.language?.trim() || existing.language,
+    isFavorite: input.isFavorite ?? existing.isFavorite,
+    status: input.status ?? normalizeReflectionStatus(existing.status),
+    processingError:
+      input.processingError === undefined ? existing.processingError : input.processingError,
+    deletedAt: input.deletedAt === undefined ? existing.deletedAt : input.deletedAt,
+    updatedAt: nowIso(),
+  } satisfies Partial<typeof reflectionEntries.$inferInsert>;
+
+  db.update(reflectionEntries).set(updated).where(eq(reflectionEntries.id, reflectionId)).run();
+  return getReflectionById(reflectionId);
+}
+
+export function updateReflectionByIdForUser(
+  userId: string,
+  reflectionId: string,
+  input: {
+    title?: string;
+    refinedText?: string | null;
+    commentary?: string | null;
+    commentaryMode?: string | null;
+    isFavorite?: boolean;
+    status?: ReflectionStatus;
+  },
+): ReflectionEntryRecord | null {
+  const existing = getReflectionByIdForUser(userId, reflectionId);
+  if (!existing) {
+    return null;
+  }
+
+  return updateReflectionById(reflectionId, {
+    title: input.title ?? existing.title,
+    refinedText: input.refinedText === undefined ? existing.refinedText : input.refinedText,
+    commentary: input.commentary === undefined ? existing.commentary : input.commentary,
+    commentaryMode:
+      input.commentaryMode === undefined ? existing.commentaryMode : input.commentaryMode,
+    isFavorite: input.isFavorite ?? existing.isFavorite,
+    status: input.status ?? existing.status,
+  });
+}
+
+export function softDeleteReflectionByIdForUser(userId: string, reflectionId: string): boolean {
+  const existing = getReflectionByIdForUser(userId, reflectionId);
+  if (!existing) {
+    return false;
+  }
+
+  updateReflectionById(reflectionId, {
+    deletedAt: nowIso(),
+  });
+  return true;
+}
+
+export function getLatestReflectionAudioAsset(
+  reflectionId: string,
+): ReflectionAudioAssetRecord | null {
+  const row = db
+    .select()
+    .from(reflectionAudioAssets)
+    .where(eq(reflectionAudioAssets.reflectionId, reflectionId))
+    .orderBy(desc(reflectionAudioAssets.createdAt))
+    .limit(1)
+    .get();
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    reflectionId: row.reflectionId,
+    storageKey: row.storageKey,
+    fileName: row.fileName,
+    mimeType: row.mimeType,
+    sizeBytes: row.sizeBytes,
+    durationSeconds: row.durationSeconds ?? null,
+    createdAt: row.createdAt,
+  };
+}
+
+export function createReflectionEvent(input: {
+  id: string;
+  userId: string;
+  reflectionId?: string | null;
+  eventType: ReflectionEventType;
+  metadataJson?: string;
+}): void {
+  db.insert(reflectionEvents)
+    .values({
+      id: input.id,
+      userId: input.userId,
+      reflectionId: input.reflectionId ?? null,
+      eventType: input.eventType,
+      metadataJson: input.metadataJson ?? "{}",
+      createdAt: nowIso(),
+    })
+    .run();
+}
+
 export function trackContentCompletionByUser(
   userId: string,
   input: { contentKind: ContentCompletionKind; contentSlug: string },

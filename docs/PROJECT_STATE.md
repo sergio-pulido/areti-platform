@@ -9,6 +9,10 @@
 - Dashboard summary API now computes real progress signals (`streakDays`, `reflectionsThisWeek`, `daysSinceLastEntry`) from persisted journal data and feeds dashboard recency/progress behavior.
 - Dashboard summary now also includes completion-backed lesson/practice progress (`lessonsCompleted`, `totalLessons`, `practicesCompletedThisWeek`) persisted in `user_content_completions`.
 - Dashboard continuity now consumes latest completion history (`recentCompletions`) from API so "Continue your path" can prioritize recently completed lessons/practices before generic fallbacks.
+- Reflections is now a first-class feature at `/reflections` with full history/list, creation flow (`/reflections/new`), detail screen (`/reflections/:id`), and secure user-owned CRUD operations.
+- Reflections now supports three capture modes (voice recording, audio upload, direct text) and an async processing pipeline (transcription, cleaning, refinement, commentary) with persisted step telemetry and retry/error states.
+- Reflections now includes a Companion handoff action that creates a chat thread from reflection content and opens the conversation context for continued exploration.
+- Reflection persistence now includes dedicated DB tables for entries, audio assets, tags, processing jobs, and lightweight reflection analytics events (without storing raw text in analytics payloads).
 - Chat now operates as a dedicated top-level Companion section with section-specific sidebar controls (new thread + active thread history).
 - Companion now uses draft-first thread creation: clicking `New thread` returns to `/chat` draft mode, and a DB thread is created only when the first message is sent.
 - First-message chat flow now auto-titles untitled threads after assistant response, then persists that title in thread history.
@@ -80,6 +84,7 @@
   - Added session-refresh linkage to device identity and passkey lifecycle fields.
   - Added `user_companion_preferences` and `chat_events` tables for user prompt customization and chat telemetry.
   - Added `chat_thread_contexts` table for rolling summary memory, summarized message offsets, and per-thread token-capacity telemetry.
+  - Added `reflection_entries`, `reflection_audio_assets`, `reflection_tags`, `reflection_processing_jobs`, and `reflection_events` for full reflection lifecycle persistence and observability.
   - Added `content` and `protocol` fields to library/practice tables for full detail rendering.
   - Added `email_verified_at` and `onboarding_completed_at` user lifecycle columns.
   - Added `deleted_at` and `anonymized_at` user lifecycle columns.
@@ -121,6 +126,14 @@
     - `GET/POST /api/v1/chat/threads/:id/messages`
     - `POST /api/v1/chat/threads/:id/context/summarize`
   - Added ordered multi-provider chat resolution with env-driven provider order (`CHAT_PROVIDER_ORDER`) and DeepSeek/OpenAI provider configs.
+  - Added reflections endpoints:
+    - `GET/POST /api/v1/reflections`
+    - `GET/PATCH/DELETE /api/v1/reflections/:id`
+    - `POST /api/v1/reflections/:id/commentary/regenerate`
+    - `POST /api/v1/reflections/:id/retry`
+    - `POST /api/v1/reflections/:id/send-to-companion`
+    - `GET /api/v1/reflections/:id/audio`
+  - Added extracted reflections domain services (`ReflectionRepository`, `ReflectionStorageService`, `ReflectionAiService`, `ReflectionProcessingService`, `ReflectionService`) for pipeline orchestration and maintainability.
   - Added `GET/PATCH /api/v1/chat/preferences` for per-user Companion instruction customization.
   - Added `GET /api/v1/admin/chat/events` for admin chat lifecycle telemetry inspection, including event/thread/user/memory filters.
   - Added thread listing scopes via `GET /api/v1/chat/threads?scope=active|archived|all`.
@@ -208,6 +221,11 @@
     - `/preview/dashboard` sample action-first home experience
     - `/preview/journal`, `/preview/library`, `/preview/practices` lightweight feature walkthroughs
   - Added no-auth preview chat API at `/api/preview/chat` used by `/preview/chat`.
+  - Added full Reflections UX and routing:
+    - `/reflections` history/list with filtering and empty states
+    - `/reflections/new` capture flow (record/upload/text)
+    - `/reflections/[id]` detail view with tabs, commentary, metadata editing, favorite, retry, regenerate, delete, and Companion handoff actions
+  - Added authenticated web proxy routes for reflections under `/api/reflections/*`, including protected audio streaming for in-app playback.
   - Added no-auth preview analytics proxy route at `/api/preview/events` and backend analytics ingestion at `/api/v1/preview/events`.
   - Added admin preview analytics endpoint (`/api/v1/admin/preview/analytics`) and CMS dashboard card for conversion monitoring.
   - Library and practices lists now render reusable clickable card components.
@@ -228,6 +246,9 @@
   - Added web e2e coverage for account deep-link focus highlight behavior (`totp`, `passkeys`, `deletion`) including rounded-container rendering assertions.
   - Added web e2e coverage to ensure passkey registration action is anchored in the "Registered passkeys" panel (not duplicated in top authentication setup cards).
   - Added API integration assertions for new dashboard completion-history payload (`recentCompletions`).
+  - Added API integration coverage for reflections lifecycle, authorization boundaries, processing outputs, and Companion handoff.
+  - Added service-level integration coverage for reflections processing orchestration with mocked dependencies.
+  - Added web e2e coverage for the critical reflections journey (create -> process -> read -> send to companion).
   - Hardened dashboard e2e selectors for prompt starter and journal form targeting to reduce strict-mode ambiguities.
   - Updated e2e/a11y signup helpers for legal consent, email verification, onboarding completion, and cookie gate behavior.
   - Forced Playwright API startup to `EMAIL_TRANSPORT=disabled` so signup/resend tests never consume external email quotas.

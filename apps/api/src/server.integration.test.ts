@@ -13,6 +13,35 @@ let adminToken = "";
 let adminRefreshToken = "";
 const adminEmail = "admin@example.com";
 
+async function waitForReflectionReady(
+  appRef: import("express").Express,
+  token: string,
+  reflectionId: string,
+): Promise<Record<string, unknown>> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const detail = await request(appRef)
+      .get(`/api/v1/reflections/${reflectionId}`)
+      .set("Authorization", `Bearer ${token}`);
+
+    if (detail.status !== 200) {
+      throw new Error(`Unable to read reflection while polling. status=${detail.status}`);
+    }
+
+    const data = detail.body.data as Record<string, unknown>;
+    if (data.status === "ready") {
+      return data;
+    }
+
+    if (data.status === "failed") {
+      throw new Error(`Reflection processing failed: ${String(data.processingError ?? "")}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+  }
+
+  throw new Error("Timed out waiting for reflection processing.");
+}
+
 beforeAll(async () => {
   mkdirSync(path.dirname(testDbPath), { recursive: true });
   rmSync(testDbPath, { force: true });
@@ -282,6 +311,140 @@ describe("API integration", () => {
         (item: { id: string; earned: boolean }) => item.id === "lesson-1",
       )?.earned,
     ).toBe(true);
+  });
+
+  it("supports full reflections lifecycle, processing, and companion handoff", async () => {
+    const created = await request(app)
+      .post("/api/v1/reflections")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        sourceType: "text",
+        title: "Decision tension",
+        rawText:
+          "I keep saying I should stay in this role, but I want to move toward deeper work. I feel split between safety and meaning.",
+        tags: ["career", "decision"],
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body.data.status).toBe("processing");
+    expect(created.body.data.sourceType).toBe("text");
+    expect(Array.isArray(created.body.data.tags)).toBe(true);
+
+    const reflectionId = created.body.data.id as string;
+    expect(typeof reflectionId).toBe("string");
+
+    const ready = await waitForReflectionReady(app, adminToken, reflectionId);
+    expect(ready.status).toBe("ready");
+    expect(typeof ready.cleanTranscript).toBe("string");
+    expect(typeof ready.refinedText).toBe("string");
+    expect(typeof ready.commentary).toBe("string");
+    expect(Array.isArray(ready.processingJobs)).toBe(true);
+
+    const listed = await request(app)
+      .get("/api/v1/reflections?page=1&pageSize=10&q=decision")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(listed.status).toBe(200);
+    expect(Array.isArray(listed.body.data.items)).toBe(true);
+    expect(
+      listed.body.data.items.some((item: { id: string }) => item.id === reflectionId),
+    ).toBe(true);
+
+    const updated = await request(app)
+      .patch(`/api/v1/reflections/${reflectionId}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: "Decision tension (updated)",
+        tags: ["career", "clarity"],
+        isFavorite: true,
+        refinedText: "I feel torn between stability and meaningful work. Naming that conflict helps me see the real choice ahead.",
+      });
+    expect(updated.status).toBe(200);
+    expect(updated.body.data.title).toBe("Decision tension (updated)");
+    expect(updated.body.data.isFavorite).toBe(true);
+    expect(updated.body.data.tags).toContain("clarity");
+
+    const commentaryRefresh = await request(app)
+      .post(`/api/v1/reflections/${reflectionId}/commentary/regenerate`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({});
+    expect(commentaryRefresh.status).toBe(200);
+    expect(typeof commentaryRefresh.body.data.commentary).toBe("string");
+    expect(commentaryRefresh.body.data.commentary.length).toBeGreaterThan(0);
+
+    const sendToCompanion = await request(app)
+      .post(`/api/v1/reflections/${reflectionId}/send-to-companion`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({});
+    expect(sendToCompanion.status).toBe(201);
+    expect(typeof sendToCompanion.body.data.threadId).toBe("string");
+    expect(sendToCompanion.body.data.href).toContain("/chat?thread=");
+
+    const threadMessages = await request(app)
+      .get(`/api/v1/chat/threads/${sendToCompanion.body.data.threadId}/messages`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(threadMessages.status).toBe(200);
+    expect(Array.isArray(threadMessages.body.data)).toBe(true);
+    expect(threadMessages.body.data.length).toBeGreaterThanOrEqual(1);
+    expect(
+      threadMessages.body.data.some((message: { role: string }) => message.role === "user"),
+    ).toBe(true);
+
+    const deleted = await request(app)
+      .delete(`/api/v1/reflections/${reflectionId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(deleted.status).toBe(204);
+
+    const afterDelete = await request(app)
+      .get(`/api/v1/reflections/${reflectionId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(afterDelete.status).toBe(404);
+  });
+
+  it("enforces reflection ownership checks", async () => {
+    const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const email = `reflection-owner-${unique}@example.com`;
+    const password = "StrongPass789";
+
+    const signup = await request(app).post("/api/v1/auth/signup").send({
+      email,
+      password,
+      acceptLegal: true,
+    });
+    expect(signup.status).toBe(201);
+
+    const verify = await request(app).post("/api/v1/auth/verify-email").send({
+      email,
+      code: signup.body.data.debugVerificationCode,
+    });
+    expect(verify.status).toBe(200);
+    const otherUserToken = verify.body.data.accessToken as string;
+
+    const ownedReflection = await request(app)
+      .post("/api/v1/reflections")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        sourceType: "text",
+        title: "Private note",
+        rawText: "This should not be visible to another user.",
+      });
+    expect(ownedReflection.status).toBe(201);
+    const reflectionId = ownedReflection.body.data.id as string;
+
+    const forbiddenDetail = await request(app)
+      .get(`/api/v1/reflections/${reflectionId}`)
+      .set("Authorization", `Bearer ${otherUserToken}`);
+    expect(forbiddenDetail.status).toBe(404);
+
+    const forbiddenPatch = await request(app)
+      .patch(`/api/v1/reflections/${reflectionId}`)
+      .set("Authorization", `Bearer ${otherUserToken}`)
+      .send({ title: "Hacked" });
+    expect(forbiddenPatch.status).toBe(404);
+
+    const forbiddenDelete = await request(app)
+      .delete(`/api/v1/reflections/${reflectionId}`)
+      .set("Authorization", `Bearer ${otherUserToken}`);
+    expect(forbiddenDelete.status).toBe(404);
   });
 
   it("supports notifications read flows", async () => {

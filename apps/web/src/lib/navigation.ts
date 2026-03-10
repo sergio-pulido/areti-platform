@@ -2,6 +2,7 @@ import {
   Bell,
   BookOpen,
   Bot,
+  AudioLines,
   CalendarDays,
   Clapperboard,
   CreditCard,
@@ -51,6 +52,7 @@ export const dashboardNavSections: NavSection[] = [
     matchPrefixes: [
       "/library",
       "/practices",
+      "/reflections",
       "/journal",
       "/dashboard",
     ],
@@ -80,6 +82,12 @@ export const dashboardNavSections: NavSection[] = [
         label: "Journal",
         icon: Notebook,
         description: "Reflections and mood",
+      },
+      {
+        href: "/reflections",
+        label: "Reflections",
+        icon: AudioLines,
+        description: "Voice and AI clarity",
       },
     ],
   },

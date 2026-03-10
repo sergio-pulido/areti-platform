@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-03-10 - Ship Reflections as a dedicated domain with async AI processing and secure audio handling
+- **Context:** Journal existed, but product scope required a richer reflection workflow (voice/text capture, transcript cleanup, refined writing, concise commentary, history, and companion handoff) without introducing heavy new infrastructure.
+- **Decision:** Add a dedicated Reflections domain (`/reflections`, `/reflections/new`, `/reflections/:id`) with new DB tables for entries/audio/tags/jobs/events; implement API endpoints under `/api/v1/reflections*`; extract reflections services (`repository`, `storage`, `ai`, `processing`, `service`) while keeping route registration in `server.ts`; store audio locally with auth-gated streaming; run pipeline asynchronously in-process with persisted status/job steps and retry.
+- **Why:** Delivers full product value quickly in current architecture, preserves maintainability through domain-focused services, and keeps sensitive reflection content protected by ownership checks and server-side token handling.
+- **Tradeoff:** In-process orchestration is not as durable as an external queue/worker; audio transcription quality depends on OpenAI transcription availability (`OPENAI_API_KEY`), while text paths still degrade gracefully with fallback generation.
+
 ## 2026-03-10 - Activation-first onboarding wizard with personalized first destination
 - **Context:** The previous onboarding required eight upfront profile fields via stacked dropdowns, creating unnecessary cognitive load before users experienced value.
 - **Decision:** Replace onboarding with a three-step activation wizard (`intention`, `daily time`, `best first format`) using selectable card options, progress indicator, step navigation, and a personalized post-submit destination (`/practices`, `/journal`, `/library`, or `/chat`) derived from selected answers.

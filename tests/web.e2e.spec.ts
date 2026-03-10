@@ -127,6 +127,29 @@ test("landing loads API content and signup reaches dashboard", async ({ page }) 
   }
 });
 
+test("reflections flow creates, processes, and sends to companion", async ({ page }) => {
+  await signupAndGoDashboard(page);
+
+  await page.goto("/reflections/new");
+  await expect(page.getByRole("heading", { name: "New reflection" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Write text" }).click();
+  await page.getByLabel("Title").fill("Decision clarity");
+  await page.getByLabel("Tags").fill("career, clarity");
+  await page.locator("#reflection-body").fill(
+    "I keep saying I should stay where I am, but I want to move toward deeper work and I feel split.",
+  );
+
+  await page.getByRole("button", { name: "Create reflection" }).click();
+  await expect(page).toHaveURL(/\/reflections\/[0-9a-fA-F-]+$/, { timeout: 15000 });
+
+  await expect(page.getByText("Ready", { exact: true })).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText("Commentary", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Continue in Companion" }).click();
+  await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
+});
+
 test("public preview section is accessible without authentication", async ({ page }) => {
   await page.goto("/preview");
   const cookieAccept = page.getByRole("button", { name: "Accept cookies" });

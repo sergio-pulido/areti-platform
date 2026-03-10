@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -161,7 +161,16 @@ import {
   type ContentStatus,
   type CurrentUser,
   type OnboardingProfileRecord,
+  type ReflectionStatus,
 } from "@ataraxia/db";
+import {
+  ReflectionAiService,
+  ReflectionProcessingService,
+  ReflectionRepository,
+  ReflectionService,
+  ReflectionStorageService,
+  type ReflectionCreateInput,
+} from "./reflections/index.js";
 
 const ACCESS_SESSION_TTL_MINUTES = 20;
 const REFRESH_SESSION_TTL_DAYS = 30;
@@ -190,6 +199,20 @@ const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
+const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
+const DEFAULT_REFLECTION_AUDIO_MAX_BYTES = 10 * 1024 * 1024;
+const DEFAULT_REFLECTION_STORAGE_RELATIVE_PATH = "data/reflection-audio";
+const REFLECTION_ALLOWED_AUDIO_MIME_TYPES = [
+  "audio/webm",
+  "audio/ogg",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/aac",
+] as const;
 const DEFAULT_CHAT_GLOBAL_SYSTEM_PROMPT = `
 You are Areti Companion, a practical philosophy and psychology coach.
 Primary mission: help the user cultivate ataraxia through concrete action.
@@ -333,6 +356,7 @@ const envSchema = z.object({
   CHAT_PROVIDER_ORDER: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_CHAT_MODEL: z.string().optional(),
+  OPENAI_TRANSCRIPTION_MODEL: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_CHAT_MODEL: z.string().optional(),
@@ -353,6 +377,8 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_FROM_EMAIL: z.string().optional(),
   WEB_APP_URL: z.string().optional(),
+  REFLECTION_STORAGE_PATH: z.string().optional(),
+  REFLECTION_AUDIO_MAX_BYTES: z.string().optional(),
 });
 
 type AppEnv = z.infer<typeof envSchema>;
@@ -1716,6 +1742,48 @@ const journalSchema = z.object({
   mood: z.string().trim().min(2).max(32),
 });
 
+const reflectionAudioPayloadSchema = z.object({
+  fileName: z.string().trim().min(1).max(180),
+  mimeType: z.string().trim().min(3).max(120),
+  base64Data: z.string().trim().min(24).max(16 * 1024 * 1024),
+  durationSeconds: z.coerce.number().min(0).max(24 * 60 * 60).optional(),
+});
+
+const reflectionCreateSchema = z
+  .object({
+    sourceType: z.enum(["voice", "upload", "text"]),
+    title: z.string().trim().min(2).max(90).optional(),
+    rawText: z.string().trim().min(1).max(15000).optional(),
+    tags: z.array(z.string().trim().min(1).max(32)).max(16).optional(),
+    language: z.string().trim().min(2).max(16).optional(),
+    commentaryMode: z.string().trim().min(1).max(40).nullable().optional(),
+    audio: reflectionAudioPayloadSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.sourceType === "text" && !value.rawText) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "rawText is required for text reflections",
+        path: ["rawText"],
+      });
+    }
+
+    if ((value.sourceType === "voice" || value.sourceType === "upload") && !value.audio) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "audio payload is required for voice/upload reflections",
+        path: ["audio"],
+      });
+    }
+  });
+
+const reflectionPatchSchema = z.object({
+  title: z.string().trim().min(2).max(90).optional(),
+  tags: z.array(z.string().trim().min(1).max(32)).max(16).optional(),
+  isFavorite: z.boolean().optional(),
+  refinedText: z.string().trim().min(1).max(20000).optional(),
+});
+
 const contentCompletionSchema = z.object({
   contentKind: z.enum(["lesson", "practice"]),
   contentSlug: z
@@ -2031,6 +2099,41 @@ export function createApp() {
   const env = envSchema.parse(process.env);
   const chatConfig = createChatRuntimeConfig(env);
   const chatContextConfig = createChatContextRuntimeConfig(env);
+  const reflectionRepository = new ReflectionRepository();
+  const reflectionAudioMaxBytes = parseBoundedInteger(
+    env.REFLECTION_AUDIO_MAX_BYTES,
+    DEFAULT_REFLECTION_AUDIO_MAX_BYTES,
+    { min: 64 * 1024, max: 50 * 1024 * 1024 },
+  );
+  const reflectionStorageRoot = env.REFLECTION_STORAGE_PATH
+    ? path.isAbsolute(env.REFLECTION_STORAGE_PATH)
+      ? env.REFLECTION_STORAGE_PATH
+      : path.resolve(repoRootPath, env.REFLECTION_STORAGE_PATH)
+    : path.resolve(repoRootPath, DEFAULT_REFLECTION_STORAGE_RELATIVE_PATH);
+  const reflectionStorageService = new ReflectionStorageService({
+    rootPath: reflectionStorageRoot,
+    maxBytes: reflectionAudioMaxBytes,
+    allowedMimeTypes: [...REFLECTION_ALLOWED_AUDIO_MIME_TYPES],
+  });
+  const reflectionAiService = new ReflectionAiService(
+    { providers: chatConfig.providers },
+    {
+      openAiApiKey: env.OPENAI_API_KEY?.trim() || null,
+      openAiBaseUrl: normalizeBaseUrl(env.OPENAI_BASE_URL ?? DEFAULT_OPENAI_BASE_URL),
+      model: env.OPENAI_TRANSCRIPTION_MODEL?.trim() || DEFAULT_OPENAI_TRANSCRIPTION_MODEL,
+    },
+  );
+  const reflectionProcessingService = new ReflectionProcessingService(
+    reflectionRepository,
+    reflectionAiService,
+    reflectionStorageService,
+  );
+  const reflectionService = new ReflectionService(
+    reflectionRepository,
+    reflectionAiService,
+    reflectionStorageService,
+    reflectionProcessingService,
+  );
   const nodeEnv = process.env.NODE_ENV ?? "development";
 
   async function resolveEffectiveSystemPromptForUser(userId: string): Promise<string> {
@@ -2291,7 +2394,7 @@ export function createApp() {
       credentials: true,
     }),
   );
-  app.use(express.json());
+  app.use(express.json({ limit: "20mb" }));
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
@@ -4423,6 +4526,226 @@ export function createApp() {
     });
 
     res.status(201).json({ data: { ok: true } });
+  });
+
+  app.get("/api/v1/reflections", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const querySchema = z.object({
+      page: z.coerce.number().int().positive().max(10_000).default(1),
+      pageSize: z.coerce.number().int().positive().max(30).default(12),
+      q: z.string().trim().min(1).max(120).optional(),
+      favorite: z
+        .enum(["true", "false"])
+        .transform((value) => value === "true")
+        .optional(),
+      status: z.enum(["draft", "processing", "ready", "failed"]).optional(),
+    });
+    const parsed = querySchema.safeParse(req.query);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    const data = reflectionService.listReflections(authReq.authUser.id, {
+      page: parsed.data.page,
+      pageSize: parsed.data.pageSize,
+      search: parsed.data.q,
+      favoriteOnly: parsed.data.favorite,
+      status: parsed.data.status as ReflectionStatus | undefined,
+    });
+
+    res.json({ data });
+  });
+
+  app.post("/api/v1/reflections", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = reflectionCreateSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid reflection payload" });
+      return;
+    }
+
+    try {
+      const created = await reflectionService.createReflection(
+        authReq.authUser.id,
+        parsed.data as ReflectionCreateInput,
+      );
+      res.status(201).json({ data: created });
+    } catch (error) {
+      if (error instanceof Error) {
+        const message = error.message;
+        const status = message.toLowerCase().includes("unavailable") ? 503 : 400;
+        res.status(status).json({ error: message });
+        return;
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/v1/reflections/:id", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid reflection id" });
+      return;
+    }
+
+    const reflection = reflectionService.getReflection(authReq.authUser.id, parsed.data.id);
+    if (!reflection) {
+      res.status(404).json({ error: "Reflection not found" });
+      return;
+    }
+
+    res.json({ data: reflection });
+  });
+
+  app.patch("/api/v1/reflections/:id", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const params = z.object({ id: z.string().uuid() }).safeParse(req.params);
+    const parsed = reflectionPatchSchema.safeParse(req.body);
+
+    if (!params.success) {
+      res.status(400).json({ error: "Invalid reflection id" });
+      return;
+    }
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid reflection patch payload" });
+      return;
+    }
+
+    const updated = reflectionService.updateReflection(authReq.authUser.id, params.data.id, parsed.data);
+    if (!updated) {
+      res.status(404).json({ error: "Reflection not found" });
+      return;
+    }
+
+    res.json({ data: updated });
+  });
+
+  app.delete("/api/v1/reflections/:id", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid reflection id" });
+      return;
+    }
+
+    const deleted = reflectionService.deleteReflection(authReq.authUser.id, parsed.data.id);
+    if (!deleted) {
+      res.status(404).json({ error: "Reflection not found" });
+      return;
+    }
+
+    res.status(204).send();
+  });
+
+  app.post("/api/v1/reflections/:id/commentary/regenerate", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid reflection id" });
+      return;
+    }
+
+    try {
+      const reflection = await reflectionService.regenerateCommentary(authReq.authUser.id, parsed.data.id);
+      if (!reflection) {
+        res.status(404).json({ error: "Reflection not found" });
+        return;
+      }
+      res.json({ data: reflection });
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(502).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+  });
+
+  app.post("/api/v1/reflections/:id/retry", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid reflection id" });
+      return;
+    }
+
+    const reflection = reflectionService.retryProcessing(authReq.authUser.id, parsed.data.id);
+    if (!reflection) {
+      res.status(404).json({ error: "Reflection not found" });
+      return;
+    }
+
+    res.json({ data: reflection });
+  });
+
+  app.post("/api/v1/reflections/:id/send-to-companion", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid reflection id" });
+      return;
+    }
+
+    try {
+      const result = reflectionService.sendToCompanion(authReq.authUser.id, parsed.data.id);
+      if (!result) {
+        res.status(404).json({ error: "Reflection not found" });
+        return;
+      }
+      res.status(201).json({ data: result });
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/v1/reflections/:id/audio", requireAuth, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid reflection id" });
+      return;
+    }
+
+    const audio = reflectionService.resolveAudioForPlayback(authReq.authUser.id, parsed.data.id);
+    if (!audio) {
+      res.status(404).json({ error: "Audio asset not found" });
+      return;
+    }
+
+    const safeFileName = audio.fileName.replace(/[^a-zA-Z0-9._-]/g, "-");
+    res.setHeader("Content-Type", audio.mimeType);
+    res.setHeader("Cache-Control", "private, max-age=60");
+    res.setHeader("Content-Disposition", `inline; filename="${safeFileName}"`);
+
+    const stream = createReadStream(audio.filePath);
+    stream.on("error", (error) => {
+      console.warn(
+        `[reflections] Unable to stream audio for reflection ${parsed.data.id}: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      );
+      if (!res.headersSent) {
+        res.status(404).json({ error: "Audio asset not found" });
+      } else {
+        res.end();
+      }
+    });
+    stream.pipe(res);
   });
 
   app.get("/api/v1/content/landing", (_req, res) => {

@@ -104,6 +104,69 @@ export type ApiJournalEntry = {
   updatedAt: string;
 };
 
+export type ApiReflectionSourceType = "voice" | "upload" | "text";
+export type ApiReflectionStatus = "draft" | "processing" | "ready" | "failed";
+
+export type ApiReflectionProcessingJob = {
+  id: string;
+  reflectionId: string;
+  step: "transcription" | "cleaning" | "refinement" | "commentary";
+  status: "pending" | "running" | "success" | "failed";
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiReflectionListItem = {
+  id: string;
+  title: string;
+  sourceType: ApiReflectionSourceType;
+  status: ApiReflectionStatus;
+  isFavorite: boolean;
+  preview: string;
+  commentary: string | null;
+  tags: string[];
+  hasAudio: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiReflectionDetail = {
+  id: string;
+  title: string;
+  sourceType: ApiReflectionSourceType;
+  rawText: string;
+  cleanTranscript: string | null;
+  refinedText: string | null;
+  commentary: string | null;
+  commentaryMode: string | null;
+  language: string;
+  isFavorite: boolean;
+  status: ApiReflectionStatus;
+  processingError: string | null;
+  tags: string[];
+  audio: {
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    durationSeconds: number | null;
+    playbackUrl: string;
+  } | null;
+  processingJobs: ApiReflectionProcessingJob[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiReflectionListResponse = {
+  items: ApiReflectionListItem[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+  };
+};
+
 export type ApiDashboardSummary = {
   entriesCount: number;
   latestEntries: ApiJournalEntry[];
@@ -745,6 +808,129 @@ export async function apiJournalCreate(
     withAuth(token, {
       method: "POST",
       body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiReflectionsList(
+  token: string,
+  input?: {
+    page?: number;
+    pageSize?: number;
+    q?: string;
+    favorite?: boolean;
+    status?: ApiReflectionStatus;
+  },
+): Promise<ApiReflectionListResponse> {
+  const params = new URLSearchParams();
+  params.set("page", String(Math.max(1, input?.page ?? 1)));
+  params.set("pageSize", String(Math.max(1, Math.min(30, input?.pageSize ?? 12))));
+  if (input?.q) {
+    params.set("q", input.q);
+  }
+  if (input?.favorite !== undefined) {
+    params.set("favorite", input.favorite ? "true" : "false");
+  }
+  if (input?.status) {
+    params.set("status", input.status);
+  }
+
+  return requestJson<ApiReflectionListResponse>(`/api/v1/reflections?${params.toString()}`, withAuth(token));
+}
+
+export async function apiReflectionCreate(
+  token: string,
+  input: {
+    sourceType: ApiReflectionSourceType;
+    title?: string;
+    rawText?: string;
+    tags?: string[];
+    language?: string;
+    commentaryMode?: string | null;
+    audio?: {
+      fileName: string;
+      mimeType: string;
+      base64Data: string;
+      durationSeconds?: number;
+    };
+  },
+): Promise<ApiReflectionDetail> {
+  return requestJson<ApiReflectionDetail>(
+    "/api/v1/reflections",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiReflectionById(token: string, reflectionId: string): Promise<ApiReflectionDetail> {
+  return requestJson<ApiReflectionDetail>(`/api/v1/reflections/${reflectionId}`, withAuth(token));
+}
+
+export async function apiReflectionUpdate(
+  token: string,
+  reflectionId: string,
+  input: {
+    title?: string;
+    tags?: string[];
+    isFavorite?: boolean;
+    refinedText?: string;
+  },
+): Promise<ApiReflectionDetail> {
+  return requestJson<ApiReflectionDetail>(
+    `/api/v1/reflections/${reflectionId}`,
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiReflectionDelete(token: string, reflectionId: string): Promise<void> {
+  return requestJson<void>(
+    `/api/v1/reflections/${reflectionId}`,
+    withAuth(token, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function apiReflectionRegenerateCommentary(
+  token: string,
+  reflectionId: string,
+): Promise<ApiReflectionDetail> {
+  return requestJson<ApiReflectionDetail>(
+    `/api/v1/reflections/${reflectionId}/commentary/regenerate`,
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function apiReflectionRetry(
+  token: string,
+  reflectionId: string,
+): Promise<ApiReflectionDetail> {
+  return requestJson<ApiReflectionDetail>(
+    `/api/v1/reflections/${reflectionId}/retry`,
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function apiReflectionSendToCompanion(
+  token: string,
+  reflectionId: string,
+): Promise<{ threadId: string; href: string }> {
+  return requestJson<{ threadId: string; href: string }>(
+    `/api/v1/reflections/${reflectionId}/send-to-companion`,
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify({}),
     }),
   );
 }
