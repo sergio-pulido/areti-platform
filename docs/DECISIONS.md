@@ -1,5 +1,12 @@
 # Decisions
 
+## 2026-03-10 - Introduce Academy as a dedicated knowledge domain with typed repository and route family
+- **Context:** Structured philosophy/psychology knowledge had been delivered as seed docs, while product IA reserved `/community` for interaction features and lacked a dedicated editorial knowledge home.
+- **Decision:** Add a new Academy section under `/academy` with native routes (`/academy`, `/academy/traditions`, `/academy/thinkers`, `/academy/works`, `/academy/concepts`, `/academy/paths`, `/academy/search` + slug detail pages), wire Academy into topbar/sidebar navigation as its own section, and keep Community focused on interaction modules.
+- **Decision:** Implement an Academy knowledge layer in `apps/web/src/lib/academy/*` using a typed JSON-backed repository abstraction (normalized entities, deterministic work slugs, selectors, cross-link helpers, concept mapping, path curation, and search) so UI pages never read raw seed JSON directly.
+- **Why:** Delivers a production-ready Academy IA immediately, preserves clear domain boundaries (Academy vs Community), and establishes reusable typed knowledge access for future agent/recommendation features without invasive DB/API migration in this iteration.
+- **Tradeoff:** Source-of-truth storage for Academy currently lives in app-managed JSON abstraction rather than first-class DB tables/API endpoints, so future backend unification will still require a migration step.
+
 ## 2026-03-10 - Add inline message actions in Companion with branch lineage and auto-ask flow
 - **Context:** Users could continue conversations, but valuable assistant/user turns required manual copy/paste to preserve elsewhere or explore alternate paths.
 - **Decision:** Add message-level actions in chat UI (`Copy`, `Quote`, `Pin insight`, `To journal`, `Branch here`, `Branch + ask`), add authenticated web proxy route for journal creation from chat (`POST /api/journal`), and add backend branch endpoint (`POST /api/v1/chat/threads/:id/branch`) backed by persisted lineage metadata (`chat_thread_branches`) so branched threads retain origin thread/message context in API/UI.

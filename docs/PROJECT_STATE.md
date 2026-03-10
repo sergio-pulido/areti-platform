@@ -4,7 +4,8 @@
 - Monorepo architecture is active with frontend (`apps/web`), backend (`apps/api`), and shared DB/ORM (`packages/db`).
 - Web app now ships as an installable Progressive Web App (manifest, install metadata, icons, service worker, and offline fallback page).
 - PWA release hygiene now includes a dedicated checklist (`docs/PWA_RELEASE_CHECKLIST.md`) and an e2e smoke test for manifest/service-worker/offline route availability.
-- Canonical section routing is active (`/dashboard` overview, standalone personal tools at `/chat`, `/journal`, `/library`, `/practices`, plus `/community/*`, `/creator/*`, `/account/*`) with contextual sidebars and topbar section entry.
+- Canonical section routing is active (`/dashboard` overview, standalone personal tools at `/chat`, `/journal`, `/library`, `/practices`, plus `/academy/*`, `/community/*`, `/creator/*`, `/account/*`) with contextual sidebars and topbar section entry.
+- Academy now exists as a dedicated editorial knowledge area under `/academy` (separate from `/community`), with structured browsing for traditions, thinkers, works, concepts, guided paths, and cross-entity search.
 - Dashboard home (`/dashboard`) is now action-first: dominant "next step" hero, "Today for you" shortcut actions, continuity resume list, structured reflections, contextual Companion panel, lightweight progress signals, and conditional-only account nudges.
 - Dashboard summary API now computes real progress signals (`streakDays`, `reflectionsThisWeek`, `daysSinceLastEntry`) from persisted journal data and feeds dashboard recency/progress behavior.
 - Dashboard summary now also includes completion-backed lesson/practice progress (`lessonsCompleted`, `totalLessons`, `practicesCompletedThisWeek`) persisted in `user_content_completions`.
@@ -165,6 +166,11 @@
     - service-worker cache header rules in `next.config.ts` for safe updates
     - route-level PWA smoke coverage in Playwright (`tests/pwa.e2e.spec.ts`)
     - PWA release checklist (`docs/PWA_RELEASE_CHECKLIST.md`) for cache versioning/install validation discipline
+  - Added dedicated Academy product area and IA under `/academy`:
+    - `/academy` landing, `/academy/traditions`, `/academy/thinkers`, `/academy/works`, `/academy/concepts`, `/academy/paths`, `/academy/search`
+    - detail routes for traditions/thinkers/works/concepts (`/academy/*/[slug]`)
+    - native navigation integration across desktop/mobile section navigation while preserving Community as interaction-only domain
+  - Added typed Academy knowledge layer (`apps/web/src/lib/academy/*`) with JSON-backed repository abstraction (seed normalization, deterministic work slugs, selectors, concept cross-link mapping, curated starter paths, and search) so future features/agents can query knowledge independently of UI components.
   - Community and creator pages now consume backend content APIs (no hardcoded arrays).
   - Creator root (`/creator`) now renders actionable overview page (no redirect).
   - Topbar bell now consumes notifications API; quick actions remains separate icon/control.

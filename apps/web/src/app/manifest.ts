@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Areti Platform",
     short_name: "Areti",
     description:
-      "A Stoic-Epicurean platform with secure auth, guided practices, journaling, community, and AI support.",
+      "A Stoic-Epicurean platform with Academy knowledge, guided practices, journaling, community, and AI support.",
     start_url: "/",
     scope: "/",
     display: "standalone",

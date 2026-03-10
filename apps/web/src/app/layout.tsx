@@ -6,7 +6,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Areti Platform",
   description:
-    "A Stoic-Epicurean platform with secure auth, guided practices, journaling, community, and AI support.",
+    "A Stoic-Epicurean platform with Academy knowledge, guided practices, journaling, community, and AI support.",
   applicationName: "Areti",
   appleWebApp: {
     capable: true,

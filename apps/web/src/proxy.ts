@@ -8,6 +8,7 @@ const protectedPrefixes = [
   "/library",
   "/practices",
   "/chat",
+  "/academy",
   "/community",
   "/creator",
   "/account",

@@ -102,16 +102,16 @@ export async function AppTopbar({ user, accessToken, guestAuthSwitch }: AppTopba
         </div>
 
         <div className="hidden flex-1 lg:block">
-          <form className="relative max-w-md" action="/library" method="get">
+          <form className="relative max-w-md" action="/academy/search" method="get">
             <label htmlFor="dashboard-search" className="sr-only">
-              Search lessons, practices, reflections, or jump to Companion
+              Search Academy traditions, thinkers, works, and concepts
             </label>
             <Search className="pointer-events-none absolute left-3 top-2.5 text-night-200" size={16} />
             <input
               id="dashboard-search"
               type="search"
               name="q"
-              placeholder="Search lessons, practices, reflections, or jump..."
+              placeholder="Search Academy traditions, thinkers, works..."
               className="w-full rounded-xl border border-night-700 bg-night-900/70 py-2 pl-9 pr-4 text-sm text-sand-100 placeholder:text-night-300 focus:border-sage-300 focus:outline-none"
             />
           </form>
@@ -200,6 +200,9 @@ export async function AppTopbar({ user, accessToken, guestAuthSwitch }: AppTopba
                 <Link href="/journal" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                   Capture a reflection
                 </Link>
+                <Link href="/academy" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
+                  Explore Academy
+                </Link>
                 <Link href="/practices" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
                   Start a practice
                 </Link>
@@ -255,16 +258,16 @@ export async function AppTopbar({ user, accessToken, guestAuthSwitch }: AppTopba
                   <div className="fixed inset-0 z-50 bg-night-950/80 p-4">
                     <div className="mx-auto mt-16 max-w-xl rounded-2xl border border-night-700 bg-night-900 p-4 shadow-2xl">
                       <p className="text-sm font-semibold text-sand-100">Search</p>
-                      <form action="/library" method="get" className="mt-3">
+                      <form action="/academy/search" method="get" className="mt-3">
                         <label htmlFor="mobile-dashboard-search" className="sr-only">
-                          Search lessons, practices, reflections, or jump to Companion
+                          Search Academy traditions, thinkers, works, and concepts
                         </label>
                         <input
                           id="mobile-dashboard-search"
                           type="search"
                           name="q"
                           autoFocus
-                          placeholder="Search lessons, practices, reflections, or jump..."
+                          placeholder="Search Academy traditions, thinkers, works..."
                           className="w-full rounded-xl border border-night-700 bg-night-950 py-2 px-3 text-sm text-sand-100 placeholder:text-night-300 focus:border-sage-300 focus:outline-none"
                         />
                         <button
