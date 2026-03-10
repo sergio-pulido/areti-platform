@@ -127,6 +127,28 @@ test("landing loads API content and signup reaches dashboard", async ({ page }) 
   }
 });
 
+test("academy supports structured navigation, search, and credibility context", async ({ page }) => {
+  await signupAndGoDashboard(page);
+
+  await page.goto("/academy");
+  await expect(page.getByRole("heading", { name: "A Structured Library for Philosophy and Psychology" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open all paths" })).toBeVisible();
+
+  await page.goto("/academy/thinkers");
+  await expect(page.getByRole("heading", { name: "Thinkers" })).toBeVisible();
+  await expect(page.getByText("Foundational").first()).toBeVisible();
+  await expect(page.getByText(/Evidence:/).first()).toBeVisible();
+
+  await page.goto("/academy/search?q=virtue");
+  await expect(page.getByText("Query: virtue")).toBeVisible();
+  const openResult = page.getByRole("link", { name: "Open" }).first();
+  await expect(openResult).toBeVisible();
+  await openResult.click();
+  await expect(page).toHaveURL(/\/academy\/(traditions|thinkers|works|concepts|paths|search|$)/, {
+    timeout: 15000,
+  });
+});
+
 test("reflections flow creates, processes, and sends to companion", async ({ page }) => {
   await signupAndGoDashboard(page);
 

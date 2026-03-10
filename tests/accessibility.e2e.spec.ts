@@ -72,6 +72,7 @@ async function checkRouteA11y(page: import("@playwright/test").Page, route: stri
 test("a11y smoke checks core secured routes", async ({ page }) => {
   await signup(page);
   await checkRouteA11y(page, "/dashboard");
+  await checkRouteA11y(page, "/academy");
   await checkRouteA11y(page, "/community");
   await checkRouteA11y(page, "/account");
   await expect(page).toHaveURL(/\/account\/profile/, { timeout: 15000 });

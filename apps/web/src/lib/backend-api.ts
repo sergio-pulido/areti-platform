@@ -391,6 +391,153 @@ export type ApiContentVideo = {
   videoUrl: string;
 };
 
+export type ApiAcademyDomain = {
+  id: number;
+  slug: string;
+  name: string;
+  descriptionShort: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiAcademyTradition = {
+  id: number;
+  domainId: number;
+  parentTraditionId: number | null;
+  slug: string;
+  name: string;
+  originRegion: string | null;
+  descriptionShort: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiAcademyPerson = {
+  id: number;
+  slug: string;
+  displayName: string;
+  birthYear: number | null;
+  deathYear: number | null;
+  countryOrRegion: string | null;
+  traditionId: number | null;
+  roleType: string | null;
+  isFounder: boolean;
+  credibilityBand: string | null;
+  bioShort: string | null;
+  evidenceProfile: string | null;
+  claimRiskLevel: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiAcademyWork = {
+  id: number;
+  slug: string;
+  personId: number | null;
+  traditionId: number | null;
+  title: string;
+  workType: string | null;
+  publicationYear: number | null;
+  isPrimaryText: boolean;
+  summaryShort: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiAcademyConcept = {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  conceptFamily: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiAcademyPersonRelationship = {
+  id: number;
+  sourcePersonId: number;
+  targetPersonId: number;
+  relationshipType: string;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiAcademyConceptLinks = {
+  concept: ApiAcademyConcept;
+  traditions: ApiAcademyTradition[];
+  persons: ApiAcademyPerson[];
+  works: ApiAcademyWork[];
+};
+
+export type ApiAcademyPathItem = {
+  id: number;
+  pathId: number;
+  entityType: "tradition" | "person" | "work" | "concept";
+  entityId: number;
+  sortOrder: number;
+  rationale: string;
+  createdAt: string;
+  updatedAt: string;
+  tradition: ApiAcademyTradition | null;
+  person: ApiAcademyPerson | null;
+  work: ApiAcademyWork | null;
+  concept: ApiAcademyConcept | null;
+};
+
+export type ApiAcademyPath = {
+  id: number;
+  slug: string;
+  title: string;
+  summary: string;
+  tone: "beginner" | "intermediate";
+  difficultyLevel: "beginner" | "intermediate" | "advanced";
+  progressionOrder: number;
+  recommendationWeight: number;
+  recommendationHint: string;
+  isFeatured: boolean;
+  createdAt: string;
+  updatedAt: string;
+  items?: ApiAcademyPathItem[];
+};
+
+export type ApiAcademySearchResult = {
+  type: "domain" | "tradition" | "person" | "work" | "concept";
+  id: number;
+  slug: string;
+  title: string;
+  subtitle: string;
+  summary: string;
+  score: number;
+  tags: string[];
+};
+
+export type ApiAcademyQueryInput = {
+  entity?: "domains" | "traditions" | "persons" | "works" | "concepts" | "paths";
+  q?: string;
+  slug?: string;
+  domainId?: number;
+  traditionId?: number;
+  personId?: number;
+  conceptId?: number;
+  pathId?: number;
+  limit?: number;
+  includeRelations?: boolean;
+};
+
+export type ApiAcademyQueryResult = {
+  entity: "all" | "domains" | "traditions" | "persons" | "works" | "concepts" | "paths";
+  q: string;
+  domains: ApiAcademyDomain[];
+  traditions: ApiAcademyTradition[];
+  persons: ApiAcademyPerson[];
+  works: ApiAcademyWork[];
+  concepts: ApiAcademyConcept[];
+  paths: ApiAcademyPath[];
+  conceptLinks: ApiAcademyConceptLinks[];
+};
+
 export type ApiAdminAuditLog = {
   id: string;
   adminUserId: string;
@@ -1030,6 +1177,278 @@ export async function apiContentEvents(): Promise<ApiContentEvent[]> {
 
 export async function apiContentVideos(): Promise<ApiContentVideo[]> {
   return requestJson<ApiContentVideo[]>("/api/v1/content/videos");
+}
+
+export async function apiAcademyOverview(): Promise<{
+  overview: {
+    domainCount: number;
+    traditionCount: number;
+    personCount: number;
+    workCount: number;
+    conceptCount: number;
+    relationshipCount: number;
+    conceptLinkCount: number;
+    pathCount: number;
+  };
+  featuredPaths: ApiAcademyPath[];
+}> {
+  return requestJson<{
+    overview: {
+      domainCount: number;
+      traditionCount: number;
+      personCount: number;
+      workCount: number;
+      conceptCount: number;
+      relationshipCount: number;
+      conceptLinkCount: number;
+      pathCount: number;
+    };
+    featuredPaths: ApiAcademyPath[];
+  }>("/api/v1/academy");
+}
+
+export async function apiAcademyDomains(input?: {
+  q?: string;
+  limit?: number;
+}): Promise<ApiAcademyDomain[]> {
+  const params = new URLSearchParams();
+  if (input?.q) {
+    params.set("q", input.q);
+  }
+  if (typeof input?.limit === "number") {
+    params.set("limit", String(input.limit));
+  }
+  const qs = params.toString();
+  return requestJson<ApiAcademyDomain[]>(`/api/v1/academy/domains${qs ? `?${qs}` : ""}`);
+}
+
+export async function apiAcademyDomainBySlug(
+  slug: string,
+): Promise<{ domain: ApiAcademyDomain; traditions: ApiAcademyTradition[] }> {
+  return requestJson<{ domain: ApiAcademyDomain; traditions: ApiAcademyTradition[] }>(
+    `/api/v1/academy/domains/${encodeURIComponent(slug)}`,
+  );
+}
+
+export async function apiAcademyTraditions(input?: {
+  q?: string;
+  limit?: number;
+  domainId?: number;
+  domain?: string;
+  parentTraditionId?: number;
+}): Promise<ApiAcademyTradition[]> {
+  const params = new URLSearchParams();
+  if (input?.q) {
+    params.set("q", input.q);
+  }
+  if (typeof input?.limit === "number") {
+    params.set("limit", String(input.limit));
+  }
+  if (typeof input?.domainId === "number") {
+    params.set("domainId", String(input.domainId));
+  }
+  if (input?.domain) {
+    params.set("domain", input.domain);
+  }
+  if (typeof input?.parentTraditionId === "number") {
+    params.set("parentTraditionId", String(input.parentTraditionId));
+  }
+  const qs = params.toString();
+  return requestJson<ApiAcademyTradition[]>(`/api/v1/academy/traditions${qs ? `?${qs}` : ""}`);
+}
+
+export async function apiAcademyTraditionBySlug(slug: string): Promise<{
+  tradition: ApiAcademyTradition;
+  persons: ApiAcademyPerson[];
+  works: ApiAcademyWork[];
+  concepts: ApiAcademyConcept[];
+}> {
+  return requestJson<{
+    tradition: ApiAcademyTradition;
+    persons: ApiAcademyPerson[];
+    works: ApiAcademyWork[];
+    concepts: ApiAcademyConcept[];
+  }>(`/api/v1/academy/traditions/${encodeURIComponent(slug)}`);
+}
+
+export async function apiAcademyPersons(input?: {
+  q?: string;
+  limit?: number;
+  domainId?: number;
+  traditionId?: number;
+  credibilityBand?: string;
+}): Promise<ApiAcademyPerson[]> {
+  const params = new URLSearchParams();
+  if (input?.q) {
+    params.set("q", input.q);
+  }
+  if (typeof input?.limit === "number") {
+    params.set("limit", String(input.limit));
+  }
+  if (typeof input?.domainId === "number") {
+    params.set("domainId", String(input.domainId));
+  }
+  if (typeof input?.traditionId === "number") {
+    params.set("traditionId", String(input.traditionId));
+  }
+  if (input?.credibilityBand) {
+    params.set("credibilityBand", input.credibilityBand);
+  }
+  const qs = params.toString();
+  return requestJson<ApiAcademyPerson[]>(`/api/v1/academy/persons${qs ? `?${qs}` : ""}`);
+}
+
+export async function apiAcademyPersonBySlug(slug: string): Promise<{
+  person: ApiAcademyPerson;
+  works: ApiAcademyWork[];
+  concepts: ApiAcademyConcept[];
+  relationships: ApiAcademyPersonRelationship[];
+}> {
+  return requestJson<{
+    person: ApiAcademyPerson;
+    works: ApiAcademyWork[];
+    concepts: ApiAcademyConcept[];
+    relationships: ApiAcademyPersonRelationship[];
+  }>(`/api/v1/academy/persons/${encodeURIComponent(slug)}`);
+}
+
+export async function apiAcademyWorks(input?: {
+  q?: string;
+  limit?: number;
+  personId?: number;
+  traditionId?: number;
+  isPrimaryText?: boolean;
+}): Promise<ApiAcademyWork[]> {
+  const params = new URLSearchParams();
+  if (input?.q) {
+    params.set("q", input.q);
+  }
+  if (typeof input?.limit === "number") {
+    params.set("limit", String(input.limit));
+  }
+  if (typeof input?.personId === "number") {
+    params.set("personId", String(input.personId));
+  }
+  if (typeof input?.traditionId === "number") {
+    params.set("traditionId", String(input.traditionId));
+  }
+  if (typeof input?.isPrimaryText === "boolean") {
+    params.set("isPrimaryText", String(input.isPrimaryText));
+  }
+  const qs = params.toString();
+  return requestJson<ApiAcademyWork[]>(`/api/v1/academy/works${qs ? `?${qs}` : ""}`);
+}
+
+export async function apiAcademyWorkBySlug(slug: string): Promise<{
+  work: ApiAcademyWork;
+  author: ApiAcademyPerson | null;
+  tradition: ApiAcademyTradition | null;
+  concepts: ApiAcademyConcept[];
+  relatedWorks: ApiAcademyWork[];
+}> {
+  return requestJson<{
+    work: ApiAcademyWork;
+    author: ApiAcademyPerson | null;
+    tradition: ApiAcademyTradition | null;
+    concepts: ApiAcademyConcept[];
+    relatedWorks: ApiAcademyWork[];
+  }>(`/api/v1/academy/works/${encodeURIComponent(slug)}`);
+}
+
+export async function apiAcademyConcepts(input?: {
+  q?: string;
+  limit?: number;
+  family?: string;
+  traditionId?: number;
+  personId?: number;
+  workId?: number;
+}): Promise<ApiAcademyConcept[]> {
+  const params = new URLSearchParams();
+  if (input?.q) {
+    params.set("q", input.q);
+  }
+  if (typeof input?.limit === "number") {
+    params.set("limit", String(input.limit));
+  }
+  if (input?.family) {
+    params.set("family", input.family);
+  }
+  if (typeof input?.traditionId === "number") {
+    params.set("traditionId", String(input.traditionId));
+  }
+  if (typeof input?.personId === "number") {
+    params.set("personId", String(input.personId));
+  }
+  if (typeof input?.workId === "number") {
+    params.set("workId", String(input.workId));
+  }
+  const qs = params.toString();
+  return requestJson<ApiAcademyConcept[]>(`/api/v1/academy/concepts${qs ? `?${qs}` : ""}`);
+}
+
+export async function apiAcademyConceptBySlug(slug: string): Promise<{
+  concept: ApiAcademyConcept;
+  links: ApiAcademyConceptLinks | null;
+}> {
+  return requestJson<{ concept: ApiAcademyConcept; links: ApiAcademyConceptLinks | null }>(
+    `/api/v1/academy/concepts/${encodeURIComponent(slug)}`,
+  );
+}
+
+export async function apiAcademyConceptLinks(slug: string): Promise<ApiAcademyConceptLinks> {
+  return requestJson<ApiAcademyConceptLinks>(`/api/v1/academy/concepts/${encodeURIComponent(slug)}/links`);
+}
+
+export async function apiAcademyPaths(input?: {
+  q?: string;
+  limit?: number;
+  featured?: boolean;
+  includeItems?: boolean;
+}): Promise<ApiAcademyPath[]> {
+  const params = new URLSearchParams();
+  if (input?.q) {
+    params.set("q", input.q);
+  }
+  if (typeof input?.limit === "number") {
+    params.set("limit", String(input.limit));
+  }
+  if (typeof input?.featured === "boolean") {
+    params.set("featured", String(input.featured));
+  }
+  if (typeof input?.includeItems === "boolean") {
+    params.set("includeItems", String(input.includeItems));
+  }
+  const qs = params.toString();
+  return requestJson<ApiAcademyPath[]>(`/api/v1/academy/paths${qs ? `?${qs}` : ""}`);
+}
+
+export async function apiAcademyPathBySlug(slug: string): Promise<ApiAcademyPath> {
+  return requestJson<ApiAcademyPath>(`/api/v1/academy/paths/${encodeURIComponent(slug)}`);
+}
+
+export async function apiAcademySearch(
+  q: string,
+  limit = 40,
+): Promise<ApiAcademySearchResult[]> {
+  const params = new URLSearchParams({
+    q,
+    limit: String(limit),
+  });
+
+  return requestJson<ApiAcademySearchResult[]>(`/api/v1/academy/search?${params.toString()}`);
+}
+
+export async function apiAcademyQuery(
+  token: string,
+  input: ApiAcademyQueryInput,
+): Promise<ApiAcademyQueryResult> {
+  return requestJson<ApiAcademyQueryResult>(
+    "/api/v1/academy/query",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
 }
 
 export async function apiAdminContent(token: string): Promise<AdminContentBundle> {

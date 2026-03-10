@@ -492,3 +492,9 @@
 - **Decision:** Move passkey enrollment action into the "Registered passkeys" panel (as first/additional enrollment), keep top authentication cards focused on unmet setup state, and show passkey policy controls only when at least one passkey exists.
 - **Why:** Better matches WebAuthn best practice (multiple passkeys per account), clarifies what is already configured, and places add/manage actions where inventory is already visible.
 - **Tradeoff:** Registration CTA is no longer duplicated in multiple cards, so users must manage passkeys from a single section.
+
+## 2026-03-10 - Promote Academy data from web-seed-only to first-party DB + API knowledge layer
+- **Context:** Academy UI launched with a JSON-backed web repository and editorial mappings in code, but future agent/recommendation use needed backend-accessible source-of-truth data with explicit relation tables and query interfaces.
+- **Decision:** Add Academy relational tables in `packages/db` (core entities + concept relation tables + guided path tables), seed them from canonical Academy seed assets at startup, and expose a dedicated `/api/v1/academy/*` read API plus authenticated `/api/v1/academy/query` internal query endpoint.
+- **Why:** Creates a stable, queryable knowledge foundation for product features, search, and future AI/agent use without scraping UI-layer selectors.
+- **Tradeoff:** Introduces additional schema/seed maintenance and a temporary dual-read model (web still has local Academy selectors while backend Academy APIs are rolled in for future consumers).

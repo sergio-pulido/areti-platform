@@ -25,12 +25,17 @@ export default function AcademyPathsPage() {
             className="scroll-mt-28"
           >
             <div className="flex flex-wrap gap-2">
+              {path.isFeatured ? <Badge variant="default">Featured</Badge> : null}
               <Badge variant="muted">{path.tone === "beginner" ? "Beginner" : "Intermediate"}</Badge>
+              <Badge variant="muted">Difficulty: {path.difficultyLevel}</Badge>
+              <Badge variant="muted">Step {path.progressionOrder}</Badge>
               <Badge variant="muted">{path.traditions.length} traditions</Badge>
               <Badge variant="muted">{path.persons.length} thinkers</Badge>
               <Badge variant="muted">{path.works.length} works</Badge>
               <Badge variant="muted">{path.concepts.length} concepts</Badge>
             </div>
+
+            <p className="mt-3 text-sm text-night-200">{path.recommendationHint}</p>
 
             <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
               <div>

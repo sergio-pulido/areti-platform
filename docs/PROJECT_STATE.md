@@ -99,6 +99,8 @@
   - Added `deleted_at` and `anonymized_at` user lifecycle columns.
   - Added `user_legal_consents`, `email_verification_challenges`, and `user_onboarding_profiles` tables.
   - Added `user_profiles`, `user_preferences`, `user_notification_preferences`, and `user_deletion_audit` for account-domain persistence.
+  - Added full Academy persistence tables (`academy_domains`, `academy_traditions`, `academy_persons`, `academy_works`, `academy_concepts`, `academy_person_relationships`) plus explicit concept-link tables (`academy_concept_traditions`, `academy_concept_persons`, `academy_concept_works`) and guided-path tables (`academy_paths`, `academy_path_items`) with progression/recommendation metadata.
+  - Added startup Academy seed ingestion from canonical knowledge JSON plus editorial concept-link/path seeds so Academy data is queryable as first-party DB state (not UI-only seed files).
   - Switched library/practice seed loading to explicit command-run seeding (`db:seed:library-practices`).
 - API:
   - Added content endpoints:
@@ -157,6 +159,16 @@
     - `GET/DELETE /api/v1/security/devices*`
   - Added chat rate limiting and API env validation.
   - Added explicit auth email transport selection (`EMAIL_TRANSPORT=disabled|resend|smtp`) with optional SMTP/MailHog support (`SMTP_*`) and production-time enforcement.
+  - Added Academy API surface for structured knowledge consumption:
+    - `GET /api/v1/academy`
+    - `GET /api/v1/academy/domains` and `GET /api/v1/academy/domains/:slug`
+    - `GET /api/v1/academy/traditions` and `GET /api/v1/academy/traditions/:slug`
+    - `GET /api/v1/academy/persons` and `GET /api/v1/academy/persons/:slug`
+    - `GET /api/v1/academy/works` and `GET /api/v1/academy/works/:slug`
+    - `GET /api/v1/academy/concepts`, `GET /api/v1/academy/concepts/:slug`, `GET /api/v1/academy/concepts/:slug/links`
+    - `GET /api/v1/academy/paths` and `GET /api/v1/academy/paths/:slug`
+    - `GET /api/v1/academy/search`
+  - Added authenticated internal Academy query endpoint (`POST /api/v1/academy/query`) for future agent/recommendation consumers.
 - Web:
   - Added production PWA foundations:
     - `app/manifest.ts` with install metadata, categories, screenshots, and quick-launch shortcuts
@@ -171,6 +183,8 @@
     - detail routes for traditions/thinkers/works/concepts (`/academy/*/[slug]`)
     - native navigation integration across desktop/mobile section navigation while preserving Community as interaction-only domain
   - Added typed Academy knowledge layer (`apps/web/src/lib/academy/*`) with JSON-backed repository abstraction (seed normalization, deterministic work slugs, selectors, concept cross-link mapping, curated starter paths, and search) so future features/agents can query knowledge independently of UI components.
+  - Added typed Academy backend API client functions in `apps/web/src/lib/backend-api.ts` to consume new `/api/v1/academy/*` endpoints and authenticated `/api/v1/academy/query`.
+  - Expanded Academy guided-path model to include persisted editorial metadata (`difficultyLevel`, `progressionOrder`, `recommendationWeight`, `recommendationHint`, `isFeatured`) and surfaced those cues in `/academy/paths`.
   - Community and creator pages now consume backend content APIs (no hardcoded arrays).
   - Creator root (`/creator`) now renders actionable overview page (no redirect).
   - Topbar bell now consumes notifications API; quick actions remains separate icon/control.
@@ -263,8 +277,10 @@
   - Added web e2e coverage to ensure passkey registration action is anchored in the "Registered passkeys" panel (not duplicated in top authentication setup cards).
   - Added API integration assertions for new dashboard completion-history payload (`recentCompletions`).
   - Added API integration coverage for reflections lifecycle, authorization boundaries, processing outputs, and Companion handoff.
+  - Added API integration coverage for Academy endpoints (overview, domain/tradition browsing, concept links, search, and authenticated internal query).
   - Added service-level integration coverage for reflections processing orchestration with mocked dependencies.
   - Added web e2e coverage for the critical reflections journey (create -> process -> read -> send to companion).
+  - Added web e2e coverage for Academy structured navigation/search/credibility context and extended accessibility smoke checks to include `/academy`.
   - Hardened dashboard e2e selectors for prompt starter and journal form targeting to reduce strict-mode ambiguities.
   - Updated e2e/a11y signup helpers for legal consent, email verification, onboarding completion, and cookie gate behavior.
   - Forced Playwright API startup to `EMAIL_TRANSPORT=disabled` so signup/resend tests never consume external email quotas.

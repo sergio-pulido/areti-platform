@@ -13,6 +13,11 @@ const ACADEMY_PATH_SEEDS: AcademyPathSeed[] = [
     summary:
       "Build a grounded foundation with core Stoic thinkers, primary texts, and practical concepts you can apply daily.",
     tone: "beginner",
+    difficultyLevel: "beginner",
+    progressionOrder: 1,
+    recommendationWeight: 95,
+    recommendationHint: "Best for users seeking emotional stability and disciplined action.",
+    isFeatured: true,
     traditionSlugs: ["stoicism"],
     personSlugs: ["seneca", "epictetus", "marcus-aurelius"],
     workIds: [1, 2, 3],
@@ -24,6 +29,11 @@ const ACADEMY_PATH_SEEDS: AcademyPathSeed[] = [
     summary:
       "Explore suffering, presence, and emptiness through foundational Buddhist sources and clear introductory anchors.",
     tone: "beginner",
+    difficultyLevel: "beginner",
+    progressionOrder: 2,
+    recommendationWeight: 90,
+    recommendationHint: "Best for users working with suffering and attentional training.",
+    isFeatured: true,
     traditionSlugs: ["buddhism", "zen"],
     personSlugs: ["gautama-buddha", "nagarjuna", "dogen"],
     workIds: [9, 10, 11],
@@ -35,6 +45,11 @@ const ACADEMY_PATH_SEEDS: AcademyPathSeed[] = [
     summary:
       "Use clinical and humanistic psychology to understand patterns, attachment, and meaning with strong conceptual framing.",
     tone: "beginner",
+    difficultyLevel: "intermediate",
+    progressionOrder: 3,
+    recommendationWeight: 88,
+    recommendationHint: "Best for users wanting evidence-oriented self-understanding.",
+    isFeatured: true,
     traditionSlugs: ["cbt", "humanistic-psychology", "attachment-theory"],
     personSlugs: ["aaron-beck", "carl-rogers", "john-bowlby"],
     workIds: [29, 31, 34],
@@ -46,6 +61,11 @@ const ACADEMY_PATH_SEEDS: AcademyPathSeed[] = [
     summary:
       "A guided route through existential and logotherapeutic sources for people looking for direction and resilient purpose.",
     tone: "intermediate",
+    difficultyLevel: "intermediate",
+    progressionOrder: 4,
+    recommendationWeight: 82,
+    recommendationHint: "Best for users in transition, identity questioning, or value reorientation.",
+    isFeatured: false,
     traditionSlugs: ["existentialism", "humanistic-psychology"],
     personSlugs: ["kierkegaard", "camus", "viktor-frankl"],
     workIds: [6, 8, 33],
@@ -57,6 +77,11 @@ const ACADEMY_PATH_SEEDS: AcademyPathSeed[] = [
     summary:
       "Combine foundational discipline ideas with modern execution systems while keeping evidence and credibility clearly separated.",
     tone: "beginner",
+    difficultyLevel: "beginner",
+    progressionOrder: 5,
+    recommendationWeight: 86,
+    recommendationHint: "Best for users optimizing routines, consistency, and execution quality.",
+    isFeatured: true,
     traditionSlugs: ["habits-productivity", "discipline-resilience", "stoicism"],
     personSlugs: ["james-clear", "cal-newport", "epictetus"],
     workIds: [2, 37, 38],
@@ -88,6 +113,11 @@ function resolvePath(seed: AcademyPathSeed): AcademyPath {
     title: seed.title,
     summary: seed.summary,
     tone: seed.tone,
+    difficultyLevel: seed.difficultyLevel,
+    progressionOrder: seed.progressionOrder,
+    recommendationWeight: seed.recommendationWeight,
+    recommendationHint: seed.recommendationHint,
+    isFeatured: seed.isFeatured,
     traditions,
     persons,
     works,
@@ -96,7 +126,21 @@ function resolvePath(seed: AcademyPathSeed): AcademyPath {
 }
 
 export function getAcademyPaths(): AcademyPath[] {
-  return ACADEMY_PATH_SEEDS.map(resolvePath);
+  return ACADEMY_PATH_SEEDS.map(resolvePath).sort((a, b) => {
+    if (a.isFeatured !== b.isFeatured) {
+      return a.isFeatured ? -1 : 1;
+    }
+
+    if (a.progressionOrder !== b.progressionOrder) {
+      return a.progressionOrder - b.progressionOrder;
+    }
+
+    if (a.recommendationWeight !== b.recommendationWeight) {
+      return b.recommendationWeight - a.recommendationWeight;
+    }
+
+    return a.title.localeCompare(b.title);
+  });
 }
 
 export function getAcademyPathBySlug(slug: string): AcademyPath | null {

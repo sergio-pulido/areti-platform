@@ -313,6 +313,56 @@ describe("API integration", () => {
     ).toBe(true);
   });
 
+  it("serves academy catalog, concept links, search, and internal query payloads", async () => {
+    const overview = await request(app).get("/api/v1/academy");
+    expect(overview.status).toBe(200);
+    expect(overview.body.data.overview.domainCount).toBeGreaterThan(0);
+    expect(overview.body.data.overview.pathCount).toBeGreaterThan(0);
+    expect(Array.isArray(overview.body.data.featuredPaths)).toBe(true);
+
+    const traditions = await request(app).get("/api/v1/academy/traditions?domain=philosophy");
+    expect(traditions.status).toBe(200);
+    expect(Array.isArray(traditions.body.data)).toBe(true);
+    expect(
+      traditions.body.data.some((item: { slug: string }) => item.slug === "stoicism"),
+    ).toBe(true);
+
+    const conceptLinks = await request(app).get("/api/v1/academy/concepts/virtue/links");
+    expect(conceptLinks.status).toBe(200);
+    expect(conceptLinks.body.data.concept.slug).toBe("virtue");
+    expect(conceptLinks.body.data.traditions.length).toBeGreaterThan(0);
+    expect(conceptLinks.body.data.persons.length).toBeGreaterThan(0);
+    expect(conceptLinks.body.data.works.length).toBeGreaterThan(0);
+
+    const search = await request(app).get("/api/v1/academy/search?q=stoic&limit=10");
+    expect(search.status).toBe(200);
+    expect(Array.isArray(search.body.data)).toBe(true);
+    expect(search.body.data.length).toBeGreaterThan(0);
+
+    const unauthQuery = await request(app).post("/api/v1/academy/query").send({
+      entity: "paths",
+      includeRelations: true,
+      limit: 3,
+    });
+    expect(unauthQuery.status).toBe(401);
+
+    const authQuery = await request(app)
+      .post("/api/v1/academy/query")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        entity: "paths",
+        includeRelations: true,
+        limit: 3,
+      });
+
+    expect(authQuery.status).toBe(200);
+    expect(authQuery.body.data.entity).toBe("paths");
+    expect(Array.isArray(authQuery.body.data.paths)).toBe(true);
+    expect(authQuery.body.data.paths.length).toBeGreaterThan(0);
+    expect(typeof authQuery.body.data.paths[0].difficultyLevel).toBe("string");
+    expect(typeof authQuery.body.data.paths[0].recommendationWeight).toBe("number");
+  });
+
   it("supports full reflections lifecycle, processing, and companion handoff", async () => {
     const created = await request(app)
       .post("/api/v1/reflections")

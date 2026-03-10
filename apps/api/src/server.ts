@@ -18,6 +18,25 @@ import nodemailer, { type Transporter } from "nodemailer";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import {
+  getAcademyConceptBySlug,
+  getAcademyConceptLinksBySlug,
+  getAcademyConcepts,
+  getAcademyDomainBySlug,
+  getAcademyDomains,
+  getAcademyKnowledgeOverview,
+  getAcademyPathBySlug,
+  getAcademyPaths,
+  getAcademyPersonById,
+  getAcademyPersonBySlug,
+  getAcademyPersonRelationships,
+  getAcademyPersons,
+  getAcademyTraditionById,
+  getAcademyTraditionBySlug,
+  getAcademyTraditions,
+  getAcademyWorkBySlug,
+  getAcademyWorks,
+  queryAcademyKnowledge,
+  searchAcademyKnowledge,
   consumeEmailVerificationChallenge,
   countVerifiedUsers,
   countJournalEntriesByUser,
@@ -1929,6 +1948,73 @@ const highlightSchema = z.object({
   slug: z.string().trim().min(3).max(80),
   description: z.string().trim().min(8).max(300),
   status: z.enum(["DRAFT", "PUBLISHED"]),
+});
+
+const academySlugParamSchema = z.object({
+  slug: z.string().trim().min(2).max(140),
+});
+
+const academySearchQuerySchema = z.object({
+  q: z.string().trim().min(1).max(120),
+  limit: z.coerce.number().int().positive().max(120).default(40),
+});
+
+const academyDomainsQuerySchema = z.object({
+  q: z.string().trim().min(1).max(120).optional(),
+  limit: z.coerce.number().int().positive().max(200).default(200),
+});
+
+const academyTraditionsQuerySchema = z.object({
+  domainId: z.coerce.number().int().positive().optional(),
+  domain: z.string().trim().min(1).max(80).optional(),
+  parentTraditionId: z.coerce.number().int().positive().optional(),
+  q: z.string().trim().min(1).max(120).optional(),
+  limit: z.coerce.number().int().positive().max(200).default(200),
+});
+
+const academyPersonsQuerySchema = z.object({
+  domainId: z.coerce.number().int().positive().optional(),
+  traditionId: z.coerce.number().int().positive().optional(),
+  credibilityBand: z.string().trim().min(1).max(80).optional(),
+  q: z.string().trim().min(1).max(120).optional(),
+  limit: z.coerce.number().int().positive().max(200).default(200),
+});
+
+const academyWorksQuerySchema = z.object({
+  personId: z.coerce.number().int().positive().optional(),
+  traditionId: z.coerce.number().int().positive().optional(),
+  isPrimaryText: z.coerce.boolean().optional(),
+  q: z.string().trim().min(1).max(120).optional(),
+  limit: z.coerce.number().int().positive().max(200).default(200),
+});
+
+const academyConceptsQuerySchema = z.object({
+  family: z.string().trim().min(1).max(80).optional(),
+  traditionId: z.coerce.number().int().positive().optional(),
+  personId: z.coerce.number().int().positive().optional(),
+  workId: z.coerce.number().int().positive().optional(),
+  q: z.string().trim().min(1).max(120).optional(),
+  limit: z.coerce.number().int().positive().max(200).default(200),
+});
+
+const academyPathsQuerySchema = z.object({
+  featured: z.coerce.boolean().optional(),
+  includeItems: z.coerce.boolean().optional(),
+  q: z.string().trim().min(1).max(120).optional(),
+  limit: z.coerce.number().int().positive().max(80).default(80),
+});
+
+const academyInternalQuerySchema = z.object({
+  entity: z.enum(["domains", "traditions", "persons", "works", "concepts", "paths"]).optional(),
+  q: z.string().trim().max(120).optional(),
+  slug: z.string().trim().max(140).optional(),
+  domainId: z.coerce.number().int().positive().optional(),
+  traditionId: z.coerce.number().int().positive().optional(),
+  personId: z.coerce.number().int().positive().optional(),
+  conceptId: z.coerce.number().int().positive().optional(),
+  pathId: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(120).optional(),
+  includeRelations: z.boolean().optional(),
 });
 
 const passkeyRenameSchema = z.object({
@@ -5224,6 +5310,313 @@ export function createApp() {
 
   app.get("/api/v1/content/videos", (_req, res) => {
     res.json({ data: getCreatorVideos() });
+  });
+
+  app.get("/api/v1/academy", (_req, res) => {
+    res.json({
+      data: {
+        overview: getAcademyKnowledgeOverview(),
+        featuredPaths: getAcademyPaths({
+          featuredOnly: true,
+          includeItems: false,
+          limit: 6,
+        }),
+      },
+    });
+  });
+
+  app.get("/api/v1/academy/domains", (req, res) => {
+    const parsed = academyDomainsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    res.json({
+      data: getAcademyDomains({
+        q: parsed.data.q,
+        limit: parsed.data.limit,
+      }),
+    });
+  });
+
+  app.get("/api/v1/academy/domains/:slug", (req, res) => {
+    const parsed = academySlugParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid slug parameter" });
+      return;
+    }
+
+    const domain = getAcademyDomainBySlug(parsed.data.slug);
+    if (!domain) {
+      res.status(404).json({ error: "Domain not found" });
+      return;
+    }
+
+    const traditions = getAcademyTraditions({ domainId: domain.id, limit: 200 });
+    res.json({ data: { domain, traditions } });
+  });
+
+  app.get("/api/v1/academy/traditions", (req, res) => {
+    const parsed = academyTraditionsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    let domainId = parsed.data.domainId;
+    if (!domainId && parsed.data.domain) {
+      const domain = getAcademyDomainBySlug(parsed.data.domain);
+      if (!domain) {
+        res.json({ data: [] });
+        return;
+      }
+      domainId = domain.id;
+    }
+
+    res.json({
+      data: getAcademyTraditions({
+        q: parsed.data.q,
+        limit: parsed.data.limit,
+        domainId,
+        parentTraditionId: parsed.data.parentTraditionId,
+      }),
+    });
+  });
+
+  app.get("/api/v1/academy/traditions/:slug", (req, res) => {
+    const parsed = academySlugParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid slug parameter" });
+      return;
+    }
+
+    const tradition = getAcademyTraditionBySlug(parsed.data.slug);
+    if (!tradition) {
+      res.status(404).json({ error: "Tradition not found" });
+      return;
+    }
+
+    const persons = getAcademyPersons({ traditionId: tradition.id, limit: 120 });
+    const works = getAcademyWorks({ traditionId: tradition.id, limit: 120 });
+    const concepts = getAcademyConcepts({ traditionId: tradition.id, limit: 120 });
+
+    res.json({
+      data: {
+        tradition,
+        persons,
+        works,
+        concepts,
+      },
+    });
+  });
+
+  app.get("/api/v1/academy/persons", (req, res) => {
+    const parsed = academyPersonsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    res.json({
+      data: getAcademyPersons({
+        q: parsed.data.q,
+        limit: parsed.data.limit,
+        traditionId: parsed.data.traditionId,
+        domainId: parsed.data.domainId,
+        credibilityBand: parsed.data.credibilityBand,
+      }),
+    });
+  });
+
+  app.get("/api/v1/academy/persons/:slug", (req, res) => {
+    const parsed = academySlugParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid slug parameter" });
+      return;
+    }
+
+    const person = getAcademyPersonBySlug(parsed.data.slug);
+    if (!person) {
+      res.status(404).json({ error: "Person not found" });
+      return;
+    }
+
+    const works = getAcademyWorks({ personId: person.id, limit: 120 });
+    const concepts = getAcademyConcepts({ personId: person.id, limit: 120 });
+    const relationships = getAcademyPersonRelationships({ personId: person.id, limit: 120 });
+
+    res.json({
+      data: {
+        person,
+        works,
+        concepts,
+        relationships,
+      },
+    });
+  });
+
+  app.get("/api/v1/academy/works", (req, res) => {
+    const parsed = academyWorksQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    res.json({
+      data: getAcademyWorks({
+        q: parsed.data.q,
+        limit: parsed.data.limit,
+        personId: parsed.data.personId,
+        traditionId: parsed.data.traditionId,
+        isPrimaryText: parsed.data.isPrimaryText,
+      }),
+    });
+  });
+
+  app.get("/api/v1/academy/works/:slug", (req, res) => {
+    const parsed = academySlugParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid slug parameter" });
+      return;
+    }
+
+    const work = getAcademyWorkBySlug(parsed.data.slug);
+    if (!work) {
+      res.status(404).json({ error: "Work not found" });
+      return;
+    }
+
+    const author = work.personId ? getAcademyPersonById(work.personId) : null;
+    const tradition = work.traditionId ? getAcademyTraditionById(work.traditionId) : null;
+    const concepts = getAcademyConcepts({ workId: work.id, limit: 120 });
+    const relatedWorks = getAcademyWorks({
+      traditionId: work.traditionId ?? undefined,
+      personId: work.personId ?? undefined,
+      limit: 24,
+    }).filter((candidate) => candidate.id !== work.id);
+
+    res.json({
+      data: {
+        work,
+        author: author ?? null,
+        tradition: tradition ?? null,
+        concepts,
+        relatedWorks,
+      },
+    });
+  });
+
+  app.get("/api/v1/academy/concepts", (req, res) => {
+    const parsed = academyConceptsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    res.json({
+      data: getAcademyConcepts({
+        q: parsed.data.q,
+        limit: parsed.data.limit,
+        conceptFamily: parsed.data.family,
+        traditionId: parsed.data.traditionId,
+        personId: parsed.data.personId,
+        workId: parsed.data.workId,
+      }),
+    });
+  });
+
+  app.get("/api/v1/academy/concepts/:slug", (req, res) => {
+    const parsed = academySlugParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid slug parameter" });
+      return;
+    }
+
+    const concept = getAcademyConceptBySlug(parsed.data.slug);
+    if (!concept) {
+      res.status(404).json({ error: "Concept not found" });
+      return;
+    }
+
+    const links = getAcademyConceptLinksBySlug(parsed.data.slug);
+    res.json({
+      data: {
+        concept,
+        links,
+      },
+    });
+  });
+
+  app.get("/api/v1/academy/concepts/:slug/links", (req, res) => {
+    const parsed = academySlugParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid slug parameter" });
+      return;
+    }
+
+    const links = getAcademyConceptLinksBySlug(parsed.data.slug);
+    if (!links) {
+      res.status(404).json({ error: "Concept links not found" });
+      return;
+    }
+
+    res.json({ data: links });
+  });
+
+  app.get("/api/v1/academy/paths", (req, res) => {
+    const parsed = academyPathsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    res.json({
+      data: getAcademyPaths({
+        q: parsed.data.q,
+        featuredOnly: parsed.data.featured,
+        includeItems: parsed.data.includeItems,
+        limit: parsed.data.limit,
+      }),
+    });
+  });
+
+  app.get("/api/v1/academy/paths/:slug", (req, res) => {
+    const parsed = academySlugParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid slug parameter" });
+      return;
+    }
+
+    const path = getAcademyPathBySlug(parsed.data.slug);
+    if (!path) {
+      res.status(404).json({ error: "Path not found" });
+      return;
+    }
+
+    res.json({ data: path });
+  });
+
+  app.get("/api/v1/academy/search", (req, res) => {
+    const parsed = academySearchQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    res.json({
+      data: searchAcademyKnowledge(parsed.data.q, parsed.data.limit),
+    });
+  });
+
+  app.post("/api/v1/academy/query", requireAuth, (req, res) => {
+    const parsed = academyInternalQuerySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query payload" });
+      return;
+    }
+
+    res.json({ data: queryAcademyKnowledge(parsed.data) });
   });
 
   app.get("/api/v1/admin/content", requireAuth, requireAdmin, (_req, res) => {

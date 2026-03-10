@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, uniqueIndex, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 export type UserRole = "MEMBER" | "ADMIN";
 export type ContentStatus = "DRAFT" | "PUBLISHED";
@@ -22,6 +22,9 @@ export type PreviewEventType =
   | "preview_signup_view"
   | "preview_chat_prompt_submitted"
   | "preview_chat_response_received";
+export type AcademyPathTone = "beginner" | "intermediate";
+export type AcademyPathDifficulty = "beginner" | "intermediate" | "advanced";
+export type AcademyPathEntityType = "tradition" | "person" | "work" | "concept";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -451,6 +454,198 @@ export const creatorVideos = sqliteTable("creator_videos", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const academyDomains = sqliteTable("academy_domains", {
+  id: integer("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  descriptionShort: text("description_short"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const academyTraditions = sqliteTable("academy_traditions", {
+  id: integer("id").primaryKey(),
+  domainId: integer("domain_id")
+    .notNull()
+    .references(() => academyDomains.id, { onDelete: "restrict" }),
+  parentTraditionId: integer("parent_tradition_id").references((): AnySQLiteColumn => academyTraditions.id, {
+    onDelete: "set null",
+  }),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  originRegion: text("origin_region"),
+  descriptionShort: text("description_short"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const academyPersons = sqliteTable("academy_persons", {
+  id: integer("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  birthYear: integer("birth_year"),
+  deathYear: integer("death_year"),
+  countryOrRegion: text("country_or_region"),
+  traditionId: integer("tradition_id").references(() => academyTraditions.id, {
+    onDelete: "set null",
+  }),
+  roleType: text("role_type"),
+  isFounder: integer("is_founder", { mode: "boolean" }).notNull().default(false),
+  credibilityBand: text("credibility_band"),
+  bioShort: text("bio_short"),
+  evidenceProfile: text("evidence_profile"),
+  claimRiskLevel: text("claim_risk_level"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const academyWorks = sqliteTable("academy_works", {
+  id: integer("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  personId: integer("person_id").references(() => academyPersons.id, { onDelete: "set null" }),
+  traditionId: integer("tradition_id").references(() => academyTraditions.id, {
+    onDelete: "set null",
+  }),
+  title: text("title").notNull(),
+  workType: text("work_type"),
+  publicationYear: integer("publication_year"),
+  isPrimaryText: integer("is_primary_text", { mode: "boolean" }).notNull().default(false),
+  summaryShort: text("summary_short"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const academyConcepts = sqliteTable("academy_concepts", {
+  id: integer("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description"),
+  conceptFamily: text("concept_family"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const academyPersonRelationships = sqliteTable("academy_person_relationships", {
+  id: integer("id").primaryKey(),
+  sourcePersonId: integer("source_person_id")
+    .notNull()
+    .references(() => academyPersons.id, { onDelete: "cascade" }),
+  targetPersonId: integer("target_person_id")
+    .notNull()
+    .references(() => academyPersons.id, { onDelete: "cascade" }),
+  relationshipType: text("relationship_type").notNull(),
+  notes: text("notes"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const academyConceptTraditions = sqliteTable(
+  "academy_concept_traditions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    conceptId: integer("concept_id")
+      .notNull()
+      .references(() => academyConcepts.id, { onDelete: "cascade" }),
+    traditionId: integer("tradition_id")
+      .notNull()
+      .references(() => academyTraditions.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    conceptTraditionUnique: uniqueIndex("academy_concept_traditions_concept_tradition_unique").on(
+      table.conceptId,
+      table.traditionId,
+    ),
+  }),
+);
+
+export const academyConceptPersons = sqliteTable(
+  "academy_concept_persons",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    conceptId: integer("concept_id")
+      .notNull()
+      .references(() => academyConcepts.id, { onDelete: "cascade" }),
+    personId: integer("person_id")
+      .notNull()
+      .references(() => academyPersons.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    conceptPersonUnique: uniqueIndex("academy_concept_persons_concept_person_unique").on(
+      table.conceptId,
+      table.personId,
+    ),
+  }),
+);
+
+export const academyConceptWorks = sqliteTable(
+  "academy_concept_works",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    conceptId: integer("concept_id")
+      .notNull()
+      .references(() => academyConcepts.id, { onDelete: "cascade" }),
+    workId: integer("work_id")
+      .notNull()
+      .references(() => academyWorks.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    conceptWorkUnique: uniqueIndex("academy_concept_works_concept_work_unique").on(
+      table.conceptId,
+      table.workId,
+    ),
+  }),
+);
+
+export const academyPaths = sqliteTable("academy_paths", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  slug: text("slug").notNull().unique(),
+  title: text("title").notNull(),
+  summary: text("summary").notNull(),
+  tone: text("tone").$type<AcademyPathTone>().notNull().default("beginner"),
+  difficultyLevel: text("difficulty_level")
+    .$type<AcademyPathDifficulty>()
+    .notNull()
+    .default("beginner"),
+  progressionOrder: integer("progression_order").notNull().default(0),
+  recommendationWeight: integer("recommendation_weight").notNull().default(0),
+  recommendationHint: text("recommendation_hint").notNull().default(""),
+  isFeatured: integer("is_featured", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const academyPathItems = sqliteTable(
+  "academy_path_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    pathId: integer("path_id")
+      .notNull()
+      .references(() => academyPaths.id, { onDelete: "cascade" }),
+    entityType: text("entity_type").$type<AcademyPathEntityType>().notNull(),
+    entityId: integer("entity_id").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    rationale: text("rationale").notNull().default(""),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    pathEntityUnique: uniqueIndex("academy_path_items_path_entity_unique").on(
+      table.pathId,
+      table.entityType,
+      table.entityId,
+    ),
+  }),
+);
 
 export const userNotifications = sqliteTable("user_notifications", {
   id: text("id").primaryKey(),

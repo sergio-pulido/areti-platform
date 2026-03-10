@@ -155,6 +155,11 @@ export type AcademyPathSeed = {
   title: string;
   summary: string;
   tone: "beginner" | "intermediate";
+  difficultyLevel: "beginner" | "intermediate" | "advanced";
+  progressionOrder: number;
+  recommendationWeight: number;
+  recommendationHint: string;
+  isFeatured: boolean;
   traditionSlugs: string[];
   personSlugs: string[];
   workIds: number[];
@@ -166,6 +171,11 @@ export type AcademyPath = {
   title: string;
   summary: string;
   tone: "beginner" | "intermediate";
+  difficultyLevel: "beginner" | "intermediate" | "advanced";
+  progressionOrder: number;
+  recommendationWeight: number;
+  recommendationHint: string;
+  isFeatured: boolean;
   traditions: AcademyTradition[];
   persons: AcademyPerson[];
   works: AcademyWork[];

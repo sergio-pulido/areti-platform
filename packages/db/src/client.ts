@@ -20,6 +20,17 @@ import {
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import {
+  academyConceptPersons,
+  academyConceptTraditions,
+  academyConceptWorks,
+  academyConcepts,
+  academyDomains,
+  academyPathItems,
+  academyPaths,
+  academyPersonRelationships,
+  academyPersons,
+  academyTraditions,
+  academyWorks,
   adminAuditLogs,
   chatEvents,
   chatMessages,
@@ -61,6 +72,9 @@ import {
   userOnboardingProfiles,
   userTotpSecrets,
   users,
+  type AcademyPathDifficulty,
+  type AcademyPathEntityType,
+  type AcademyPathTone,
   type ContentCompletionKind,
   type ContentStatus,
   type LegalPolicyType,
@@ -84,6 +98,12 @@ import {
   PILLAR_SEED,
   PRACTICE_SEED,
 } from "./seed-data.js";
+import {
+  ACADEMY_CONCEPT_PERSON_LINKS,
+  ACADEMY_CONCEPT_TRADITION_LINKS,
+  ACADEMY_CONCEPT_WORK_LINKS,
+  ACADEMY_PATHS_SEED,
+} from "./academy-editorial-seed.js";
 
 export type CurrentUser = {
   id: string;
@@ -422,6 +442,278 @@ export type RecentContentCompletionItem = {
   lastCompletedAt: string;
 };
 
+type AcademyDomainSeed = {
+  id: number;
+  slug: string;
+  name: string;
+  description_short?: string | null;
+};
+
+type AcademyTraditionSeed = {
+  id: number;
+  domain_id: number;
+  parent_tradition_id?: number | null;
+  slug: string;
+  name: string;
+  origin_region?: string | null;
+  description_short?: string | null;
+};
+
+type AcademyPersonSeed = {
+  id: number;
+  slug: string;
+  display_name: string;
+  birth_year?: number | null;
+  death_year?: number | null;
+  country_or_region?: string | null;
+  tradition_id?: number | null;
+  role_type?: string | null;
+  is_founder?: boolean | null;
+  credibility_band?: string | null;
+  bio_short?: string | null;
+  evidence_profile?: string | null;
+  claim_risk_level?: string | null;
+};
+
+type AcademyWorkSeed = {
+  id: number;
+  person_id?: number | null;
+  tradition_id?: number | null;
+  title: string;
+  work_type?: string | null;
+  publication_year?: number | null;
+  is_primary_text?: boolean | null;
+  summary_short?: string | null;
+};
+
+type AcademyConceptSeed = {
+  id: number;
+  slug: string;
+  name: string;
+  description?: string | null;
+  concept_family?: string | null;
+};
+
+type AcademyPersonRelationshipSeed = {
+  id: number;
+  source_person_id: number;
+  target_person_id: number;
+  relationship_type: string;
+  notes?: string | null;
+};
+
+type AcademyKnowledgeSeed = {
+  domains: AcademyDomainSeed[];
+  traditions: AcademyTraditionSeed[];
+  persons: AcademyPersonSeed[];
+  works: AcademyWorkSeed[];
+  concepts: AcademyConceptSeed[];
+  person_relationships: AcademyPersonRelationshipSeed[];
+};
+
+function loadAcademyKnowledgeSeed(): AcademyKnowledgeSeed {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const seedPath = path.join(here, "academy-knowledge-seed.json");
+  const parsed = JSON.parse(readFileSync(seedPath, "utf8")) as Partial<AcademyKnowledgeSeed>;
+
+  if (
+    !Array.isArray(parsed.domains) ||
+    !Array.isArray(parsed.traditions) ||
+    !Array.isArray(parsed.persons) ||
+    !Array.isArray(parsed.works) ||
+    !Array.isArray(parsed.concepts) ||
+    !Array.isArray(parsed.person_relationships)
+  ) {
+    throw new Error("Academy seed is invalid or incomplete.");
+  }
+
+  return parsed as AcademyKnowledgeSeed;
+}
+
+const ACADEMY_KNOWLEDGE_SEED = loadAcademyKnowledgeSeed();
+
+export type AcademyDomainRecord = {
+  id: number;
+  slug: string;
+  name: string;
+  descriptionShort: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AcademyTraditionRecord = {
+  id: number;
+  domainId: number;
+  parentTraditionId: number | null;
+  slug: string;
+  name: string;
+  originRegion: string | null;
+  descriptionShort: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AcademyPersonRecord = {
+  id: number;
+  slug: string;
+  displayName: string;
+  birthYear: number | null;
+  deathYear: number | null;
+  countryOrRegion: string | null;
+  traditionId: number | null;
+  roleType: string | null;
+  isFounder: boolean;
+  credibilityBand: string | null;
+  bioShort: string | null;
+  evidenceProfile: string | null;
+  claimRiskLevel: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AcademyWorkRecord = {
+  id: number;
+  slug: string;
+  personId: number | null;
+  traditionId: number | null;
+  title: string;
+  workType: string | null;
+  publicationYear: number | null;
+  isPrimaryText: boolean;
+  summaryShort: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AcademyConceptRecord = {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  conceptFamily: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AcademyPersonRelationshipRecord = {
+  id: number;
+  sourcePersonId: number;
+  targetPersonId: number;
+  relationshipType: string;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AcademyConceptTraditionLinkRecord = {
+  id: number;
+  conceptId: number;
+  traditionId: number;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AcademyConceptPersonLinkRecord = {
+  id: number;
+  conceptId: number;
+  personId: number;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AcademyConceptWorkLinkRecord = {
+  id: number;
+  conceptId: number;
+  workId: number;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AcademyPathRecord = {
+  id: number;
+  slug: string;
+  title: string;
+  summary: string;
+  tone: AcademyPathTone;
+  difficultyLevel: AcademyPathDifficulty;
+  progressionOrder: number;
+  recommendationWeight: number;
+  recommendationHint: string;
+  isFeatured: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AcademyPathItemRecord = {
+  id: number;
+  pathId: number;
+  entityType: AcademyPathEntityType;
+  entityId: number;
+  sortOrder: number;
+  rationale: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AcademyPathResolvedItemRecord = AcademyPathItemRecord & {
+  tradition: AcademyTraditionRecord | null;
+  person: AcademyPersonRecord | null;
+  work: AcademyWorkRecord | null;
+  concept: AcademyConceptRecord | null;
+};
+
+export type AcademyPathDetailRecord = AcademyPathRecord & {
+  items: AcademyPathResolvedItemRecord[];
+};
+
+export type AcademyConceptLinksRecord = {
+  concept: AcademyConceptRecord;
+  traditions: AcademyTraditionRecord[];
+  persons: AcademyPersonRecord[];
+  works: AcademyWorkRecord[];
+};
+
+export type AcademySearchResultRecord = {
+  type: "domain" | "tradition" | "person" | "work" | "concept";
+  id: number;
+  slug: string;
+  title: string;
+  subtitle: string;
+  summary: string;
+  score: number;
+  tags: string[];
+};
+
+export type AcademyKnowledgeEntity = "domains" | "traditions" | "persons" | "works" | "concepts" | "paths";
+
+export type AcademyKnowledgeQueryInput = {
+  entity?: AcademyKnowledgeEntity;
+  q?: string;
+  slug?: string;
+  domainId?: number;
+  traditionId?: number;
+  personId?: number;
+  conceptId?: number;
+  pathId?: number;
+  limit?: number;
+  includeRelations?: boolean;
+};
+
+export type AcademyKnowledgeQueryResult = {
+  entity: AcademyKnowledgeEntity | "all";
+  q: string;
+  domains: AcademyDomainRecord[];
+  traditions: AcademyTraditionRecord[];
+  persons: AcademyPersonRecord[];
+  works: AcademyWorkRecord[];
+  concepts: AcademyConceptRecord[];
+  paths: AcademyPathDetailRecord[];
+  conceptLinks: AcademyConceptLinksRecord[];
+};
+
 const globalForDb = globalThis as unknown as {
   sqlite?: Database.Database;
   migrated?: boolean;
@@ -564,6 +856,117 @@ function normalizeNotificationDigest(value: string): "immediate" | "daily" | "we
   }
 
   return "immediate";
+}
+
+function toNullableString(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function toNullableNumber(value: number | null | undefined): number | null {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return null;
+  }
+
+  return value;
+}
+
+function normalizeAcademySlugPart(value: string): string {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || "item";
+}
+
+function createAcademyWorkSlug(title: string, id: number): string {
+  return `${normalizeAcademySlugPart(title)}-${id}`;
+}
+
+function normalizeLikeQuery(input: string): string {
+  return input.trim().replace(/\s+/g, " ");
+}
+
+function sanitizeLikeValue(input: string): string {
+  const collapsed = normalizeLikeQuery(input).replace(/[%_]/g, "");
+  return `%${collapsed}%`;
+}
+
+function scoreMatch(query: string, ...haystacks: Array<string | null | undefined>): number {
+  const normalizedQuery = normalizeLikeQuery(query).toLowerCase();
+  if (!normalizedQuery) {
+    return 0;
+  }
+
+  let best = 0;
+
+  for (const haystack of haystacks) {
+    if (!haystack) {
+      continue;
+    }
+
+    const normalizedHaystack = haystack.toLowerCase();
+    if (normalizedHaystack === normalizedQuery) {
+      best = Math.max(best, 100);
+      continue;
+    }
+
+    if (normalizedHaystack.startsWith(normalizedQuery)) {
+      best = Math.max(best, 85);
+      continue;
+    }
+
+    if (normalizedHaystack.includes(normalizedQuery)) {
+      best = Math.max(best, 70);
+    }
+  }
+
+  return best;
+}
+
+function clampLimit(value: number | undefined, fallback: number, max = 200): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.min(Math.floor(value), max));
+}
+
+function sortByWorkPriority(a: AcademyWorkRecord, b: AcademyWorkRecord): number {
+  if (a.isPrimaryText !== b.isPrimaryText) {
+    return a.isPrimaryText ? -1 : 1;
+  }
+
+  const aYear = a.publicationYear ?? Number.POSITIVE_INFINITY;
+  const bYear = b.publicationYear ?? Number.POSITIVE_INFINITY;
+  if (aYear !== bYear) {
+    return aYear - bYear;
+  }
+
+  return a.title.localeCompare(b.title);
+}
+
+function sortByPathPriority(a: AcademyPathRecord, b: AcademyPathRecord): number {
+  if (a.isFeatured !== b.isFeatured) {
+    return a.isFeatured ? -1 : 1;
+  }
+
+  if (a.progressionOrder !== b.progressionOrder) {
+    return a.progressionOrder - b.progressionOrder;
+  }
+
+  if (a.recommendationWeight !== b.recommendationWeight) {
+    return b.recommendationWeight - a.recommendationWeight;
+  }
+
+  return a.title.localeCompare(b.title);
 }
 
 const defaultUserPreferences: Omit<UserPreferencesRecord, "id" | "userId" | "createdAt" | "updatedAt"> = {
@@ -772,6 +1175,17 @@ const db = drizzle(sqlite, {
     communityExperts,
     communityEvents,
     creatorVideos,
+    academyDomains,
+    academyTraditions,
+    academyPersons,
+    academyWorks,
+    academyConcepts,
+    academyPersonRelationships,
+    academyConceptTraditions,
+    academyConceptPersons,
+    academyConceptWorks,
+    academyPaths,
+    academyPathItems,
   },
 });
 
@@ -847,6 +1261,333 @@ function ensureCompatibilitySchema(): void {
 }
 
 ensureCompatibilitySchema();
+
+function seedAcademyKnowledge(): void {
+  const timestamp = nowIso();
+
+  db.transaction(() => {
+    const domainCount = db.select({ count: count() }).from(academyDomains).get();
+    if ((domainCount?.count ?? 0) === 0) {
+      db.insert(academyDomains)
+        .values(
+          ACADEMY_KNOWLEDGE_SEED.domains.map((domain) => ({
+            id: domain.id,
+            slug: domain.slug,
+            name: domain.name,
+            descriptionShort: toNullableString(domain.description_short),
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          })),
+        )
+        .onConflictDoNothing()
+        .run();
+    }
+
+    const traditionCount = db.select({ count: count() }).from(academyTraditions).get();
+    if ((traditionCount?.count ?? 0) === 0) {
+      db.insert(academyTraditions)
+        .values(
+          ACADEMY_KNOWLEDGE_SEED.traditions.map((tradition) => ({
+            id: tradition.id,
+            domainId: tradition.domain_id,
+            parentTraditionId: toNullableNumber(tradition.parent_tradition_id),
+            slug: tradition.slug,
+            name: tradition.name,
+            originRegion: toNullableString(tradition.origin_region),
+            descriptionShort: toNullableString(tradition.description_short),
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          })),
+        )
+        .onConflictDoNothing()
+        .run();
+    }
+
+    const personCount = db.select({ count: count() }).from(academyPersons).get();
+    if ((personCount?.count ?? 0) === 0) {
+      db.insert(academyPersons)
+        .values(
+          ACADEMY_KNOWLEDGE_SEED.persons.map((person) => ({
+            id: person.id,
+            slug: person.slug,
+            displayName: person.display_name,
+            birthYear: toNullableNumber(person.birth_year),
+            deathYear: toNullableNumber(person.death_year),
+            countryOrRegion: toNullableString(person.country_or_region),
+            traditionId: toNullableNumber(person.tradition_id),
+            roleType: toNullableString(person.role_type),
+            isFounder: person.is_founder === true,
+            credibilityBand: toNullableString(person.credibility_band),
+            bioShort: toNullableString(person.bio_short),
+            evidenceProfile: toNullableString(person.evidence_profile),
+            claimRiskLevel: toNullableString(person.claim_risk_level),
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          })),
+        )
+        .onConflictDoNothing()
+        .run();
+    }
+
+    const workCount = db.select({ count: count() }).from(academyWorks).get();
+    if ((workCount?.count ?? 0) === 0) {
+      db.insert(academyWorks)
+        .values(
+          ACADEMY_KNOWLEDGE_SEED.works.map((work) => ({
+            id: work.id,
+            slug: createAcademyWorkSlug(work.title, work.id),
+            personId: toNullableNumber(work.person_id),
+            traditionId: toNullableNumber(work.tradition_id),
+            title: work.title,
+            workType: toNullableString(work.work_type),
+            publicationYear: toNullableNumber(work.publication_year),
+            isPrimaryText: work.is_primary_text === true,
+            summaryShort: toNullableString(work.summary_short),
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          })),
+        )
+        .onConflictDoNothing()
+        .run();
+    }
+
+    const conceptCount = db.select({ count: count() }).from(academyConcepts).get();
+    if ((conceptCount?.count ?? 0) === 0) {
+      db.insert(academyConcepts)
+        .values(
+          ACADEMY_KNOWLEDGE_SEED.concepts.map((concept) => ({
+            id: concept.id,
+            slug: concept.slug,
+            name: concept.name,
+            description: toNullableString(concept.description),
+            conceptFamily: toNullableString(concept.concept_family),
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          })),
+        )
+        .onConflictDoNothing()
+        .run();
+    }
+
+    const relationshipCount = db.select({ count: count() }).from(academyPersonRelationships).get();
+    if ((relationshipCount?.count ?? 0) === 0) {
+      db.insert(academyPersonRelationships)
+        .values(
+          ACADEMY_KNOWLEDGE_SEED.person_relationships.map((relationship) => ({
+            id: relationship.id,
+            sourcePersonId: relationship.source_person_id,
+            targetPersonId: relationship.target_person_id,
+            relationshipType: relationship.relationship_type,
+            notes: toNullableString(relationship.notes),
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          })),
+        )
+        .onConflictDoNothing()
+        .run();
+    }
+
+    const conceptsBySlug = new Map(
+      db
+        .select({ id: academyConcepts.id, slug: academyConcepts.slug })
+        .from(academyConcepts)
+        .all()
+        .map((row) => [row.slug, row.id] as const),
+    );
+    const traditionsBySlug = new Map(
+      db
+        .select({ id: academyTraditions.id, slug: academyTraditions.slug })
+        .from(academyTraditions)
+        .all()
+        .map((row) => [row.slug, row.id] as const),
+    );
+    const personsBySlug = new Map(
+      db
+        .select({ id: academyPersons.id, slug: academyPersons.slug })
+        .from(academyPersons)
+        .all()
+        .map((row) => [row.slug, row.id] as const),
+    );
+
+    const conceptTraditionCount = db.select({ count: count() }).from(academyConceptTraditions).get();
+    if ((conceptTraditionCount?.count ?? 0) === 0) {
+      const links = ACADEMY_CONCEPT_TRADITION_LINKS.map((link) => {
+        const conceptId = conceptsBySlug.get(link.conceptSlug);
+        const traditionId = traditionsBySlug.get(link.traditionSlug);
+
+        if (!conceptId || !traditionId) {
+          return null;
+        }
+
+        return {
+          conceptId,
+          traditionId,
+          sortOrder: link.sortOrder,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+      }).filter(
+        (
+          link,
+        ): link is {
+          conceptId: number;
+          traditionId: number;
+          sortOrder: number;
+          createdAt: string;
+          updatedAt: string;
+        } => link !== null,
+      );
+
+      if (links.length > 0) {
+        db.insert(academyConceptTraditions).values(links).onConflictDoNothing().run();
+      }
+    }
+
+    const conceptPersonCount = db.select({ count: count() }).from(academyConceptPersons).get();
+    if ((conceptPersonCount?.count ?? 0) === 0) {
+      const links = ACADEMY_CONCEPT_PERSON_LINKS.map((link) => {
+        const conceptId = conceptsBySlug.get(link.conceptSlug);
+        const personId = personsBySlug.get(link.personSlug);
+
+        if (!conceptId || !personId) {
+          return null;
+        }
+
+        return {
+          conceptId,
+          personId,
+          sortOrder: link.sortOrder,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+      }).filter(
+        (
+          link,
+        ): link is {
+          conceptId: number;
+          personId: number;
+          sortOrder: number;
+          createdAt: string;
+          updatedAt: string;
+        } => link !== null,
+      );
+
+      if (links.length > 0) {
+        db.insert(academyConceptPersons).values(links).onConflictDoNothing().run();
+      }
+    }
+
+    const conceptWorkCount = db.select({ count: count() }).from(academyConceptWorks).get();
+    if ((conceptWorkCount?.count ?? 0) === 0) {
+      const links = ACADEMY_CONCEPT_WORK_LINKS.map((link) => {
+        const conceptId = conceptsBySlug.get(link.conceptSlug);
+        if (!conceptId) {
+          return null;
+        }
+
+        return {
+          conceptId,
+          workId: link.workId,
+          sortOrder: link.sortOrder,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+      }).filter(
+        (
+          link,
+        ): link is {
+          conceptId: number;
+          workId: number;
+          sortOrder: number;
+          createdAt: string;
+          updatedAt: string;
+        } => link !== null,
+      );
+
+      if (links.length > 0) {
+        db.insert(academyConceptWorks).values(links).onConflictDoNothing().run();
+      }
+    }
+
+    const pathCount = db.select({ count: count() }).from(academyPaths).get();
+    if ((pathCount?.count ?? 0) === 0) {
+      for (const seed of ACADEMY_PATHS_SEED) {
+        db.insert(academyPaths)
+          .values({
+            slug: seed.slug,
+            title: seed.title,
+            summary: seed.summary,
+            tone: seed.tone,
+            difficultyLevel: seed.difficultyLevel,
+            progressionOrder: seed.progressionOrder,
+            recommendationWeight: seed.recommendationWeight,
+            recommendationHint: seed.recommendationHint,
+            isFeatured: seed.isFeatured,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          })
+          .onConflictDoNothing()
+          .run();
+
+        const path = db
+          .select({ id: academyPaths.id })
+          .from(academyPaths)
+          .where(eq(academyPaths.slug, seed.slug))
+          .limit(1)
+          .get();
+
+        if (!path) {
+          continue;
+        }
+
+        const items = seed.items
+          .map((item) => {
+            let entityId: number | null = null;
+            if (item.entityType === "tradition") {
+              entityId = traditionsBySlug.get(String(item.slugOrWorkId)) ?? null;
+            } else if (item.entityType === "person") {
+              entityId = personsBySlug.get(String(item.slugOrWorkId)) ?? null;
+            } else if (item.entityType === "concept") {
+              entityId = conceptsBySlug.get(String(item.slugOrWorkId)) ?? null;
+            } else if (item.entityType === "work") {
+              entityId = typeof item.slugOrWorkId === "number" ? item.slugOrWorkId : null;
+            }
+
+            if (!entityId) {
+              return null;
+            }
+
+            return {
+              pathId: path.id,
+              entityType: item.entityType,
+              entityId,
+              sortOrder: item.sortOrder,
+              rationale: item.rationale,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            };
+          })
+          .filter(
+            (
+              item,
+            ): item is {
+              pathId: number;
+              entityType: AcademyPathEntityType;
+              entityId: number;
+              sortOrder: number;
+              rationale: string;
+              createdAt: string;
+              updatedAt: string;
+            } => item !== null,
+          );
+
+        if (items.length > 0) {
+          db.insert(academyPathItems).values(items).onConflictDoNothing().run();
+        }
+      }
+    }
+  });
+}
 
 function seedIfEmpty(): void {
   const timestamp = nowIso();
@@ -970,6 +1711,8 @@ function seedIfEmpty(): void {
       .onConflictDoNothing()
       .run();
   }
+
+  seedAcademyKnowledge();
 }
 
 export function seedLibraryAndPracticesContent(): void {
@@ -3299,6 +4042,766 @@ export function getCreatorVideos() {
     .where(eq(creatorVideos.status, "PUBLISHED"))
     .orderBy(desc(creatorVideos.id))
     .all();
+}
+
+function orderByIds<T extends { id: number }>(rows: T[], idsInOrder: number[]): T[] {
+  const byId = new Map(rows.map((row) => [row.id, row] as const));
+  return idsInOrder
+    .map((id) => byId.get(id) ?? null)
+    .filter((row): row is T => row !== null);
+}
+
+function selectAcademyPathItems(pathId: number): AcademyPathItemRecord[] {
+  return db
+    .select()
+    .from(academyPathItems)
+    .where(eq(academyPathItems.pathId, pathId))
+    .orderBy(asc(academyPathItems.sortOrder), asc(academyPathItems.id))
+    .all();
+}
+
+function resolveAcademyPathItems(items: AcademyPathItemRecord[]): AcademyPathResolvedItemRecord[] {
+  const traditionIds = items.filter((item) => item.entityType === "tradition").map((item) => item.entityId);
+  const personIds = items.filter((item) => item.entityType === "person").map((item) => item.entityId);
+  const workIds = items.filter((item) => item.entityType === "work").map((item) => item.entityId);
+  const conceptIds = items.filter((item) => item.entityType === "concept").map((item) => item.entityId);
+
+  const traditions =
+    traditionIds.length > 0
+      ? db
+          .select()
+          .from(academyTraditions)
+          .where(inArray(academyTraditions.id, traditionIds))
+          .all()
+      : [];
+  const persons =
+    personIds.length > 0
+      ? db
+          .select()
+          .from(academyPersons)
+          .where(inArray(academyPersons.id, personIds))
+          .all()
+      : [];
+  const works =
+    workIds.length > 0
+      ? db
+          .select()
+          .from(academyWorks)
+          .where(inArray(academyWorks.id, workIds))
+          .all()
+      : [];
+  const concepts =
+    conceptIds.length > 0
+      ? db
+          .select()
+          .from(academyConcepts)
+          .where(inArray(academyConcepts.id, conceptIds))
+          .all()
+      : [];
+
+  const traditionsById = new Map(traditions.map((item) => [item.id, item] as const));
+  const personsById = new Map(persons.map((item) => [item.id, item] as const));
+  const worksById = new Map(works.map((item) => [item.id, item] as const));
+  const conceptsById = new Map(concepts.map((item) => [item.id, item] as const));
+
+  return items.map((item) => ({
+    ...item,
+    tradition: item.entityType === "tradition" ? (traditionsById.get(item.entityId) ?? null) : null,
+    person: item.entityType === "person" ? (personsById.get(item.entityId) ?? null) : null,
+    work: item.entityType === "work" ? (worksById.get(item.entityId) ?? null) : null,
+    concept: item.entityType === "concept" ? (conceptsById.get(item.entityId) ?? null) : null,
+  }));
+}
+
+export function getAcademyKnowledgeOverview(): {
+  domainCount: number;
+  traditionCount: number;
+  personCount: number;
+  workCount: number;
+  conceptCount: number;
+  relationshipCount: number;
+  conceptLinkCount: number;
+  pathCount: number;
+} {
+  const domainCount = db.select({ count: count() }).from(academyDomains).get()?.count ?? 0;
+  const traditionCount = db.select({ count: count() }).from(academyTraditions).get()?.count ?? 0;
+  const personCount = db.select({ count: count() }).from(academyPersons).get()?.count ?? 0;
+  const workCount = db.select({ count: count() }).from(academyWorks).get()?.count ?? 0;
+  const conceptCount = db.select({ count: count() }).from(academyConcepts).get()?.count ?? 0;
+  const relationshipCount = db.select({ count: count() }).from(academyPersonRelationships).get()?.count ?? 0;
+  const conceptTraditionCount = db.select({ count: count() }).from(academyConceptTraditions).get()?.count ?? 0;
+  const conceptPersonCount = db.select({ count: count() }).from(academyConceptPersons).get()?.count ?? 0;
+  const conceptWorkCount = db.select({ count: count() }).from(academyConceptWorks).get()?.count ?? 0;
+  const pathCount = db.select({ count: count() }).from(academyPaths).get()?.count ?? 0;
+
+  return {
+    domainCount,
+    traditionCount,
+    personCount,
+    workCount,
+    conceptCount,
+    relationshipCount,
+    conceptLinkCount: conceptTraditionCount + conceptPersonCount + conceptWorkCount,
+    pathCount,
+  };
+}
+
+export function getAcademyDomains(options?: {
+  q?: string;
+  limit?: number;
+}): AcademyDomainRecord[] {
+  const q = options?.q?.trim() ?? "";
+  const limit = clampLimit(options?.limit, 200);
+
+  if (!q) {
+    return db.select().from(academyDomains).orderBy(asc(academyDomains.name)).limit(limit).all();
+  }
+
+  const likeValue = sanitizeLikeValue(q);
+  return db
+    .select()
+    .from(academyDomains)
+    .where(
+      or(
+        like(academyDomains.slug, likeValue),
+        like(academyDomains.name, likeValue),
+        like(academyDomains.descriptionShort, likeValue),
+      ),
+    )
+    .orderBy(asc(academyDomains.name))
+    .limit(limit)
+    .all();
+}
+
+export function getAcademyDomainBySlug(slug: string): AcademyDomainRecord | null {
+  return (
+    db.select().from(academyDomains).where(eq(academyDomains.slug, slug)).limit(1).get() ?? null
+  );
+}
+
+export function getAcademyTraditions(options?: {
+  q?: string;
+  limit?: number;
+  domainId?: number;
+  domainSlug?: string;
+  parentTraditionId?: number | null;
+}): AcademyTraditionRecord[] {
+  const q = options?.q?.trim() ?? "";
+  const limit = clampLimit(options?.limit, 200);
+
+  let domainId = options?.domainId;
+  if (!domainId && options?.domainSlug) {
+    const domain = getAcademyDomainBySlug(options.domainSlug);
+    domainId = domain?.id;
+  }
+
+  const predicates: SQL[] = [];
+  if (domainId) {
+    predicates.push(eq(academyTraditions.domainId, domainId));
+  }
+  if (typeof options?.parentTraditionId === "number") {
+    predicates.push(eq(academyTraditions.parentTraditionId, options.parentTraditionId));
+  } else if (options?.parentTraditionId === null) {
+    predicates.push(isNull(academyTraditions.parentTraditionId));
+  }
+  if (q) {
+    const likeValue = sanitizeLikeValue(q);
+    predicates.push(
+      or(
+        like(academyTraditions.slug, likeValue),
+        like(academyTraditions.name, likeValue),
+        like(academyTraditions.originRegion, likeValue),
+        like(academyTraditions.descriptionShort, likeValue),
+      )!,
+    );
+  }
+
+  return db
+    .select()
+    .from(academyTraditions)
+    .where(predicates.length > 0 ? and(...predicates) : undefined)
+    .orderBy(asc(academyTraditions.name))
+    .limit(limit)
+    .all();
+}
+
+export function getAcademyTraditionBySlug(slug: string): AcademyTraditionRecord | null {
+  return (
+    db
+      .select()
+      .from(academyTraditions)
+      .where(eq(academyTraditions.slug, slug))
+      .limit(1)
+      .get() ?? null
+  );
+}
+
+export function getAcademyTraditionById(id: number): AcademyTraditionRecord | null {
+  return (
+    db
+      .select()
+      .from(academyTraditions)
+      .where(eq(academyTraditions.id, id))
+      .limit(1)
+      .get() ?? null
+  );
+}
+
+export function getAcademyPersons(options?: {
+  q?: string;
+  limit?: number;
+  traditionId?: number;
+  domainId?: number;
+  credibilityBand?: string;
+}): AcademyPersonRecord[] {
+  const q = options?.q?.trim() ?? "";
+  const limit = clampLimit(options?.limit, 200);
+
+  let traditionIds: number[] | null = null;
+  if (typeof options?.domainId === "number") {
+    traditionIds = getAcademyTraditions({ domainId: options.domainId, limit: 500 }).map((tradition) => tradition.id);
+    if (traditionIds.length === 0) {
+      return [];
+    }
+  }
+
+  const predicates: SQL[] = [];
+  if (options?.traditionId) {
+    predicates.push(eq(academyPersons.traditionId, options.traditionId));
+  } else if (traditionIds && traditionIds.length > 0) {
+    predicates.push(inArray(academyPersons.traditionId, traditionIds));
+  }
+  if (options?.credibilityBand) {
+    predicates.push(eq(academyPersons.credibilityBand, options.credibilityBand));
+  }
+  if (q) {
+    const likeValue = sanitizeLikeValue(q);
+    predicates.push(
+      or(
+        like(academyPersons.slug, likeValue),
+        like(academyPersons.displayName, likeValue),
+        like(academyPersons.roleType, likeValue),
+        like(academyPersons.bioShort, likeValue),
+      )!,
+    );
+  }
+
+  const persons = db
+    .select()
+    .from(academyPersons)
+    .where(predicates.length > 0 ? and(...predicates) : undefined)
+    .orderBy(asc(academyPersons.displayName))
+    .limit(limit)
+    .all();
+
+  return persons;
+}
+
+export function getAcademyPersonBySlug(slug: string): AcademyPersonRecord | null {
+  return db.select().from(academyPersons).where(eq(academyPersons.slug, slug)).limit(1).get() ?? null;
+}
+
+export function getAcademyPersonById(id: number): AcademyPersonRecord | null {
+  return db.select().from(academyPersons).where(eq(academyPersons.id, id)).limit(1).get() ?? null;
+}
+
+export function getAcademyWorks(options?: {
+  q?: string;
+  limit?: number;
+  personId?: number;
+  traditionId?: number;
+  isPrimaryText?: boolean;
+}): AcademyWorkRecord[] {
+  const q = options?.q?.trim() ?? "";
+  const limit = clampLimit(options?.limit, 200);
+  const predicates: SQL[] = [];
+
+  if (typeof options?.personId === "number") {
+    predicates.push(eq(academyWorks.personId, options.personId));
+  }
+  if (typeof options?.traditionId === "number") {
+    predicates.push(eq(academyWorks.traditionId, options.traditionId));
+  }
+  if (typeof options?.isPrimaryText === "boolean") {
+    predicates.push(eq(academyWorks.isPrimaryText, options.isPrimaryText));
+  }
+  if (q) {
+    const likeValue = sanitizeLikeValue(q);
+    predicates.push(
+      or(
+        like(academyWorks.slug, likeValue),
+        like(academyWorks.title, likeValue),
+        like(academyWorks.workType, likeValue),
+        like(academyWorks.summaryShort, likeValue),
+      )!,
+    );
+  }
+
+  const works = db
+    .select()
+    .from(academyWorks)
+    .where(predicates.length > 0 ? and(...predicates) : undefined)
+    .orderBy(asc(academyWorks.publicationYear), asc(academyWorks.title))
+    .limit(limit)
+    .all();
+
+  return works.sort(sortByWorkPriority);
+}
+
+export function getAcademyWorkBySlug(slug: string): AcademyWorkRecord | null {
+  return db.select().from(academyWorks).where(eq(academyWorks.slug, slug)).limit(1).get() ?? null;
+}
+
+export function getAcademyWorkById(id: number): AcademyWorkRecord | null {
+  return db.select().from(academyWorks).where(eq(academyWorks.id, id)).limit(1).get() ?? null;
+}
+
+export function getAcademyConcepts(options?: {
+  q?: string;
+  limit?: number;
+  conceptFamily?: string;
+  traditionId?: number;
+  personId?: number;
+  workId?: number;
+}): AcademyConceptRecord[] {
+  const q = options?.q?.trim() ?? "";
+  const limit = clampLimit(options?.limit, 200);
+  const predicates: SQL[] = [];
+
+  if (options?.conceptFamily) {
+    predicates.push(eq(academyConcepts.conceptFamily, options.conceptFamily));
+  }
+  if (q) {
+    const likeValue = sanitizeLikeValue(q);
+    predicates.push(
+      or(
+        like(academyConcepts.slug, likeValue),
+        like(academyConcepts.name, likeValue),
+        like(academyConcepts.description, likeValue),
+        like(academyConcepts.conceptFamily, likeValue),
+      )!,
+    );
+  }
+
+  let concepts = db
+    .select()
+    .from(academyConcepts)
+    .where(predicates.length > 0 ? and(...predicates) : undefined)
+    .orderBy(asc(academyConcepts.name))
+    .all();
+
+  if (typeof options?.traditionId === "number") {
+    const conceptIds = new Set(
+      db
+        .select({ conceptId: academyConceptTraditions.conceptId })
+        .from(academyConceptTraditions)
+        .where(eq(academyConceptTraditions.traditionId, options.traditionId))
+        .all()
+        .map((row) => row.conceptId),
+    );
+    concepts = concepts.filter((concept) => conceptIds.has(concept.id));
+  }
+
+  if (typeof options?.personId === "number") {
+    const conceptIds = new Set(
+      db
+        .select({ conceptId: academyConceptPersons.conceptId })
+        .from(academyConceptPersons)
+        .where(eq(academyConceptPersons.personId, options.personId))
+        .all()
+        .map((row) => row.conceptId),
+    );
+    concepts = concepts.filter((concept) => conceptIds.has(concept.id));
+  }
+
+  if (typeof options?.workId === "number") {
+    const conceptIds = new Set(
+      db
+        .select({ conceptId: academyConceptWorks.conceptId })
+        .from(academyConceptWorks)
+        .where(eq(academyConceptWorks.workId, options.workId))
+        .all()
+        .map((row) => row.conceptId),
+    );
+    concepts = concepts.filter((concept) => conceptIds.has(concept.id));
+  }
+
+  return concepts.slice(0, limit);
+}
+
+export function getAcademyConceptBySlug(slug: string): AcademyConceptRecord | null {
+  return db.select().from(academyConcepts).where(eq(academyConcepts.slug, slug)).limit(1).get() ?? null;
+}
+
+export function getAcademyPersonRelationships(options?: {
+  personId?: number;
+  relationshipType?: string;
+  limit?: number;
+}): AcademyPersonRelationshipRecord[] {
+  const limit = clampLimit(options?.limit, 200);
+  const predicates: SQL[] = [];
+
+  if (typeof options?.personId === "number") {
+    predicates.push(
+      or(
+        eq(academyPersonRelationships.sourcePersonId, options.personId),
+        eq(academyPersonRelationships.targetPersonId, options.personId),
+      )!,
+    );
+  }
+  if (options?.relationshipType) {
+    predicates.push(eq(academyPersonRelationships.relationshipType, options.relationshipType));
+  }
+
+  return db
+    .select()
+    .from(academyPersonRelationships)
+    .where(predicates.length > 0 ? and(...predicates) : undefined)
+    .orderBy(asc(academyPersonRelationships.relationshipType), asc(academyPersonRelationships.id))
+    .limit(limit)
+    .all();
+}
+
+export function getAcademyConceptLinksBySlug(conceptSlug: string): AcademyConceptLinksRecord | null {
+  const concept = getAcademyConceptBySlug(conceptSlug);
+  if (!concept) {
+    return null;
+  }
+
+  const traditionLinks = db
+    .select()
+    .from(academyConceptTraditions)
+    .where(eq(academyConceptTraditions.conceptId, concept.id))
+    .orderBy(asc(academyConceptTraditions.sortOrder), asc(academyConceptTraditions.id))
+    .all();
+  const personLinks = db
+    .select()
+    .from(academyConceptPersons)
+    .where(eq(academyConceptPersons.conceptId, concept.id))
+    .orderBy(asc(academyConceptPersons.sortOrder), asc(academyConceptPersons.id))
+    .all();
+  const workLinks = db
+    .select()
+    .from(academyConceptWorks)
+    .where(eq(academyConceptWorks.conceptId, concept.id))
+    .orderBy(asc(academyConceptWorks.sortOrder), asc(academyConceptWorks.id))
+    .all();
+
+  const traditionIds = traditionLinks.map((link) => link.traditionId);
+  const personIds = personLinks.map((link) => link.personId);
+  const workIds = workLinks.map((link) => link.workId);
+
+  const traditions =
+    traditionIds.length > 0
+      ? orderByIds(
+          db
+            .select()
+            .from(academyTraditions)
+            .where(inArray(academyTraditions.id, traditionIds))
+            .all(),
+          traditionIds,
+        )
+      : [];
+  const persons =
+    personIds.length > 0
+      ? orderByIds(
+          db
+            .select()
+            .from(academyPersons)
+            .where(inArray(academyPersons.id, personIds))
+            .all(),
+          personIds,
+        )
+      : [];
+  const works =
+    workIds.length > 0
+      ? orderByIds(
+          db
+            .select()
+            .from(academyWorks)
+            .where(inArray(academyWorks.id, workIds))
+            .all(),
+          workIds,
+        )
+      : [];
+
+  return {
+    concept,
+    traditions,
+    persons,
+    works,
+  };
+}
+
+export function getAcademyPaths(options?: {
+  q?: string;
+  featuredOnly?: boolean;
+  limit?: number;
+  includeItems?: boolean;
+}): Array<AcademyPathRecord | AcademyPathDetailRecord> {
+  const q = options?.q?.trim() ?? "";
+  const limit = clampLimit(options?.limit, 80);
+  const predicates: SQL[] = [];
+
+  if (options?.featuredOnly) {
+    predicates.push(eq(academyPaths.isFeatured, true));
+  }
+  if (q) {
+    const likeValue = sanitizeLikeValue(q);
+    predicates.push(
+      or(
+        like(academyPaths.slug, likeValue),
+        like(academyPaths.title, likeValue),
+        like(academyPaths.summary, likeValue),
+        like(academyPaths.recommendationHint, likeValue),
+      )!,
+    );
+  }
+
+  const rows = db
+    .select()
+    .from(academyPaths)
+    .where(predicates.length > 0 ? and(...predicates) : undefined)
+    .orderBy(desc(academyPaths.isFeatured), asc(academyPaths.progressionOrder), desc(academyPaths.recommendationWeight))
+    .limit(limit)
+    .all()
+    .sort(sortByPathPriority);
+
+  if (!options?.includeItems) {
+    return rows;
+  }
+
+  return rows.map((path) => {
+    const items = resolveAcademyPathItems(selectAcademyPathItems(path.id));
+    return {
+      ...path,
+      items,
+    };
+  });
+}
+
+export function getAcademyPathBySlug(slug: string): AcademyPathDetailRecord | null {
+  const path = db.select().from(academyPaths).where(eq(academyPaths.slug, slug)).limit(1).get();
+  if (!path) {
+    return null;
+  }
+
+  return {
+    ...path,
+    items: resolveAcademyPathItems(selectAcademyPathItems(path.id)),
+  };
+}
+
+export function searchAcademyKnowledge(query: string, limit = 40): AcademySearchResultRecord[] {
+  const normalizedQuery = normalizeLikeQuery(query);
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const limited = clampLimit(limit, 40, 120);
+  const domains = getAcademyDomains({ q: normalizedQuery, limit: limited });
+  const traditions = getAcademyTraditions({ q: normalizedQuery, limit: limited });
+  const persons = getAcademyPersons({ q: normalizedQuery, limit: limited });
+  const works = getAcademyWorks({ q: normalizedQuery, limit: limited });
+  const concepts = getAcademyConcepts({ q: normalizedQuery, limit: limited });
+
+  const results: AcademySearchResultRecord[] = [
+    ...domains.map((domain) => ({
+      type: "domain" as const,
+      id: domain.id,
+      slug: domain.slug,
+      title: domain.name,
+      subtitle: "Domain",
+      summary: domain.descriptionShort ?? "Academy domain",
+      score: scoreMatch(normalizedQuery, domain.name, domain.slug, domain.descriptionShort),
+      tags: ["domain"],
+    })),
+    ...traditions.map((tradition) => ({
+      type: "tradition" as const,
+      id: tradition.id,
+      slug: tradition.slug,
+      title: tradition.name,
+      subtitle: tradition.originRegion ?? "Tradition",
+      summary: tradition.descriptionShort ?? "Academy tradition",
+      score: scoreMatch(
+        normalizedQuery,
+        tradition.name,
+        tradition.slug,
+        tradition.originRegion,
+        tradition.descriptionShort,
+      ),
+      tags: ["tradition"],
+    })),
+    ...persons.map((person) => ({
+      type: "person" as const,
+      id: person.id,
+      slug: person.slug,
+      title: person.displayName,
+      subtitle: person.roleType ?? "Thinker",
+      summary: person.bioShort ?? "Academy thinker",
+      score: scoreMatch(normalizedQuery, person.displayName, person.slug, person.roleType, person.bioShort),
+      tags: [person.credibilityBand ?? "uncategorized"],
+    })),
+    ...works.map((work) => ({
+      type: "work" as const,
+      id: work.id,
+      slug: work.slug,
+      title: work.title,
+      subtitle: work.workType ?? "Work",
+      summary: work.summaryShort ?? "Academy work",
+      score: scoreMatch(normalizedQuery, work.title, work.slug, work.workType, work.summaryShort),
+      tags: [work.isPrimaryText ? "primary" : "secondary"],
+    })),
+    ...concepts.map((concept) => ({
+      type: "concept" as const,
+      id: concept.id,
+      slug: concept.slug,
+      title: concept.name,
+      subtitle: concept.conceptFamily ?? "Concept",
+      summary: concept.description ?? "Academy concept",
+      score: scoreMatch(normalizedQuery, concept.name, concept.slug, concept.conceptFamily, concept.description),
+      tags: [concept.conceptFamily ?? "concept"],
+    })),
+  ];
+
+  const typeOrder: Record<AcademySearchResultRecord["type"], number> = {
+    tradition: 1,
+    person: 2,
+    work: 3,
+    concept: 4,
+    domain: 5,
+  };
+
+  const deduped = new Map<string, AcademySearchResultRecord>();
+  for (const result of results) {
+    const key = `${result.type}:${result.id}`;
+    const existing = deduped.get(key);
+    if (!existing || result.score > existing.score) {
+      deduped.set(key, result);
+    }
+  }
+
+  return [...deduped.values()]
+    .filter((result) => result.score > 0)
+    .sort((a, b) => {
+      if (a.score !== b.score) {
+        return b.score - a.score;
+      }
+
+      const aTypeOrder = typeOrder[a.type] ?? 99;
+      const bTypeOrder = typeOrder[b.type] ?? 99;
+      if (aTypeOrder !== bTypeOrder) {
+        return aTypeOrder - bTypeOrder;
+      }
+
+      return a.title.localeCompare(b.title);
+    })
+    .slice(0, limited);
+}
+
+export function queryAcademyKnowledge(input: AcademyKnowledgeQueryInput = {}): AcademyKnowledgeQueryResult {
+  const entity = input.entity ?? "all";
+  const q = input.q?.trim() ?? "";
+  const limit = clampLimit(input.limit, 40, 120);
+
+  const domainQuery = entity === "all" || entity === "domains";
+  const traditionQuery = entity === "all" || entity === "traditions";
+  const personQuery = entity === "all" || entity === "persons";
+  const workQuery = entity === "all" || entity === "works";
+  const conceptQuery = entity === "all" || entity === "concepts";
+  const pathQuery = entity === "all" || entity === "paths";
+
+  let domains = domainQuery ? getAcademyDomains({ q, limit }) : [];
+  let traditions = traditionQuery
+    ? getAcademyTraditions({
+        q,
+        limit,
+        domainId: input.domainId,
+      })
+    : [];
+  let persons = personQuery
+    ? getAcademyPersons({
+        q,
+        limit,
+        traditionId: input.traditionId,
+        domainId: input.domainId,
+      })
+    : [];
+  let works = workQuery
+    ? getAcademyWorks({
+        q,
+        limit,
+        personId: input.personId,
+        traditionId: input.traditionId,
+      })
+    : [];
+  let concepts = conceptQuery
+    ? getAcademyConcepts({
+        q,
+        limit,
+        traditionId: input.traditionId,
+        personId: input.personId,
+      })
+    : [];
+  let paths = pathQuery
+    ? (getAcademyPaths({
+        q,
+        limit,
+        includeItems: true,
+      }) as AcademyPathDetailRecord[])
+    : [];
+
+  if (input.slug) {
+    const slug = input.slug.trim();
+    if (domainQuery) {
+      domains = domains.filter((item) => item.slug === slug);
+    }
+    if (traditionQuery) {
+      traditions = traditions.filter((item) => item.slug === slug);
+    }
+    if (personQuery) {
+      persons = persons.filter((item) => item.slug === slug);
+    }
+    if (workQuery) {
+      works = works.filter((item) => item.slug === slug);
+    }
+    if (conceptQuery) {
+      concepts = concepts.filter((item) => item.slug === slug);
+    }
+    if (pathQuery) {
+      paths = paths.filter((item) => item.slug === slug);
+    }
+  }
+
+  if (typeof input.conceptId === "number" && conceptQuery) {
+    concepts = concepts.filter((item) => item.id === input.conceptId);
+  }
+
+  if (typeof input.pathId === "number" && pathQuery) {
+    paths = paths.filter((item) => item.id === input.pathId);
+  }
+
+  const conceptLinks: AcademyConceptLinksRecord[] = [];
+  if (input.includeRelations && concepts.length > 0) {
+    for (const concept of concepts) {
+      const links = getAcademyConceptLinksBySlug(concept.slug);
+      if (links) {
+        conceptLinks.push(links);
+      }
+    }
+  }
+
+  return {
+    entity,
+    q,
+    domains,
+    traditions,
+    persons,
+    works,
+    concepts,
+    paths,
+    conceptLinks,
+  };
 }
 
 export function listAllContentAdmin() {
