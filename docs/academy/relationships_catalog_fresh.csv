@@ -1,0 +1,10 @@
+id,source_person_id,target_person_id,relationship_type,notes
+1,2,1,belongs_to_same_tradition,Seneca belongs to the Stoic tradition founded by Zeno.
+2,3,1,belongs_to_same_tradition,Epictetus belongs to the Stoic tradition founded by Zeno.
+3,4,1,belongs_to_same_tradition,Marcus Aurelius belongs to the Stoic tradition founded by Zeno.
+4,6,5,influenced_by,Lucretius transmits Epicurean thought.
+5,14,12,belongs_to_same_tradition,Dogen is a major Buddhist thinker within the Zen current.
+6,15,12,belongs_to_same_tradition,Longchenpa is a Buddhist thinker within Dzogchen.
+7,20,19,influenced_by,Aquinas works in a Christian theological world deeply shaped by Augustine.
+8,31,30,influenced_by,Jung emerged from and reacted to Freud's psychoanalytic world.
+9,33,32,belongs_to_same_tradition,Ellis and Beck are distinct but related cognitive-behavioral figures.

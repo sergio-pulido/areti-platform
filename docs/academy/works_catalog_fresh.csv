@@ -1,0 +1,46 @@
+id,person_id,tradition_id,title,work_type,publication_year,is_primary_text,summary_short
+1,2,1,Letters from a Stoic,letters,65,True,"Moral letters on virtue, adversity, death, and self-governance."
+2,3,1,Discourses,discourses,108,True,"Teachings on judgment, control, and freedom."
+3,4,1,Meditations,notes,170,True,"Personal reflections on duty, transience, and virtue."
+4,5,2,Letter to Menoeceus,letter,-300,True,Concise statement of Epicurean ethics.
+5,6,2,On the Nature of Things,poem,-50,True,"Epicurean poem on nature, fear, and tranquility."
+6,9,5,The Sickness Unto Death,book,1849,True,Existential analysis of despair and selfhood.
+7,10,5,Thus Spoke Zarathustra,book,1883,True,"Work on values, overcoming, and transformation."
+8,11,5,The Myth of Sisyphus,essay,1942,True,"Essay on absurdity, meaning, and revolt."
+9,12,6,Dhammapada,scripture,-300,True,Anthology of core Buddhist teachings.
+10,13,6,Mulamadhyamakakarika,treatise,200,True,Foundational Madhyamaka text on emptiness.
+11,14,7,Shobogenzo,essays,1231,True,Major Zen text on practice and realization.
+12,15,8,The Seven Treasuries,commentary,1350,True,Major Dzogchen compendium.
+13,16,9,Dao De Jing,book,-400,True,Classic Daoist text on the Dao and non-forcing.
+14,17,9,Zhuangzi,book,-300,True,Daoist text on spontaneity and perspective.
+15,18,10,Analects,book,-400,True,Core sayings of Confucius and his school.
+16,19,11,Confessions,book,400,True,"Work on conversion, memory, and God."
+17,20,11,Summa Theologiae,book,1274,True,Major scholastic theological synthesis.
+18,21,12,The Interior Castle,book,1577,True,Mystical text on stages of the soul.
+19,22,13,The Canon of Medicine,book,1025,True,Seminal philosophical-medical work.
+20,23,14,Masnavi,poem,1258,True,Seminal Sufi poetic text.
+21,24,15,Guide for the Perplexed,book,1190,True,"Jewish philosophical work on reason, scripture, and God."
+22,25,16,Lurianic Teachings,teachings,1570,True,Major Kabbalistic teachings on emanation and repair.
+23,26,17,Vivekachudamani,book,800,True,Advaita text on discernment and liberation.
+24,27,18,Yoga Sutras,sutra,-100,True,"Classical yoga text on mind, practice, and liberation."
+25,28,19,Tattvartha Sutra,sutra,200,True,Foundational Jain philosophical text.
+26,29,20,Guru Granth Sahib,scripture,1604,True,Central Sikh scripture.
+27,30,21,The Interpretation of Dreams,book,1899,True,Foundational psychoanalytic work.
+28,31,21,Modern Man in Search of a Soul,book,1933,True,Jungian reflections on psyche and meaning.
+29,32,22,Cognitive Therapy and the Emotional Disorders,book,1976,True,Foundational cognitive therapy text.
+30,33,22,A Guide to Rational Living,book,1961,True,Core REBT text.
+31,34,23,On Becoming a Person,book,1961,True,Foundational person-centered psychology text.
+32,35,23,Motivation and Personality,book,1954,True,Work on motivation and self-actualization.
+33,36,23,Man's Search for Meaning,book,1946,True,Classic work on suffering and meaning.
+34,37,24,Attachment and Loss,book,1969,True,Foundational attachment theory work.
+35,38,25,Influence,book,1984,False,Popular work on persuasion grounded in social psychology.
+36,39,25,"Thinking, Fast and Slow",book,2011,False,Synthesis of judgment and decision-making research.
+37,40,26,Atomic Habits,book,2018,False,Framework for habit formation.
+38,41,26,Deep Work,book,2016,False,Book on focus and cognitively demanding work.
+39,42,26,Getting Things Done,book,2001,False,Productivity system for organizing action and commitments.
+40,43,27,Can't Hurt Me,book,2018,False,Memoir and mindset book on resilience.
+41,44,27,Discipline Equals Freedom,book,2017,False,Book on discipline and personal leadership.
+42,45,28,The Psychology of Money,book,2020,False,Book on money behavior and decision-making.
+43,46,28,The Power of Now,book,1997,False,Modern spiritual book on presence.
+44,47,28,Breaking the Habit of Being Yourself,book,2012,False,Self-transformation book using spirituality and neuroscience language.
+45,48,28,How to Win Friends and Influence People,book,1936,False,Guide to communication and social influence.

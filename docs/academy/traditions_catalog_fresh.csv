@@ -1,0 +1,29 @@
+id,domain_id,parent_tradition_id,slug,name,origin_region,description_short
+1,1,,stoicism,Stoicism,Ancient Greece,"Hellenistic philosophy of virtue, reason, and acceptance."
+2,1,,epicureanism,Epicureanism,Ancient Greece,"Philosophy of tranquility, friendship, and freedom from disturbance."
+3,1,,cynicism,Cynicism,Ancient Greece,Radical critique of convention and excess.
+4,1,,skepticism,Skepticism,Ancient Greece,Suspension of judgment and critique of certainty.
+5,1,,existentialism,Existentialism,Europe,"Freedom, responsibility, anxiety, and meaning."
+6,2,,buddhism,Buddhism,India,"Tradition centered on suffering, impermanence, and liberation."
+7,2,6,zen,Zen / Chan,China / Japan,Direct realization and disciplined awareness.
+8,2,6,dzogchen,Dzogchen,Tibet,Recognition of the nature of mind.
+9,2,,taoism,Taoism / Daoism,China,"Dao, naturalness, and non-forcing."
+10,2,,confucianism,Confucianism,China,"Ethical cultivation, ritual, education, and social responsibility."
+11,2,,christianity,Christianity,Levant / Europe,"Religious tradition centered on Jesus, theology, and spiritual life."
+12,2,11,christian-mysticism,Christian Mysticism,Europe,Contemplative and mystical Christian currents.
+13,2,,islam,Islam,Arabia,"Revelation, law, theology, and spiritual life."
+14,2,13,sufism,Sufism,Islamic world,Mystical current within Islam.
+15,2,,judaism,Judaism,Levant,"Covenant, law, interpretation, and sacred history."
+16,2,15,kabbalah,Kabbalah,Jewish world,Mystical and esoteric current within Judaism.
+17,2,,advaita-vedanta,Advaita Vedanta,India,Non-dual Hindu philosophical tradition.
+18,2,,yoga,Yoga,India,"Practice, concentration, and liberation."
+19,2,,jainism,Jainism,India,"Nonviolence, karma, and liberation."
+20,2,,sikhism,Sikhism,Punjab,"Devotion, equality, remembrance, and service."
+21,3,,psychoanalysis,Psychoanalysis / Psychodynamic,Europe,"Unconscious processes, conflict, and development."
+22,3,,cbt,Cognitive Behavioral Therapy,US / Europe,Evidence-based psychotherapy integrating cognition and behavior.
+23,3,,humanistic-psychology,Humanistic Psychology,United States,"Agency, experience, meaning, and the whole person."
+24,3,,attachment-theory,Attachment Theory,United Kingdom,Emotional bonds and their role in development and relationships.
+25,3,,social-psychology,Social Psychology,Global,"How social contexts shape thought, feeling, and action."
+26,4,,habits-productivity,Habits and Productivity,Modern global,"Habits, systems, productivity, and execution."
+27,4,,discipline-resilience,Discipline and Resilience,Modern global,"Grit, resilience, and disciplined action."
+28,4,,money-meaning-modern-spirituality,"Money, Meaning, and Modern Spirituality",Modern global,"Money behavior, purpose, and popular spirituality."

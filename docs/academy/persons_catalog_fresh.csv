@@ -1,0 +1,49 @@
+id,slug,display_name,birth_year,death_year,country_or_region,tradition_id,role_type,is_founder,credibility_band,bio_short,evidence_profile,claim_risk_level
+1,zeno-of-citium,Zeno of Citium,-334,-262,Cyprus / Greece,1,philosopher,True,foundational,Founder of Stoicism.,,
+2,seneca,Seneca,-4,65,Roman Empire,1,philosopher,False,major,Roman Stoic statesman and essayist.,,
+3,epictetus,Epictetus,50,135,Greek / Roman Empire,1,philosopher,False,major,Stoic teacher emphasizing inner freedom and control.,,
+4,marcus-aurelius,Marcus Aurelius,121,180,Roman Empire,1,philosopher,False,major,Stoic emperor known for Meditations.,,
+5,epicurus,Epicurus,-341,-270,Greece,2,philosopher,True,foundational,Founder of Epicureanism.,,
+6,lucretius,Lucretius,-99,-55,Roman Republic,2,poet,False,major,Roman transmitter of Epicurean thought.,,
+7,diogenes,Diogenes,-412,-323,Greece,3,philosopher,False,major,Cynic philosopher known for radical simplicity.,,
+8,pyrrho,Pyrrho,-360,-270,Greece,4,philosopher,True,foundational,Foundational figure of Pyrrhonian skepticism.,,
+9,kierkegaard,Søren Kierkegaard,1813,1855,Denmark,5,philosopher,False,major,"Proto-existential thinker of faith, anxiety, and subjectivity.",,
+10,nietzsche,Friedrich Nietzsche,1844,1900,Germany,5,philosopher,False,major,Critic of morality and herd values.,,
+11,camus,Albert Camus,1913,1960,France / Algeria,5,philosopher,False,major,Philosopher of the absurd and revolt.,,
+12,gautama-buddha,Gautama Buddha,-563,-483,India / Nepal region,6,teacher,True,foundational,Foundational teacher of Buddhism.,,
+13,nagarjuna,Nagarjuna,150,250,India,6,philosopher,False,major,Major Mahayana thinker associated with emptiness.,,
+14,dogen,Dogen,1200,1253,Japan,7,monk,False,major,Central Japanese Zen thinker.,,
+15,longchenpa,Longchenpa,1308,1364,Tibet,8,teacher,False,major,Great systematizer of Dzogchen.,,
+16,laozi,Laozi,-600,-500,China,9,philosopher,False,foundational,Associated with the Dao De Jing.,,
+17,zhuangzi,Zhuangzi,-369,-286,China,9,philosopher,False,major,Major Daoist philosopher of spontaneity and perspective.,,
+18,confucius,Confucius,-551,-479,China,10,teacher,True,foundational,Foundational teacher of Confucianism.,,
+19,augustine,Augustine,354,430,Roman North Africa,11,theologian,False,major,Major Christian theologian and philosopher.,,
+20,thomas-aquinas,Thomas Aquinas,1225,1274,Italy,11,theologian,False,major,Scholastic theologian and philosopher.,,
+21,teresa-of-avila,Teresa of Ávila,1515,1582,Spain,12,mystic,False,major,Christian mystic and contemplative writer.,,
+22,avicenna,Avicenna (Ibn Sina),980,1037,Persia,13,philosopher,False,major,Seminal Islamic philosopher and polymath.,,
+23,rumi,Rumi,1207,1273,Persia / Anatolia,14,mystic,False,major,Sufi poet and mystic.,,
+24,maimonides,Maimonides,1138,1204,Al-Andalus / Egypt,15,philosopher,False,major,Major Jewish philosopher and legal thinker.,,
+25,isaac-luria,Isaac Luria,1534,1572,Ottoman Palestine / Egypt,16,mystic,False,major,Major Kabbalistic thinker.,,
+26,adi-shankara,Adi Shankara,788,820,India,17,philosopher,False,major,Major systematizer of Advaita Vedanta.,,
+27,patanjali,Patanjali,-200,-100,India,18,teacher,False,foundational,Classical author associated with the Yoga Sutras.,,
+28,mahavira,Mahavira,-599,-527,India,19,teacher,True,foundational,Central Jain teacher.,,
+29,guru-nanak,Guru Nanak,1469,1539,Punjab,20,teacher,True,foundational,Founder of Sikhism.,,
+30,freud,Sigmund Freud,1856,1939,Austria,21,psychologist,True,foundational,Founder of psychoanalysis.,,
+31,jung,Carl Jung,1875,1961,Switzerland,21,psychologist,False,major,Analytical psychologist of archetypes and individuation.,,
+32,aaron-beck,Aaron Beck,1921,2021,United States,22,psychiatrist,True,major,Founder of cognitive therapy.,,
+33,albert-ellis,Albert Ellis,1913,2007,United States,22,psychologist,True,major,Founder of rational emotive behavior therapy.,,
+34,carl-rogers,Carl Rogers,1902,1987,United States,23,psychologist,False,major,Humanistic psychologist emphasizing empathy and the person-centered approach.,,
+35,abraham-maslow,Abraham Maslow,1908,1970,United States,23,psychologist,False,major,Known for needs and self-actualization.,,
+36,viktor-frankl,Viktor Frankl,1905,1997,Austria,23,psychiatrist,False,major,Psychiatrist focused on meaning and logotherapy.,,
+37,john-bowlby,John Bowlby,1907,1990,United Kingdom,24,psychologist,True,major,Founder of attachment theory.,,
+38,robert-cialdini,Robert Cialdini,1945,,United States,25,psychologist,False,major,Social psychologist known for persuasion research.,,
+39,daniel-kahneman,Daniel Kahneman,1934,2024,Israel / United States,25,psychologist,False,major,Psychologist of judgment and decision-making.,,
+40,james-clear,James Clear,1986,,United States,26,author,False,popularizer,Popularizer of habits and systems.,practical-popularizer,low
+41,cal-newport,Cal Newport,1982,,United States,26,author,False,popularizer,"Writer on focus, productivity, and deep work.",research-adjacent,low
+42,david-allen,David Allen,1945,,United States,26,author,False,popularizer,Creator of Getting Things Done.,practical-popularizer,low
+43,david-goggins,David Goggins,1975,,United States,27,author,False,popularizer,Extreme-discipline motivational figure.,motivational,medium
+44,jocko-willink,Jocko Willink,1971,,United States,27,author,False,popularizer,Writer on discipline and leadership.,practical-popularizer,low
+45,morgan-housel,Morgan Housel,1984,,United States,28,author,False,popularizer,Writer on money psychology and behavior.,practical-popularizer,low
+46,eckhart-tolle,Eckhart Tolle,1948,,Germany / Canada,28,author,False,popularizer,Modern spiritual teacher focused on presence.,spiritual-popular,medium
+47,joe-dispenza,Joe Dispenza,1962,,United States,28,author,False,controversial,Popular self-transformation teacher blending spirituality and neuroscience language.,controversial,high
+48,dale-carnegie,Dale Carnegie,1888,1955,United States,28,author,False,popularizer,Writer on social skills and influence.,practical-popularizer,low
