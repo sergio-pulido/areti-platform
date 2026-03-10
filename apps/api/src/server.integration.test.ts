@@ -388,6 +388,9 @@ describe("API integration", () => {
     expect(
       threadMessages.body.data.some((message: { role: string }) => message.role === "user"),
     ).toBe(true);
+    expect(
+      threadMessages.body.data.some((message: { role: string }) => message.role === "assistant"),
+    ).toBe(true);
 
     const deleted = await request(app)
       .delete(`/api/v1/reflections/${reflectionId}`)
@@ -643,6 +646,7 @@ describe("API integration", () => {
     expect(createdThread.body.data.context.contextCapacity).toBe(1800);
     expect(createdThread.body.data.context.state).toBe("ok");
     expect(createdThread.body.data.context.usagePercent).toBe(0);
+    expect(createdThread.body.data.branch).toBeNull();
 
     const sendMessage = await request(app)
       .post(`/api/v1/chat/threads/${threadId}/messages`)
@@ -663,6 +667,42 @@ describe("API integration", () => {
     expect(messages.status).toBe(200);
     expect(Array.isArray(messages.body.data)).toBe(true);
     expect(messages.body.data.length).toBeGreaterThanOrEqual(2);
+
+    const branchFromAssistant = await request(app)
+      .post(`/api/v1/chat/threads/${threadId}/branch`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        messageId: messages.body.data[1].id,
+      });
+
+    expect(branchFromAssistant.status).toBe(201);
+    expect(typeof branchFromAssistant.body.data.threadId).toBe("string");
+    expect(branchFromAssistant.body.data.href).toContain("/chat?thread=");
+    expect(branchFromAssistant.body.data.copiedMessagesCount).toBe(2);
+    expect(branchFromAssistant.body.data.thread.branch.sourceThreadId).toBe(threadId);
+    expect(branchFromAssistant.body.data.thread.branch.sourceMessageId).toBe(messages.body.data[1].id);
+    expect(typeof branchFromAssistant.body.data.thread.branch.sourceMessagePreview).toBe("string");
+
+    const branchedMessages = await request(app)
+      .get(`/api/v1/chat/threads/${branchFromAssistant.body.data.threadId}/messages`)
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(branchedMessages.status).toBe(200);
+    expect(Array.isArray(branchedMessages.body.data)).toBe(true);
+    expect(branchedMessages.body.data.length).toBe(2);
+    expect(branchedMessages.body.data[0].content).toBe(messages.body.data[0].content);
+    expect(branchedMessages.body.data[1].content).toBe(messages.body.data[1].content);
+
+    const threadsAfterBranch = await request(app)
+      .get("/api/v1/chat/threads?scope=all")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(threadsAfterBranch.status).toBe(200);
+
+    const branchedThread = threadsAfterBranch.body.data.find(
+      (thread: { id: string }) => thread.id === branchFromAssistant.body.data.threadId,
+    );
+    expect(branchedThread).toBeDefined();
+    expect(branchedThread.branch.sourceThreadId).toBe(threadId);
 
     let autoTitledThread: { id: string; title: string } | undefined;
     for (let attempt = 0; attempt < 10; attempt += 1) {

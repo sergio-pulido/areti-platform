@@ -24,6 +24,7 @@ import {
   createAdminAuditLog,
   createChatEvent,
   createChatMessage,
+  createChatThreadBranch,
   createEmailVerificationChallenge,
   createChatThread,
   createCommunity,
@@ -345,6 +346,16 @@ class ChatProvidersFailedError extends Error {
   constructor(readonly failures: ProviderFailureDetail[]) {
     super("All configured chat providers failed.");
     this.name = "ChatProvidersFailedError";
+  }
+}
+
+class RouteHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "RouteHttpError";
   }
 }
 
@@ -1933,6 +1944,10 @@ const chatThreadPatchSchema = z.object({
   archived: z.boolean().optional(),
 });
 
+const chatThreadBranchSchema = z.object({
+  messageId: z.string().uuid(),
+});
+
 const chatThreadListQuerySchema = z.object({
   scope: z.enum(["active", "archived", "all"]).optional().default("active"),
 });
@@ -2237,6 +2252,194 @@ export function createApp() {
       lastSummarizedAt: input.lastSummarizedAt,
       updatedAt: input.updatedAt,
     };
+  }
+
+  async function generateAssistantReplyForLatestUserMessage(input: {
+    userId: string;
+    threadId: string;
+    providerErrorRoute: string;
+  }): Promise<void> {
+    const thread = getChatThreadByIdForUser(input.userId, input.threadId);
+
+    if (!thread) {
+      throw new RouteHttpError(404, "Thread not found");
+    }
+
+    if (thread.archived) {
+      throw new RouteHttpError(400, "Thread is archived. Restore it before sending new messages.");
+    }
+
+    try {
+      assertWithinChatRateLimit(input.userId);
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new RouteHttpError(429, error.message);
+      }
+      throw error;
+    }
+
+    const allMessages = listChatMessagesForThread(input.userId, thread.id) ?? [];
+    if (allMessages.length === 0) {
+      throw new RouteHttpError(400, "Thread has no messages to process.");
+    }
+
+    const latestMessage = allMessages.at(-1);
+    if (!latestMessage || latestMessage.role !== "user") {
+      return;
+    }
+
+    const moderationError = moderatePrompt(latestMessage.content);
+    if (moderationError) {
+      throw new RouteHttpError(400, moderationError);
+    }
+
+    try {
+      const effectiveSystemPrompt = await resolveEffectiveSystemPromptForUser(input.userId);
+      const persistedContext = getChatThreadContextByThreadId(thread.id);
+      const previousState = persistedContext?.state ?? "ok";
+      let summary = persistedContext?.summary ?? "";
+      let summarizedMessageCount = Math.min(
+        Math.max(0, persistedContext?.summarizedMessageCount ?? 0),
+        allMessages.length,
+      );
+      let autoSummariesCount = Math.max(0, persistedContext?.autoSummariesCount ?? 0);
+      let lastSummarizedAt = persistedContext?.lastSummarizedAt ?? null;
+      let summarizedThisTurn = false;
+
+      const buildState = () => {
+        const liveMessages = allMessages.slice(summarizedMessageCount);
+        const modelMessages = buildThreadPromptMessages({
+          effectiveSystemPrompt,
+          summary,
+          messages: liveMessages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        });
+        const estimatedPromptTokens = estimatePromptTokensForMessages(modelMessages);
+        const usagePercent = computeContextUsagePercent(
+          estimatedPromptTokens,
+          chatContextConfig.capacity,
+        );
+        return { liveMessages, modelMessages, estimatedPromptTokens, usagePercent };
+      };
+
+      let built = buildState();
+
+      if (
+        built.usagePercent >= chatContextConfig.summarizePercent &&
+        built.liveMessages.length > chatContextConfig.recentRawMessages
+      ) {
+        const summarizeCount = built.liveMessages.length - chatContextConfig.recentRawMessages;
+        const toSummarize = built.liveMessages.slice(0, summarizeCount);
+
+        if (toSummarize.length > 0) {
+          summary = await summarizeConversationMemory({
+            existingSummary: summary,
+            messages: toSummarize.map((message) => ({
+              role: message.role,
+              content: message.content,
+            })),
+            chatConfig,
+          });
+
+          summarizedMessageCount = Math.min(allMessages.length, summarizedMessageCount + toSummarize.length);
+          autoSummariesCount += 1;
+          lastSummarizedAt = new Date().toISOString();
+          summarizedThisTurn = true;
+          built = buildState();
+        }
+      }
+
+      const state = deriveChatContextState(built.usagePercent, chatContextConfig);
+      upsertChatThreadContext({
+        threadId: thread.id,
+        summary,
+        summarizedMessageCount,
+        estimatedPromptTokens: built.estimatedPromptTokens,
+        contextCapacity: chatContextConfig.capacity,
+        usagePercent: built.usagePercent,
+        state,
+        autoSummariesCount,
+        lastSummarizedAt,
+      });
+
+      if (summarizedThisTurn) {
+        recordChatEvent({
+          userId: input.userId,
+          threadId: thread.id,
+          eventType: "context_auto_summarized",
+          payload: {
+            summarizedMessageCount,
+            usagePercent: built.usagePercent,
+            estimatedPromptTokens: built.estimatedPromptTokens,
+          },
+        });
+      }
+
+      if (state === "warning" && previousState === "ok") {
+        recordChatEvent({
+          userId: input.userId,
+          threadId: thread.id,
+          eventType: "context_warning",
+          payload: {
+            usagePercent: built.usagePercent,
+            estimatedPromptTokens: built.estimatedPromptTokens,
+            contextCapacity: chatContextConfig.capacity,
+          },
+        });
+      }
+
+      if (state === "degraded" && previousState !== "degraded") {
+        recordChatEvent({
+          userId: input.userId,
+          threadId: thread.id,
+          eventType: "context_degraded",
+          payload: {
+            usagePercent: built.usagePercent,
+            estimatedPromptTokens: built.estimatedPromptTokens,
+            contextCapacity: chatContextConfig.capacity,
+          },
+        });
+      }
+
+      const answer = await resolveChatAnswer(built.modelMessages, chatConfig);
+
+      createChatMessage({
+        id: randomUUID(),
+        threadId: thread.id,
+        role: "assistant",
+        content: answer,
+      });
+    } catch (error) {
+      if (error instanceof ChatProvidersFailedError) {
+        recordChatEvent({
+          userId: input.userId,
+          threadId: input.threadId,
+          eventType: "message_provider_error",
+          payload: {
+            route: input.providerErrorRoute,
+            failures: error.failures,
+          },
+        });
+        throw new RouteHttpError(
+          502,
+          "Unable to reach configured chat providers. Check CHAT_PROVIDER_ORDER and provider API keys/models.",
+        );
+      }
+
+      if (error instanceof RouteHttpError) {
+        throw error;
+      }
+
+      if (error instanceof Error) {
+        throw new RouteHttpError(
+          502,
+          "Unable to reach configured chat providers. Check CHAT_PROVIDER_ORDER and provider API keys/models.",
+        );
+      }
+      throw error;
+    }
   }
 
   const allowedOrigins = (env.CORS_ORIGINS ?? "http://localhost:3000")
@@ -3903,6 +4106,114 @@ export function createApp() {
     res.json({ data: messages });
   });
 
+  app.post("/api/v1/chat/threads/:id/branch", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = chatThreadBranchSchema.safeParse(req.body ?? {});
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid branch payload" });
+      return;
+    }
+
+    const sourceThread = getChatThreadByIdForUser(authReq.authUser.id, req.params.id);
+    if (!sourceThread) {
+      res.status(404).json({ error: "Thread not found" });
+      return;
+    }
+
+    const sourceMessages = listChatMessagesForThread(authReq.authUser.id, sourceThread.id);
+    if (!sourceMessages || sourceMessages.length === 0) {
+      res.status(400).json({ error: "Thread has no messages to branch from." });
+      return;
+    }
+
+    const cutoffIndex = sourceMessages.findIndex((message) => message.id === parsed.data.messageId);
+    if (cutoffIndex < 0) {
+      res.status(404).json({ error: "Message not found in this thread." });
+      return;
+    }
+
+    const copiedMessages = sourceMessages.slice(0, cutoffIndex + 1);
+    if (copiedMessages.length === 0) {
+      res.status(400).json({ error: "No messages available for branching." });
+      return;
+    }
+
+    try {
+      const baseTitle = sourceThread.title.trim() || "Conversation";
+      const branchTitle = `Branch: ${baseTitle}`.slice(0, 120);
+      const branchThread = createChatThread({
+        id: randomUUID(),
+        userId: authReq.authUser.id,
+        title: branchTitle,
+      });
+
+      for (const sourceMessage of copiedMessages) {
+        createChatMessage({
+          id: randomUUID(),
+          threadId: branchThread.id,
+          role: sourceMessage.role,
+          content: sourceMessage.content,
+        });
+      }
+
+      const branchMetadata = createChatThreadBranch({
+        id: randomUUID(),
+        threadId: branchThread.id,
+        sourceThreadId: sourceThread.id,
+        sourceMessageId: parsed.data.messageId,
+      });
+
+      if (!branchMetadata) {
+        res.status(400).json({ error: "Unable to resolve source branch metadata." });
+        return;
+      }
+
+      const effectiveSystemPrompt = await resolveEffectiveSystemPromptForUser(authReq.authUser.id);
+      const modelMessages = buildThreadPromptMessages({
+        effectiveSystemPrompt,
+        summary: "",
+        messages: copiedMessages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+      });
+      const estimatedPromptTokens = estimatePromptTokensForMessages(modelMessages);
+      const usagePercent = computeContextUsagePercent(estimatedPromptTokens, chatContextConfig.capacity);
+      const state = deriveChatContextState(usagePercent, chatContextConfig);
+      const branchContext = upsertChatThreadContext({
+        threadId: branchThread.id,
+        summary: "",
+        summarizedMessageCount: 0,
+        estimatedPromptTokens,
+        contextCapacity: chatContextConfig.capacity,
+        usagePercent,
+        state,
+        autoSummariesCount: 0,
+        lastSummarizedAt: null,
+      });
+
+      res.status(201).json({
+        data: {
+          threadId: branchThread.id,
+          href: `/chat?thread=${encodeURIComponent(branchThread.id)}`,
+          copiedMessagesCount: copiedMessages.length,
+          thread: {
+            ...branchThread,
+            context: toContextTelemetry(branchContext),
+            branch: branchMetadata,
+          },
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(500).json({ error: "Unable to branch thread right now." });
+        return;
+      }
+      throw error;
+    }
+  });
+
   app.post("/api/v1/chat/threads/:id/context/summarize", requireAuth, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const thread = getChatThreadByIdForUser(authReq.authUser.id, req.params.id);
@@ -4687,7 +4998,7 @@ export function createApp() {
     res.json({ data: reflection });
   });
 
-  app.post("/api/v1/reflections/:id/send-to-companion", requireAuth, (req, res) => {
+  app.post("/api/v1/reflections/:id/send-to-companion", requireAuth, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
 
@@ -4702,8 +5013,19 @@ export function createApp() {
         res.status(404).json({ error: "Reflection not found" });
         return;
       }
+
+      await generateAssistantReplyForLatestUserMessage({
+        userId: authReq.authUser.id,
+        threadId: result.threadId,
+        providerErrorRoute: "/api/v1/reflections/:id/send-to-companion",
+      });
+
       res.status(201).json({ data: result });
     } catch (error) {
+      if (error instanceof RouteHttpError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
       if (error instanceof Error) {
         res.status(400).json({ error: error.message });
         return;

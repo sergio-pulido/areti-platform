@@ -24,6 +24,14 @@ const allowedAudioMimeTypes = new Set([
   "audio/aac",
 ]);
 
+function normalizeMimeType(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .split(";")[0]
+    ?.trim() ?? "";
+}
+
 type RecordedAudio = {
   blob: Blob;
   durationSeconds: number;
@@ -114,7 +122,8 @@ export function ReflectionNewFlow() {
         | undefined;
 
       if (sourceType === "upload" && uploadedAudio) {
-        if (!allowedAudioMimeTypes.has(uploadedAudio.type)) {
+        const normalizedMimeType = normalizeMimeType(uploadedAudio.type);
+        if (!allowedAudioMimeTypes.has(normalizedMimeType)) {
           throw new Error("Unsupported audio format. Please upload MP3, M4A, WAV, OGG, or WEBM.");
         }
 
@@ -124,14 +133,19 @@ export function ReflectionNewFlow() {
 
         audioPayload = {
           fileName: uploadedAudio.name,
-          mimeType: uploadedAudio.type,
+          mimeType: normalizedMimeType,
           base64Data: await fileToBase64(uploadedAudio),
         };
       }
 
       if (sourceType === "voice" && recordedAudio) {
+        const normalizedMimeType = normalizeMimeType(recordedAudio.mimeType);
+        if (!allowedAudioMimeTypes.has(normalizedMimeType)) {
+          throw new Error("Unsupported audio format. Please try recording again.");
+        }
+
         const file = new File([recordedAudio.blob], recordedAudio.fileName, {
-          type: recordedAudio.mimeType,
+          type: normalizedMimeType,
         });
 
         if (file.size > MAX_AUDIO_BYTES) {
@@ -140,7 +154,7 @@ export function ReflectionNewFlow() {
 
         audioPayload = {
           fileName: file.name,
-          mimeType: file.type,
+          mimeType: normalizedMimeType,
           base64Data: await fileToBase64(file),
           durationSeconds: recordedAudio.durationSeconds,
         };

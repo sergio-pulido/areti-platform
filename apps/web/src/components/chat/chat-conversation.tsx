@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, Loader2, Sparkles } from "lucide-react";
+import { ArrowDown, BookOpen, Copy, GitBranch, Loader2, Pin, Quote, Sparkles } from "lucide-react";
 import type { ChatMessage } from "@/components/chat/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
@@ -11,6 +11,16 @@ type ChatConversationProps = {
   pending: boolean;
   loading?: boolean;
   onFollowUpSelect?: (prompt: string) => void;
+  onCopyMessage?: (message: ChatMessage) => void;
+  onQuoteMessage?: (message: ChatMessage) => void;
+  onPinMessage?: (message: ChatMessage) => void;
+  onSaveToJournal?: (message: ChatMessage) => void | Promise<void>;
+  onBranchFromMessage?: (message: ChatMessage) => void | Promise<void>;
+  onBranchAndAskFromMessage?: (message: ChatMessage) => void | Promise<void>;
+  messageActionPending?: {
+    messageId: string;
+    action: "journal" | "branch" | "branch_ask";
+  } | null;
   className?: string;
 };
 
@@ -158,12 +168,20 @@ export function ChatConversation({
   pending,
   loading = false,
   onFollowUpSelect,
+  onCopyMessage,
+  onQuoteMessage,
+  onPinMessage,
+  onSaveToJournal,
+  onBranchFromMessage,
+  onBranchAndAskFromMessage,
+  messageActionPending = null,
   className,
 }: ChatConversationProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const forceInstantScrollRef = useRef(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
   const lastAssistantMessageId = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -253,6 +271,103 @@ export function ChatConversation({
                     {message.content}
                   </p>
                 )}
+
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard
+                        .writeText(message.content)
+                        .then(() => {
+                          setCopiedMessageId(message.id);
+                          onCopyMessage?.(message);
+                          window.setTimeout(() => {
+                            setCopiedMessageId((current) => (current === message.id ? null : current));
+                          }, 1300);
+                        })
+                        .catch(() => undefined);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full border border-night-700/70 bg-night-950/45 px-2.5 py-1 text-[11px] text-night-200 transition hover:border-night-600 hover:text-sand-100"
+                    aria-label="Copy message"
+                  >
+                    <Copy size={12} />
+                    {copiedMessageId === message.id ? "Copied" : "Copy"}
+                  </button>
+
+                  {onQuoteMessage ? (
+                    <button
+                      type="button"
+                      onClick={() => onQuoteMessage(message)}
+                      disabled={Boolean(messageActionPending)}
+                      className="inline-flex items-center gap-1 rounded-full border border-night-700/70 bg-night-950/45 px-2.5 py-1 text-[11px] text-night-200 transition hover:border-night-600 hover:text-sand-100 disabled:opacity-60"
+                      aria-label="Quote message in composer"
+                    >
+                      <Quote size={12} />
+                      Quote
+                    </button>
+                  ) : null}
+
+                  {onPinMessage ? (
+                    <button
+                      type="button"
+                      onClick={() => onPinMessage(message)}
+                      disabled={Boolean(messageActionPending)}
+                      className="inline-flex items-center gap-1 rounded-full border border-night-700/70 bg-night-950/45 px-2.5 py-1 text-[11px] text-night-200 transition hover:border-night-600 hover:text-sand-100 disabled:opacity-60"
+                      aria-label="Pin message as insight"
+                    >
+                      <Pin size={12} />
+                      Pin insight
+                    </button>
+                  ) : null}
+
+                  {onSaveToJournal ? (
+                    <button
+                      type="button"
+                      onClick={() => void onSaveToJournal(message)}
+                      disabled={Boolean(messageActionPending)}
+                      className="inline-flex items-center gap-1 rounded-full border border-night-700/70 bg-night-950/45 px-2.5 py-1 text-[11px] text-night-200 transition hover:border-night-600 hover:text-sand-100 disabled:opacity-60"
+                      aria-label="Save message as journal entry"
+                    >
+                      <BookOpen size={12} />
+                      {messageActionPending?.messageId === message.id &&
+                      messageActionPending.action === "journal"
+                        ? "Saving..."
+                        : "To journal"}
+                    </button>
+                  ) : null}
+
+                  {onBranchFromMessage ? (
+                    <button
+                      type="button"
+                      onClick={() => void onBranchFromMessage(message)}
+                      disabled={Boolean(messageActionPending)}
+                      className="inline-flex items-center gap-1 rounded-full border border-night-700/70 bg-night-950/45 px-2.5 py-1 text-[11px] text-night-200 transition hover:border-night-600 hover:text-sand-100 disabled:opacity-60"
+                      aria-label="Branch thread from this message"
+                    >
+                      <GitBranch size={12} />
+                      {messageActionPending?.messageId === message.id &&
+                      messageActionPending.action === "branch"
+                        ? "Branching..."
+                        : "Branch here"}
+                    </button>
+                  ) : null}
+
+                  {onBranchAndAskFromMessage ? (
+                    <button
+                      type="button"
+                      onClick={() => void onBranchAndAskFromMessage(message)}
+                      disabled={Boolean(messageActionPending)}
+                      className="inline-flex items-center gap-1 rounded-full border border-night-700/70 bg-night-950/45 px-2.5 py-1 text-[11px] text-night-200 transition hover:border-night-600 hover:text-sand-100 disabled:opacity-60"
+                      aria-label="Create a branch and send a first prompt"
+                    >
+                      <GitBranch size={12} />
+                      {messageActionPending?.messageId === message.id &&
+                      messageActionPending.action === "branch_ask"
+                        ? "Branching + asking..."
+                        : "Branch + ask"}
+                    </button>
+                  ) : null}
+                </div>
 
                 {isLatestAssistant && !pending && onFollowUpSelect ? (
                   <div className="mt-4 flex flex-wrap gap-2">

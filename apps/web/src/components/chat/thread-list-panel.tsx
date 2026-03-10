@@ -337,7 +337,14 @@ export function ThreadListPanel({
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-medium text-sand-100">{thread.title}</p>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-sand-100">{thread.title}</p>
+                        {thread.branch ? (
+                          <p className="mt-0.5 truncate text-[10px] text-night-300">
+                            Branch of {thread.branch.sourceThreadTitle}
+                          </p>
+                        ) : null}
+                      </div>
                       <p className="shrink-0 text-[11px] text-night-300">{timestampLabel(thread.updatedAt)}</p>
                     </div>
                     <p className={cn("mt-1 line-clamp-1 text-xs", isActive ? "text-sage-200/90" : "text-night-200")}>{preview}</p>

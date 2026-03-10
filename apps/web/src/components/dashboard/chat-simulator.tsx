@@ -17,6 +17,7 @@ import type { ChatContextTelemetry, ChatMessage, ChatThread } from "@/components
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ToastStack, type ToastItem } from "@/components/ui/toast-stack";
 
 const WELCOME_MESSAGE =
   "I am your reflective companion. Share one honest sentence, and we will work from there.";
@@ -27,10 +28,21 @@ const EMPTY_STATE_PROMPTS = [
   "Guide a short evening reflection I can do tonight.",
   "I want to improve one relationship without losing myself.",
 ];
+const PINNED_INSIGHTS_STORAGE_KEY = "areti:chat:pinned-insights";
 
 type ChatSimulatorProps = {
   initialPrompt?: string;
   initialThreadId?: string;
+};
+
+type MessageActionType = "journal" | "branch" | "branch_ask";
+
+type PinnedInsight = {
+  id: string;
+  messageId: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
 };
 
 function syntheticAssistantMessage(threadId: string): ChatMessage {
@@ -90,6 +102,40 @@ function formatSummaryTimestamp(value: string | null): string | null {
   });
 }
 
+function deriveJournalTitleFromMessage(input: {
+  role: "user" | "assistant";
+  content: string;
+}): string {
+  const clean = input.content
+    .replace(/\s+/g, " ")
+    .replace(/["'`]/g, "")
+    .trim();
+  const rolePrefix = input.role === "assistant" ? "Companion note" : "Reflection note";
+
+  if (!clean) {
+    return rolePrefix;
+  }
+
+  const words = clean
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 8)
+    .join(" ");
+
+  const title = words.charAt(0).toUpperCase() + words.slice(1);
+  const joined = `${rolePrefix}: ${title}`;
+  return joined.length > 80 ? `${joined.slice(0, 77).trimEnd()}...` : joined;
+}
+
+function quoteForComposer(message: ChatMessage): string {
+  const lines = message.content
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`);
+  const source = message.role === "assistant" ? "Companion" : "You";
+  return `${lines.join("\n")}\n\n${source}, help me unpack this further.`;
+}
+
 export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -102,12 +148,18 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
   const [pending, setPending] = useState(false);
   const [manualSummarizePending, setManualSummarizePending] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messageActionPending, setMessageActionPending] = useState<{
+    messageId: string;
+    action: MessageActionType;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mobileThreadsOpen, setMobileThreadsOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [composerFocusSignal, setComposerFocusSignal] = useState(0);
   const [contextNotice, setContextNotice] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [pinsByThreadId, setPinsByThreadId] = useState<Record<string, PinnedInsight[]>>({});
   const consumedPromptRef = useRef<string | null>(null);
 
   const activeThread = useMemo(
@@ -117,6 +169,10 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
 
   const activePreview = useMemo(() => deriveMessagePreview(messages), [messages]);
   const activeContext = activeThread?.context ?? null;
+  const activePinnedInsights = useMemo(
+    () => (activeThreadId ? pinsByThreadId[activeThreadId] ?? [] : []),
+    [activeThreadId, pinsByThreadId],
+  );
   const contextSummaryTimestamp = useMemo(
     () => formatSummaryTimestamp(activeContext?.lastSummarizedAt ?? null),
     [activeContext?.lastSummarizedAt],
@@ -146,6 +202,14 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
   function prefillComposer(value: string): void {
     setInput(value);
     setComposerFocusSignal((current) => current + 1);
+  }
+
+  function pushToast(message: string, kind: ToastItem["kind"] = "success"): void {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setToasts((current) => [...current, { id, message, kind }]);
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((item) => item.id !== id));
+    }, 2600);
   }
 
   async function createThreadOnServer(): Promise<ChatThread> {
@@ -389,6 +453,238 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
     }
   }
 
+  async function saveMessageToJournal(message: ChatMessage): Promise<void> {
+    const trimmedBody = message.content.trim();
+    if (trimmedBody.length < 10) {
+      setError("This message is too short to save as a journal entry.");
+      pushToast("Message is too short to save.", "error");
+      return;
+    }
+
+    setMessageActionPending({ messageId: message.id, action: "journal" });
+    setError(null);
+
+    const body = trimmedBody.length > 3000 ? `${trimmedBody.slice(0, 2997).trimEnd()}...` : trimmedBody;
+    const title = deriveJournalTitleFromMessage({
+      role: message.role,
+      content: body,
+    });
+
+    try {
+      await parseJsonOrThrow<{ ok: true }>(
+        await fetch("/api/journal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            body,
+            mood: "Reflective",
+          }),
+        }),
+      );
+
+      setContextNotice("Saved this message to Journal.");
+      pushToast("Saved to Journal.");
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Unable to save this message to Journal.");
+      pushToast("Could not save this message to Journal.", "error");
+    } finally {
+      setMessageActionPending(null);
+    }
+  }
+
+  function copyMessage(message: ChatMessage): void {
+    pushToast(message.role === "assistant" ? "Companion message copied." : "Message copied.");
+  }
+
+  function quoteMessage(message: ChatMessage): void {
+    prefillComposer(quoteForComposer(message));
+    pushToast("Added quote to composer.", "info");
+  }
+
+  function pinMessage(message: ChatMessage): void {
+    if (!activeThreadId) {
+      return;
+    }
+
+    const existing = pinsByThreadId[activeThreadId] ?? [];
+    if (existing.some((item) => item.messageId === message.id)) {
+      pushToast("Already pinned as an insight.", "info");
+      return;
+    }
+
+    const insight: PinnedInsight = {
+      id: `pin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      messageId: message.id,
+      role: message.role,
+      content: message.content.replace(/\s+/g, " ").trim().slice(0, 600),
+      createdAt: new Date().toISOString(),
+    };
+
+    setPinsByThreadId((current) => ({
+      ...current,
+      [activeThreadId]: [insight, ...(current[activeThreadId] ?? [])].slice(0, 6),
+    }));
+    pushToast("Pinned as insight.");
+  }
+
+  function removePinnedInsight(insightId: string): void {
+    if (!activeThreadId) {
+      return;
+    }
+
+    setPinsByThreadId((current) => {
+      const existing = current[activeThreadId] ?? [];
+      const next = existing.filter((item) => item.id !== insightId);
+      if (next.length === existing.length) {
+        return current;
+      }
+      return {
+        ...current,
+        [activeThreadId]: next,
+      };
+    });
+  }
+
+  async function branchFromMessage(
+    message: ChatMessage,
+    options?: { autoPrompt?: string; action?: MessageActionType },
+  ): Promise<void> {
+    if (!activeThread || activeThread.archived) {
+      return;
+    }
+
+    if (message.threadId !== activeThread.id) {
+      setError("This message does not belong to the active thread.");
+      pushToast("Message does not belong to this thread.", "error");
+      return;
+    }
+
+    const action = options?.action ?? "branch";
+    const autoPrompt = options?.autoPrompt?.trim() ?? "";
+
+    setMessageActionPending({ messageId: message.id, action });
+    setError(null);
+
+    try {
+      const payload = await parseJsonOrThrow<{
+        threadId: string;
+        href: string;
+        copiedMessagesCount: number;
+      }>(
+        await fetch(`/api/chat/threads/${activeThread.id}/branch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messageId: message.id,
+          }),
+        }),
+      );
+
+      setThreadInUrl(payload.threadId);
+      setMessages([]);
+      await Promise.all([loadThreads(), loadMessages(payload.threadId)]);
+      emitChatThreadsInvalidated();
+
+      if (autoPrompt.length > 0) {
+        setPending(true);
+        try {
+          const messageResult = await parseJsonOrThrow<{ answer: string; context?: ChatContextTelemetry }>(
+            await fetch(`/api/chat/threads/${payload.threadId}/messages`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ prompt: autoPrompt }),
+            }),
+          );
+
+          if (messageResult.context) {
+            setThreads((prev) =>
+              prev.map((thread) =>
+                thread.id === payload.threadId
+                  ? { ...thread, context: { ...thread.context, ...messageResult.context } }
+                  : thread,
+              ),
+            );
+          }
+
+          await Promise.all([loadThreads(), loadMessages(payload.threadId)]);
+          emitChatThreadsInvalidated();
+          setContextNotice("Started a new branch and sent your first prompt.");
+          pushToast("Branch created and first prompt sent.");
+        } catch (caughtError) {
+          setError(
+            caughtError instanceof Error
+              ? caughtError.message
+              : "Branch was created, but the first prompt could not be sent.",
+          );
+          setContextNotice("Started a new branch, but the first prompt did not send.");
+          pushToast("Branch created, but first prompt failed.", "error");
+        } finally {
+          setPending(false);
+        }
+      } else {
+        setContextNotice(
+          payload.copiedMessagesCount > 0
+            ? `Started a new branch with ${payload.copiedMessagesCount} messages of context.`
+            : "Started a new branch.",
+        );
+        pushToast("Branch created.");
+      }
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Unable to branch from this message.");
+      pushToast("Unable to create branch from this message.", "error");
+    } finally {
+      setMessageActionPending(null);
+    }
+  }
+
+  async function branchAndAskFromMessage(message: ChatMessage): Promise<void> {
+    const suggestedPrompt =
+      input.trim() ||
+      "Continue from this point. Help me examine the assumptions and define one concrete next step.";
+    const promptValue = window.prompt("First prompt for this branch:", suggestedPrompt);
+
+    if (promptValue === null) {
+      return;
+    }
+
+    const autoPrompt = promptValue.trim();
+    if (autoPrompt.length < 3) {
+      setError("Please enter at least 3 characters for the first prompt.");
+      pushToast("First prompt is too short.", "error");
+      return;
+    }
+
+    await branchFromMessage(message, { autoPrompt, action: "branch_ask" });
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const raw = window.localStorage.getItem(PINNED_INSIGHTS_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as Record<string, PinnedInsight[]>;
+      if (parsed && typeof parsed === "object") {
+        setPinsByThreadId(parsed);
+      }
+    } catch {
+      window.localStorage.removeItem(PINNED_INSIGHTS_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(PINNED_INSIGHTS_STORAGE_KEY, JSON.stringify(pinsByThreadId));
+  }, [pinsByThreadId]);
+
   useEffect(() => {
     void loadThreads().catch((caughtError) => {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to load threads.");
@@ -402,11 +698,13 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
       setRenaming(false);
       setRenameValue("");
       setContextNotice(null);
+      setMessageActionPending(null);
       setMessagesLoading(false);
       return;
     }
 
     setMessages([]);
+    setMessageActionPending(null);
     setContextNotice(null);
     void loadMessages(activeThreadId).catch((caughtError) => {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to load messages.");
@@ -445,6 +743,8 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
+      <ToastStack items={toasts} />
+
       <div className="flex items-center justify-between lg:hidden">
         <Button
           variant="secondary"
@@ -530,6 +830,13 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
                 {activePreview ? (
                   <p className="mt-2 line-clamp-2 text-xs text-night-200">
                     Last reflection: <span className="text-night-100">{activePreview}</span>
+                  </p>
+                ) : null}
+
+                {activeThread.branch ? (
+                  <p className="mt-1 text-xs text-night-300">
+                    Branched from <span className="text-night-100">{activeThread.branch.sourceThreadTitle}</span>:{" "}
+                    <span className="text-night-200">{activeThread.branch.sourceMessagePreview}</span>
                   </p>
                 ) : null}
               </div>
@@ -625,6 +932,40 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
 
       {activeThread && contextNotice ? <p className="text-xs text-sage-100">{contextNotice}</p> : null}
 
+      {activePinnedInsights.length > 0 ? (
+        <section className="rounded-xl border border-night-800/75 bg-night-950/45 px-3 py-2">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-night-300">Pinned insights</p>
+            <p className="text-[10px] text-night-400">{activePinnedInsights.length}/6</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {activePinnedInsights.map((insight) => (
+              <div
+                key={insight.id}
+                className="group inline-flex max-w-[min(100%,28rem)] items-start gap-2 rounded-full border border-night-700/70 bg-night-900/70 px-3 py-1.5"
+              >
+                <button
+                  type="button"
+                  onClick={() => prefillComposer(insight.content)}
+                  className="truncate text-left text-xs text-night-100 hover:text-sand-100"
+                  title={insight.content}
+                >
+                  {insight.content}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removePinnedInsight(insight.id)}
+                  className="text-night-400 hover:text-night-200"
+                  aria-label="Remove pinned insight"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-3 overflow-hidden">
         {activeThread ? (
           <ChatConversation
@@ -632,6 +973,13 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
             pending={pending}
             loading={messagesLoading}
             onFollowUpSelect={activeThread.archived ? undefined : prefillComposer}
+            onCopyMessage={copyMessage}
+            onQuoteMessage={quoteMessage}
+            onPinMessage={pinMessage}
+            onSaveToJournal={saveMessageToJournal}
+            onBranchFromMessage={activeThread.archived ? undefined : branchFromMessage}
+            onBranchAndAskFromMessage={activeThread.archived ? undefined : branchAndAskFromMessage}
+            messageActionPending={messageActionPending}
             className="h-full min-h-0"
           />
         ) : (

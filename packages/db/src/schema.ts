@@ -485,6 +485,31 @@ export const chatMessages = sqliteTable("chat_messages", {
   createdAt: text("created_at").notNull(),
 });
 
+export const chatThreadBranches = sqliteTable(
+  "chat_thread_branches",
+  {
+    id: text("id").primaryKey(),
+    threadId: text("thread_id")
+      .notNull()
+      .unique()
+      .references(() => chatThreads.id, { onDelete: "cascade" }),
+    sourceThreadId: text("source_thread_id")
+      .notNull()
+      .references(() => chatThreads.id, { onDelete: "cascade" }),
+    sourceMessageId: text("source_message_id")
+      .notNull()
+      .references(() => chatMessages.id, { onDelete: "cascade" }),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => ({
+    sourceThreadIdx: uniqueIndex("chat_thread_branches_source_thread_source_message_unique").on(
+      table.sourceThreadId,
+      table.sourceMessageId,
+      table.threadId,
+    ),
+  }),
+);
+
 export const chatThreadContexts = sqliteTable("chat_thread_contexts", {
   id: text("id").primaryKey(),
   threadId: text("thread_id")

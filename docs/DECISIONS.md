@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-03-10 - Add inline message actions in Companion with branch lineage and auto-ask flow
+- **Context:** Users could continue conversations, but valuable assistant/user turns required manual copy/paste to preserve elsewhere or explore alternate paths.
+- **Decision:** Add message-level actions in chat UI (`Copy`, `Quote`, `Pin insight`, `To journal`, `Branch here`, `Branch + ask`), add authenticated web proxy route for journal creation from chat (`POST /api/journal`), and add backend branch endpoint (`POST /api/v1/chat/threads/:id/branch`) backed by persisted lineage metadata (`chat_thread_branches`) so branched threads retain origin thread/message context in API/UI.
+- **Why:** Improves reflective workflow speed and clarity by turning notable turns into reusable artifacts (journal entries/pinned insights), enabling quick quoted follow-ups, and allowing parallel exploration paths that preserve origin traceability.
+- **Tradeoff:** Branching duplicates message content across threads, increasing storage footprint and introducing additional thread-history volume to manage.
+
 ## 2026-03-10 - Ship Reflections as a dedicated domain with async AI processing and secure audio handling
 - **Context:** Journal existed, but product scope required a richer reflection workflow (voice/text capture, transcript cleanup, refined writing, concise commentary, history, and companion handoff) without introducing heavy new infrastructure.
 - **Decision:** Add a dedicated Reflections domain (`/reflections`, `/reflections/new`, `/reflections/:id`) with new DB tables for entries/audio/tags/jobs/events; implement API endpoints under `/api/v1/reflections*`; extract reflections services (`repository`, `storage`, `ai`, `processing`, `service`) while keeping route registration in `server.ts`; store audio locally with auth-gated streaming; run pipeline asynchronously in-process with persisted status/job steps and retry.

@@ -24,6 +24,9 @@
 - Companion chat UX now prioritizes guided reflective conversation: lighter hierarchy, compact thread controls, structured assistant rendering, continuity snippets, follow-up chips, and a mode-driven composer.
 - Companion composer now follows a ChatGPT-style compact layout: icon-first tool row, reduced-height input area, context usage moved from inline card to a `%` chip near Send, and a click-open context modal for summarize controls.
 - Active-thread workspace layout now enforces a dedicated scroll region above the composer row, preventing message content from being obscured by the input area.
+- Companion message cards now include inline actions (`Copy`, `Quote`, `Pin insight`, `To journal`, `Branch here`, `Branch + ask`) so users can preserve insights, fork conversations, and immediately continue a branched path without manual copy/paste.
+- Companion thread lineage metadata is now persisted for branched threads and surfaced in both thread list and active-thread header (`Branched from ...` with source snippet context).
+- Companion now includes a lightweight toast feedback stack for message actions and a per-thread pinned-insights strip for quick reuse in the composer.
 - Public preview section is now available at `/preview` (no auth), including lightweight previews for chat, journal, library, and practices to let guests evaluate core UX before signup.
 - Public preview now also includes `/preview/dashboard` to demonstrate the action-first member home with sample momentum data.
 - `/preview/chat` now runs on a no-auth preview chat API with strict token-budget testing (fixed session budget, per-turn input/output caps, response clipping, resettable sandbox session).
@@ -124,6 +127,7 @@
     - `GET/POST /api/v1/chat/threads`
     - `PATCH/DELETE /api/v1/chat/threads/:id`
     - `GET/POST /api/v1/chat/threads/:id/messages`
+    - `POST /api/v1/chat/threads/:id/branch`
     - `POST /api/v1/chat/threads/:id/context/summarize`
   - Added ordered multi-provider chat resolution with env-driven provider order (`CHAT_PROVIDER_ORDER`) and DeepSeek/OpenAI provider configs.
   - Added reflections endpoints:
@@ -206,6 +210,7 @@
     - device/session list with revoke actions
     - Companion preferences editor (user-level custom instructions)
   - Chat UI now persists and manages threads/messages through backend APIs.
+  - Chat message cards now support inline actions for copy, quote-in-composer, pin-as-insight, direct journal capture, branch-from-message, and branch-with-first-prompt workflow.
   - Chat now uses dedicated Companion sidebar thread controls with URL-synced thread selection and mobile thread drawer.
   - Companion intro header + starters render only in draft mode (`/chat` without `?thread=`); active-thread workspaces hide intro/starter panels.
   - Companion history now includes Active/Archived tabs, debounced search, and list virtualization for larger histories.

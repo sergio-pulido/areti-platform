@@ -23,6 +23,7 @@ import {
   adminAuditLogs,
   chatEvents,
   chatMessages,
+  chatThreadBranches,
   chatThreadContexts,
   chatThreads,
   communityChallenges,
@@ -226,6 +227,17 @@ export type ChatThreadRecord = {
   createdAt: string;
   updatedAt: string;
   context: ChatThreadContextRecord;
+  branch: ChatThreadBranchRecord | null;
+};
+
+export type ChatThreadBranchRecord = {
+  id: string;
+  threadId: string;
+  sourceThreadId: string;
+  sourceThreadTitle: string;
+  sourceMessageId: string;
+  sourceMessagePreview: string;
+  createdAt: string;
 };
 
 export type ChatMessageRecord = {
@@ -735,6 +747,7 @@ const db = drizzle(sqlite, {
     userNotifications,
     chatThreads,
     chatMessages,
+    chatThreadBranches,
     chatThreadContexts,
     userCompanionPreferences,
     chatEvents,
@@ -808,6 +821,24 @@ function ensureCompatibilitySchema(): void {
       updated_at text NOT NULL,
       FOREIGN KEY (thread_id) REFERENCES chat_threads(id) ON DELETE cascade
     );
+  `);
+
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS chat_thread_branches (
+      id text PRIMARY KEY NOT NULL,
+      thread_id text NOT NULL UNIQUE,
+      source_thread_id text NOT NULL,
+      source_message_id text NOT NULL,
+      created_at text NOT NULL,
+      FOREIGN KEY (thread_id) REFERENCES chat_threads(id) ON DELETE cascade,
+      FOREIGN KEY (source_thread_id) REFERENCES chat_threads(id) ON DELETE cascade,
+      FOREIGN KEY (source_message_id) REFERENCES chat_messages(id) ON DELETE cascade
+    );
+  `);
+
+  sqlite.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS chat_thread_branches_source_thread_source_message_unique
+      ON chat_thread_branches (source_thread_id, source_message_id, thread_id);
   `);
 }
 
@@ -4118,6 +4149,84 @@ export function revokeUserDevice(userId: string, deviceId: string): boolean {
   return true;
 }
 
+function normalizeChatMessagePreview(content: string): string {
+  return content.replace(/\s+/g, " ").trim().slice(0, 180);
+}
+
+function listChatThreadBranchesByThreadIds(
+  userId: string,
+  threadIds: string[],
+): Record<string, ChatThreadBranchRecord> {
+  if (threadIds.length === 0) {
+    return {};
+  }
+
+  const branchRows = db
+    .select({
+      id: chatThreadBranches.id,
+      threadId: chatThreadBranches.threadId,
+      sourceThreadId: chatThreadBranches.sourceThreadId,
+      sourceMessageId: chatThreadBranches.sourceMessageId,
+      createdAt: chatThreadBranches.createdAt,
+    })
+    .from(chatThreadBranches)
+    .where(inArray(chatThreadBranches.threadId, threadIds))
+    .all();
+
+  if (branchRows.length === 0) {
+    return {};
+  }
+
+  const sourceThreadIds = Array.from(new Set(branchRows.map((row) => row.sourceThreadId)));
+  const sourceMessageIds = Array.from(new Set(branchRows.map((row) => row.sourceMessageId)));
+
+  const sourceThreads = db
+    .select({
+      id: chatThreads.id,
+      userId: chatThreads.userId,
+      title: chatThreads.title,
+    })
+    .from(chatThreads)
+    .where(inArray(chatThreads.id, sourceThreadIds))
+    .all()
+    .filter((row) => row.userId === userId);
+  const sourceThreadById = new Map(sourceThreads.map((row) => [row.id, row]));
+
+  const sourceMessages = db
+    .select({
+      id: chatMessages.id,
+      threadId: chatMessages.threadId,
+      content: chatMessages.content,
+    })
+    .from(chatMessages)
+    .where(inArray(chatMessages.id, sourceMessageIds))
+    .all();
+  const sourceMessageById = new Map(sourceMessages.map((row) => [row.id, row]));
+
+  const resolved: Record<string, ChatThreadBranchRecord> = {};
+
+  for (const row of branchRows) {
+    const sourceThread = sourceThreadById.get(row.sourceThreadId);
+    const sourceMessage = sourceMessageById.get(row.sourceMessageId);
+
+    if (!sourceThread || !sourceMessage || sourceMessage.threadId !== row.sourceThreadId) {
+      continue;
+    }
+
+    resolved[row.threadId] = {
+      id: row.id,
+      threadId: row.threadId,
+      sourceThreadId: row.sourceThreadId,
+      sourceThreadTitle: sourceThread.title,
+      sourceMessageId: row.sourceMessageId,
+      sourceMessagePreview: normalizeChatMessagePreview(sourceMessage.content),
+      createdAt: row.createdAt,
+    };
+  }
+
+  return resolved;
+}
+
 export function listChatThreadsByUser(
   userId: string,
   scope: ChatThreadScope = "active",
@@ -4157,6 +4266,11 @@ export function listChatThreadsByUser(
     .orderBy(desc(chatThreads.updatedAt))
     .all();
 
+  const branchByThreadId = listChatThreadBranchesByThreadIds(
+    userId,
+    rows.map((row) => row.id),
+  );
+
   return rows.map((row) => ({
     id: row.id,
     userId: row.userId,
@@ -4180,6 +4294,7 @@ export function listChatThreadsByUser(
           updatedAt: row.contextUpdatedAt ?? row.updatedAt,
         }
       : buildDefaultChatThreadContext(row.id),
+    branch: branchByThreadId[row.id] ?? null,
   }));
 }
 
@@ -4218,6 +4333,8 @@ export function getChatThreadByIdForUser(
     return null;
   }
 
+  const branch = listChatThreadBranchesByThreadIds(userId, [row.id])[row.id] ?? null;
+
   return {
     id: row.id,
     userId: row.userId,
@@ -4241,6 +4358,7 @@ export function getChatThreadByIdForUser(
           updatedAt: row.contextUpdatedAt ?? row.updatedAt,
         }
       : buildDefaultChatThreadContext(row.id),
+    branch,
   };
 }
 
@@ -4303,6 +4421,77 @@ export function createChatThread(input: {
       createdAt: timestamp,
       updatedAt: timestamp,
     },
+    branch: null,
+  };
+}
+
+export function createChatThreadBranch(input: {
+  id: string;
+  threadId: string;
+  sourceThreadId: string;
+  sourceMessageId: string;
+}): ChatThreadBranchRecord | null {
+  const targetThread = db
+    .select({
+      id: chatThreads.id,
+      userId: chatThreads.userId,
+    })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, input.threadId))
+    .limit(1)
+    .get();
+  if (!targetThread) {
+    return null;
+  }
+
+  const sourceThread = db
+    .select({
+      id: chatThreads.id,
+      userId: chatThreads.userId,
+      title: chatThreads.title,
+    })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, input.sourceThreadId))
+    .limit(1)
+    .get();
+  if (!sourceThread || sourceThread.userId !== targetThread.userId) {
+    return null;
+  }
+
+  const sourceMessage = db
+    .select({
+      id: chatMessages.id,
+      threadId: chatMessages.threadId,
+      content: chatMessages.content,
+    })
+    .from(chatMessages)
+    .where(eq(chatMessages.id, input.sourceMessageId))
+    .limit(1)
+    .get();
+  if (!sourceMessage || sourceMessage.threadId !== sourceThread.id) {
+    return null;
+  }
+
+  const timestamp = nowIso();
+
+  db.insert(chatThreadBranches)
+    .values({
+      id: input.id,
+      threadId: input.threadId,
+      sourceThreadId: input.sourceThreadId,
+      sourceMessageId: input.sourceMessageId,
+      createdAt: timestamp,
+    })
+    .run();
+
+  return {
+    id: input.id,
+    threadId: input.threadId,
+    sourceThreadId: input.sourceThreadId,
+    sourceThreadTitle: sourceThread.title,
+    sourceMessageId: input.sourceMessageId,
+    sourceMessagePreview: normalizeChatMessagePreview(sourceMessage.content),
+    createdAt: timestamp,
   };
 }
 

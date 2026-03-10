@@ -49,7 +49,11 @@ function sanitizeFileName(value: string): string {
 }
 
 function normalizeMimeType(value: string): string {
-  return value.trim().toLowerCase();
+  return value
+    .trim()
+    .toLowerCase()
+    .split(";")[0]
+    ?.trim() ?? "";
 }
 
 function normalizeBase64(base64Data: string): string {

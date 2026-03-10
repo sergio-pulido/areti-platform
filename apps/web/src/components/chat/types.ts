@@ -21,6 +21,15 @@ export type ChatThread = {
   createdAt: string;
   updatedAt: string;
   context: ChatContextTelemetry;
+  branch: {
+    id: string;
+    threadId: string;
+    sourceThreadId: string;
+    sourceThreadTitle: string;
+    sourceMessageId: string;
+    sourceMessagePreview: string;
+    createdAt: string;
+  } | null;
 };
 
 export type ChatMessage = {
