@@ -2,7 +2,21 @@ import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { and, asc, count, desc, eq, gt, isNotNull, isNull, like, lt, or, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lt,
+  or,
+  type SQL,
+} from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import {
@@ -22,6 +36,11 @@ import {
   creatorVideos,
   emailVerificationChallenges,
   journalEntries,
+  reflectionEntries,
+  reflectionAudioAssets,
+  reflectionTags,
+  reflectionProcessingJobs,
+  reflectionEvents,
   userContentCompletions,
   libraryLessons,
   mfaChallenges,
@@ -45,6 +64,11 @@ import {
   type ContentStatus,
   type LegalPolicyType,
   type PreviewEventType,
+  type ReflectionEventType,
+  type ReflectionProcessingJobStatus,
+  type ReflectionProcessingStep,
+  type ReflectionSourceType,
+  type ReflectionStatus,
   type UserRole,
 } from "./schema.js";
 import {
@@ -123,6 +147,75 @@ export type NotificationRecord = {
   href: string;
   readAt: string | null;
   createdAt: string;
+};
+
+export type ReflectionAudioAssetRecord = {
+  id: string;
+  reflectionId: string;
+  storageKey: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationSeconds: number | null;
+  createdAt: string;
+};
+
+export type ReflectionTagRecord = {
+  id: string;
+  reflectionId: string;
+  tag: string;
+  createdAt: string;
+};
+
+export type ReflectionProcessingJobRecord = {
+  id: string;
+  reflectionId: string;
+  step: ReflectionProcessingStep;
+  status: ReflectionProcessingJobStatus;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReflectionEntryRecord = {
+  id: string;
+  userId: string;
+  title: string;
+  sourceType: ReflectionSourceType;
+  rawText: string;
+  cleanTranscript: string | null;
+  refinedText: string | null;
+  commentary: string | null;
+  commentaryMode: string | null;
+  language: string;
+  isFavorite: boolean;
+  status: ReflectionStatus;
+  processingError: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  tags: ReflectionTagRecord[];
+  audioAssets: ReflectionAudioAssetRecord[];
+  processingJobs: ReflectionProcessingJobRecord[];
+};
+
+export type ReflectionListItemRecord = {
+  id: string;
+  userId: string;
+  title: string;
+  sourceType: ReflectionSourceType;
+  status: ReflectionStatus;
+  isFavorite: boolean;
+  commentary: string | null;
+  cleanTranscript: string | null;
+  refinedText: string | null;
+  rawText: string;
+  language: string;
+  createdAt: string;
+  updatedAt: string;
+  preview: string;
+  tags: string[];
+  hasAudio: boolean;
 };
 
 export type ChatThreadRecord = {
@@ -382,6 +475,65 @@ function stringifySocialLinks(socialLinks: Array<{ label: string; url: string }>
   return JSON.stringify(normalizeSocialLinks(socialLinks));
 }
 
+function normalizeReflectionSourceType(value: string | null | undefined): ReflectionSourceType {
+  if (value === "voice" || value === "upload") {
+    return value;
+  }
+  return "text";
+}
+
+function normalizeReflectionStatus(value: string | null | undefined): ReflectionStatus {
+  if (value === "processing" || value === "ready" || value === "failed") {
+    return value;
+  }
+  return "draft";
+}
+
+function normalizeReflectionProcessingStep(value: string | null | undefined): ReflectionProcessingStep {
+  if (value === "transcription" || value === "cleaning" || value === "refinement") {
+    return value;
+  }
+  return "commentary";
+}
+
+function normalizeReflectionProcessingJobStatus(
+  value: string | null | undefined,
+): ReflectionProcessingJobStatus {
+  if (value === "running" || value === "success" || value === "failed") {
+    return value;
+  }
+  return "pending";
+}
+
+function normalizeReflectionTag(tag: string): string {
+  return tag
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .slice(0, 32);
+}
+
+function buildReflectionPreview(input: {
+  refinedText: string | null;
+  cleanTranscript: string | null;
+  rawText: string;
+  commentary: string | null;
+}): string {
+  const candidate = [input.refinedText, input.cleanTranscript, input.rawText, input.commentary]
+    .map((value) => value?.replace(/\s+/g, " ").trim() ?? "")
+    .find((value) => value.length > 0);
+
+  if (!candidate) {
+    return "No reflection text available yet.";
+  }
+
+  if (candidate.length <= 180) {
+    return candidate;
+  }
+
+  return `${candidate.slice(0, 177).trimEnd()}...`;
+}
+
 function normalizeProfileVisibility(value: string): "public" | "private" | "contacts" {
   if (value === "public" || value === "contacts" || value === "private") {
     return value;
@@ -587,6 +739,11 @@ const db = drizzle(sqlite, {
     userCompanionPreferences,
     chatEvents,
     journalEntries,
+    reflectionEntries,
+    reflectionAudioAssets,
+    reflectionTags,
+    reflectionProcessingJobs,
+    reflectionEvents,
     userContentCompletions,
     contentPillars,
     contentHighlights,

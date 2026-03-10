@@ -1,7 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import QRCode from "qrcode";
 import { parseClientApiData } from "@/lib/client-api";
 import { cn } from "@/lib/cn";
 
@@ -19,10 +21,53 @@ type SetupPayload = {
 export function TotpManager({ enabled, id, className }: TotpManagerProps) {
   const router = useRouter();
   const [setup, setSetup] = useState<SetupPayload | null>(null);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
+  const [qrCodeError, setQrCodeError] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isCanceled = false;
+    const otpAuthUrl = setup?.otpAuthUrl;
+
+    if (!otpAuthUrl) {
+      setQrCodeDataUrl(null);
+      setQrCodeError(null);
+      return () => {
+        isCanceled = true;
+      };
+    }
+    const setupOtpAuthUrl = otpAuthUrl;
+
+    async function renderQrCode() {
+      try {
+        const dataUrl = await QRCode.toDataURL(setupOtpAuthUrl, {
+          errorCorrectionLevel: "M",
+          margin: 1,
+          width: 176,
+          color: { dark: "#111111", light: "#FFFFFF" },
+        });
+
+        if (!isCanceled) {
+          setQrCodeDataUrl(dataUrl);
+          setQrCodeError(null);
+        }
+      } catch {
+        if (!isCanceled) {
+          setQrCodeDataUrl(null);
+          setQrCodeError("Unable to generate QR code. Use the secret or URI instead.");
+        }
+      }
+    }
+
+    void renderQrCode();
+
+    return () => {
+      isCanceled = true;
+    };
+  }, [setup?.otpAuthUrl]);
 
   async function handleSetup() {
     setPending(true);
@@ -37,6 +82,7 @@ export function TotpManager({ enabled, id, className }: TotpManagerProps) {
         }),
       );
       setSetup(nextSetup);
+      setCode("");
       setNotice("Scan the secret and verify with a 6-digit code.");
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to start TOTP setup.");
@@ -135,8 +181,28 @@ export function TotpManager({ enabled, id, className }: TotpManagerProps) {
 
       {setup ? (
         <div className="mt-3 rounded-lg border border-night-700 p-3 text-xs text-night-200">
-          <p className="font-semibold text-sand-100">Secret: {setup.secret}</p>
-          <p className="mt-1 break-all">URI: {setup.otpAuthUrl}</p>
+          <p className="font-semibold text-sand-100">Scan in your authenticator app</p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-[auto,1fr] sm:items-start">
+            {qrCodeDataUrl ? (
+              <Image
+                src={qrCodeDataUrl}
+                alt="TOTP setup QR code"
+                width={176}
+                height={176}
+                unoptimized
+                className="rounded-md border border-night-700 bg-night-900"
+              />
+            ) : (
+              <div className="flex h-44 w-44 items-center justify-center rounded-md border border-night-700 bg-night-900 px-3 text-center text-[11px] text-night-300">
+                {qrCodeError ?? "Generating QR code..."}
+              </div>
+            )}
+
+            <div>
+              <p className="font-semibold text-sand-100">Secret: {setup.secret}</p>
+              <p className="mt-1 break-all">URI: {setup.otpAuthUrl}</p>
+            </div>
+          </div>
           <div className="mt-2 flex gap-2">
             <input
               value={code}

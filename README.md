@@ -48,6 +48,7 @@ Monorepo for a Stoic + Epicurean philosophy platform with a separated frontend, 
 - `DELETE /api/v1/chat/threads/:id`
 - `GET /api/v1/chat/threads/:id/messages`
 - `POST /api/v1/chat/threads/:id/messages`
+- `POST /api/v1/chat/threads/:id/context/summarize`
 
 ### User Data
 - `GET /api/v1/onboarding`
@@ -59,6 +60,7 @@ Monorepo for a Stoic + Epicurean philosophy platform with a separated frontend, 
 ### Admin CMS
 - `GET /api/v1/admin/content`
 - `GET /api/v1/admin/audit`
+- `GET /api/v1/admin/chat/events` (supports `limit`, `threadId`, `userId`, `eventType`, `memoryOnly`)
 - CRUD + publish endpoints for:
   - lessons
   - practices
@@ -174,6 +176,11 @@ Services:
 - `OPENAI_CHAT_MODEL` (default: `gpt-4.1-mini`)
 - `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
 - `CHAT_GLOBAL_SYSTEM_PROMPT` (optional override for Areti global Companion doctrine/system prompt)
+- `CHAT_CONTEXT_CAPACITY` (estimated token capacity for Companion thread context; default: `24000`)
+- `CHAT_CONTEXT_SUMMARIZE_PERCENT` (auto-summary threshold; default: `70`)
+- `CHAT_CONTEXT_WARNING_PERCENT` (high-usage warning threshold; default: `85`)
+- `CHAT_CONTEXT_DEGRADED_PERCENT` (near-limit degraded threshold; default: `95`)
+- `CHAT_CONTEXT_RECENT_RAW_MESSAGES` (raw unsummarized messages retained after compaction; default: `12`)
 - `WEB_APP_URL` (canonical web origin used in verification links)
 - `EMAIL_TRANSPORT` (`disabled` | `resend` | `smtp`; non-prod default: `disabled`, prod default: `resend`)
 - `RESEND_API_KEY` (Resend API key for verification email delivery)
@@ -190,3 +197,4 @@ Companion prompt behavior:
 - Onboarding profile context is injected before user custom instructions.
 - Users can add account-level custom Companion instructions in `/account/settings` under **Companion preferences**.
 - User instructions are appended after the global prompt and cannot override safety/mission constraints.
+- Companion thread context uses estimated token telemetry and summary memory compaction (auto at threshold + manual trigger) to preserve long-session continuity.

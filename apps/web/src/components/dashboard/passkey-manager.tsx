@@ -11,9 +11,11 @@ import { parseClientApiData } from "@/lib/client-api";
 import { cn } from "@/lib/cn";
 
 type PasskeyManagerProps = {
-  enabled: boolean;
+  enabled?: boolean;
   id?: string;
   className?: string;
+  variant?: "card" | "inline";
+  buttonLabel?: string;
 };
 
 type RegistrationOptionsResponse = {
@@ -21,7 +23,13 @@ type RegistrationOptionsResponse = {
   options: PublicKeyCredentialCreationOptionsJSON;
 };
 
-export function PasskeyManager({ enabled, id, className }: PasskeyManagerProps) {
+export function PasskeyManager({
+  enabled = false,
+  id,
+  className,
+  variant = "card",
+  buttonLabel = "Register a passkey",
+}: PasskeyManagerProps) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +80,23 @@ export function PasskeyManager({ enabled, id, className }: PasskeyManagerProps) 
     }
   }
 
+  if (variant === "inline") {
+    return (
+      <div id={id} className={cn("space-y-2", className)}>
+        <button
+          type="button"
+          onClick={handleRegisterPasskey}
+          disabled={pending}
+          className="rounded-lg border border-night-600 bg-night-900 px-3 py-1.5 text-xs text-sand-100 hover:border-sage-300 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {pending ? "Registering passkey..." : buttonLabel}
+        </button>
+        {notice ? <p className="text-xs text-sage-200">{notice}</p> : null}
+        {error ? <p className="text-xs text-amber-300">{error}</p> : null}
+      </div>
+    );
+  }
+
   return (
     <div id={id} className={cn("rounded-xl border border-night-700 bg-night-950/70 p-3", className)}>
       <div className="flex items-center justify-between gap-3">
@@ -98,7 +123,7 @@ export function PasskeyManager({ enabled, id, className }: PasskeyManagerProps) 
         disabled={pending}
         className="mt-3 rounded-lg border border-night-600 bg-night-900 px-3 py-1.5 text-xs text-sand-100 hover:border-sage-300 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {pending ? "Registering passkey..." : "Register a passkey"}
+        {pending ? "Registering passkey..." : buttonLabel}
       </button>
 
       {notice ? <p className="mt-2 text-xs text-sage-200">{notice}</p> : null}

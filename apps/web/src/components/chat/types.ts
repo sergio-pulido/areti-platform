@@ -1,3 +1,18 @@
+export type ChatContextState = "ok" | "warning" | "degraded";
+
+export type ChatContextTelemetry = {
+  summarizedMessageCount: number;
+  estimatedPromptTokens: number;
+  contextCapacity: number;
+  usagePercent: number;
+  state: ChatContextState;
+  autoSummariesCount: number;
+  lastSummarizedAt: string | null;
+  updatedAt: string;
+  summarizedThisTurn?: boolean;
+  notice?: string | null;
+};
+
 export type ChatThread = {
   id: string;
   userId: string;
@@ -5,6 +20,7 @@ export type ChatThread = {
   archived: boolean;
   createdAt: string;
   updatedAt: string;
+  context: ChatContextTelemetry;
 };
 
 export type ChatMessage = {

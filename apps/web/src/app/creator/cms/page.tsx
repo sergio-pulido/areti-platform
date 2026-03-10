@@ -50,10 +50,12 @@ import {
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import {
   apiAdminAudit,
+  apiAdminChatEvents,
   apiAdminPreviewAnalytics,
   apiAdminSystemJobSummary,
   apiAdminSystemJobRuns,
   apiAdminContent,
+  type ApiChatEventType,
   type ContentStatus,
 } from "@/lib/backend-api";
 import { requireSession } from "@/lib/auth/session";
@@ -66,6 +68,8 @@ type JobRunStatusFilter = "all" | "running" | "success" | "error" | "skipped";
 type JobRunDaysFilter = "all" | "1" | "7" | "30" | "90";
 type FailureWindowFilter = "30" | "60" | "120" | "240";
 type StaleLockFilter = "15" | "30" | "60" | "120";
+type ChatEventScopeFilter = "all" | "memory";
+type ChatEventTypeFilter = "all" | ApiChatEventType;
 
 function first(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : (value ?? "");
@@ -103,11 +107,63 @@ function normalizeStaleLock(value: string): StaleLockFilter {
   return "30";
 }
 
+function normalizeChatEventScope(value: string): ChatEventScopeFilter {
+  if (value === "memory") {
+    return value;
+  }
+
+  return "all";
+}
+
+function normalizeChatEventType(value: string): ChatEventTypeFilter {
+  if (
+    value === "thread_first_message_created" ||
+    value === "thread_auto_titled" ||
+    value === "thread_renamed" ||
+    value === "thread_archived" ||
+    value === "thread_restored" ||
+    value === "thread_deleted" ||
+    value === "message_provider_error" ||
+    value === "context_auto_summarized" ||
+    value === "context_manual_summarized" ||
+    value === "context_warning" ||
+    value === "context_degraded"
+  ) {
+    return value;
+  }
+
+  return "all";
+}
+
+function humanizeChatEventType(value: ApiChatEventType): string {
+  return value.replaceAll("_", " ");
+}
+
+function summarizeChatPayload(payloadJson: string): string {
+  try {
+    const payload = JSON.parse(payloadJson) as Record<string, unknown>;
+    const entries = Object.entries(payload)
+      .slice(0, 3)
+      .map(([key, rawValue]) => {
+        const value =
+          typeof rawValue === "string" || typeof rawValue === "number" || typeof rawValue === "boolean"
+            ? String(rawValue)
+            : "[complex]";
+        return `${key}: ${value}`;
+      });
+    return entries.join(" · ");
+  } catch {
+    return "";
+  }
+}
+
 function buildCmsOpsHref(filters: {
   status: JobRunStatusFilter;
   days: JobRunDaysFilter;
   failureWindow: FailureWindowFilter;
   staleLock: StaleLockFilter;
+  chatEventScope?: ChatEventScopeFilter;
+  chatEventType?: ChatEventTypeFilter;
 }): string {
   const params = new URLSearchParams();
   if (filters.status !== "all") {
@@ -121,6 +177,12 @@ function buildCmsOpsHref(filters: {
   }
   if (filters.staleLock !== "30") {
     params.set("staleLock", filters.staleLock);
+  }
+  if (filters.chatEventScope === "memory") {
+    params.set("chatEventScope", filters.chatEventScope);
+  }
+  if (filters.chatEventType && filters.chatEventType !== "all") {
+    params.set("chatEventType", filters.chatEventType);
   }
   const qs = params.toString();
   return qs ? `/creator/cms?${qs}` : "/creator/cms";
@@ -153,6 +215,8 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
   const runDays = normalizeDaysFilter(first(params.runDays));
   const failureWindow = normalizeFailureWindow(first(params.failureWindow));
   const staleLock = normalizeStaleLock(first(params.staleLock));
+  const chatEventScope = normalizeChatEventScope(first(params.chatEventScope));
+  const chatEventType = normalizeChatEventType(first(params.chatEventType));
 
   if (user.role !== "ADMIN") {
     return (
@@ -173,7 +237,7 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
   }
 
   const token = session.accessToken;
-  const [content, auditLogs, previewAnalytics, systemJobSummary, systemJobRuns] = await Promise.all([
+  const [content, auditLogs, previewAnalytics, systemJobSummary, systemJobRuns, chatEvents] = await Promise.all([
     apiAdminContent(token),
     apiAdminAudit(token, 14),
     apiAdminPreviewAnalytics(token, 30),
@@ -187,6 +251,11 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
       jobName: "notification_digest",
       status: runStatus === "all" ? undefined : runStatus,
       days: runDays === "all" ? undefined : Number(runDays),
+    }),
+    apiAdminChatEvents(token, {
+      limit: 24,
+      memoryOnly: chatEventScope === "memory",
+      eventType: chatEventType === "all" ? undefined : chatEventType,
     }),
   ]);
 
@@ -424,6 +493,146 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
                   ) : null}
                 </article>
               ))
+            )}
+          </div>
+        </SurfaceCard>
+      </section>
+
+      <section>
+        <SurfaceCard title="Companion Memory Events" subtitle="Context lifecycle observability">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="text-night-300">Scope</span>
+            <Link
+              href={buildCmsOpsHref({
+                status: runStatus,
+                days: runDays,
+                failureWindow,
+                staleLock,
+                chatEventScope: "all",
+                chatEventType,
+              })}
+              className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500"
+            >
+              All
+            </Link>
+            <Link
+              href={buildCmsOpsHref({
+                status: runStatus,
+                days: runDays,
+                failureWindow,
+                staleLock,
+                chatEventScope: "memory",
+                chatEventType,
+              })}
+              className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500"
+            >
+              Memory only
+            </Link>
+            <span className="ml-2 text-night-300">Type</span>
+            <Link
+              href={buildCmsOpsHref({
+                status: runStatus,
+                days: runDays,
+                failureWindow,
+                staleLock,
+                chatEventScope,
+                chatEventType: "all",
+              })}
+              className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500"
+            >
+              All
+            </Link>
+            <Link
+              href={buildCmsOpsHref({
+                status: runStatus,
+                days: runDays,
+                failureWindow,
+                staleLock,
+                chatEventScope,
+                chatEventType: "context_auto_summarized",
+              })}
+              className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500"
+            >
+              Auto summarize
+            </Link>
+            <Link
+              href={buildCmsOpsHref({
+                status: runStatus,
+                days: runDays,
+                failureWindow,
+                staleLock,
+                chatEventScope,
+                chatEventType: "context_manual_summarized",
+              })}
+              className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500"
+            >
+              Manual summarize
+            </Link>
+            <Link
+              href={buildCmsOpsHref({
+                status: runStatus,
+                days: runDays,
+                failureWindow,
+                staleLock,
+                chatEventScope,
+                chatEventType: "context_warning",
+              })}
+              className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500"
+            >
+              Warning
+            </Link>
+            <Link
+              href={buildCmsOpsHref({
+                status: runStatus,
+                days: runDays,
+                failureWindow,
+                staleLock,
+                chatEventScope,
+                chatEventType: "context_degraded",
+              })}
+              className="rounded border border-night-700 px-2 py-1 text-night-200 hover:border-night-500"
+            >
+              Degraded
+            </Link>
+          </div>
+
+          <div className="space-y-2">
+            {chatEvents.length === 0 ? (
+              <p className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-sm text-night-200">
+                No chat events found for the current filter.
+              </p>
+            ) : (
+              chatEvents.map((event) => {
+                const payloadSummary = summarizeChatPayload(event.payloadJson);
+                const badgeClasses =
+                  event.eventType === "context_degraded" || event.eventType === "message_provider_error"
+                    ? "border-rose-300/40 bg-rose-500/15 text-rose-100"
+                    : event.eventType === "context_warning"
+                    ? "border-amber-300/40 bg-amber-500/15 text-amber-100"
+                    : event.eventType === "context_auto_summarized" ||
+                        event.eventType === "context_manual_summarized"
+                      ? "border-sage-300/40 bg-sage-500/15 text-sage-100"
+                      : "border-night-600 bg-night-900 text-night-200";
+
+                return (
+                  <article
+                    key={event.id}
+                    className="rounded-xl border border-night-700 bg-night-950/80 p-3 text-xs"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-semibold capitalize text-sand-100">
+                        {humanizeChatEventType(event.eventType)}
+                      </p>
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] ${badgeClasses}`}>
+                        {event.eventType}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-night-300">{new Date(event.createdAt).toLocaleString()}</p>
+                    <p className="mt-1 text-night-200">thread: {event.threadId ?? "n/a"}</p>
+                    {payloadSummary ? <p className="mt-1 text-night-200">{payloadSummary}</p> : null}
+                  </article>
+                );
+              })
             )}
           </div>
         </SurfaceCard>

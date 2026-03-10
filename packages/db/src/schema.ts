@@ -4,6 +4,18 @@ export type UserRole = "MEMBER" | "ADMIN";
 export type ContentStatus = "DRAFT" | "PUBLISHED";
 export type LegalPolicyType = "TERMS" | "PRIVACY";
 export type ContentCompletionKind = "lesson" | "practice";
+export type ReflectionSourceType = "voice" | "upload" | "text";
+export type ReflectionStatus = "draft" | "processing" | "ready" | "failed";
+export type ReflectionProcessingStep = "transcription" | "cleaning" | "refinement" | "commentary";
+export type ReflectionProcessingJobStatus = "pending" | "running" | "success" | "failed";
+export type ReflectionEventType =
+  | "reflection_created"
+  | "reflection_processing_started"
+  | "reflection_processing_completed"
+  | "reflection_processing_failed"
+  | "reflection_commentary_regenerated"
+  | "reflection_sent_to_companion"
+  | "reflection_favorited";
 export type PreviewEventType =
   | "preview_page_view"
   | "preview_signup_click"
@@ -228,6 +240,83 @@ export const journalEntries = sqliteTable("journal_entries", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const reflectionEntries = sqliteTable("reflection_entries", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  sourceType: text("source_type").$type<ReflectionSourceType>().notNull(),
+  rawText: text("raw_text").notNull().default(""),
+  cleanTranscript: text("clean_transcript"),
+  refinedText: text("refined_text"),
+  commentary: text("commentary"),
+  commentaryMode: text("commentary_mode"),
+  language: text("language").notNull().default("en"),
+  isFavorite: integer("is_favorite", { mode: "boolean" }).notNull().default(false),
+  status: text("status").$type<ReflectionStatus>().notNull().default("draft"),
+  processingError: text("processing_error"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  deletedAt: text("deleted_at"),
+});
+
+export const reflectionAudioAssets = sqliteTable("reflection_audio_assets", {
+  id: text("id").primaryKey(),
+  reflectionId: text("reflection_id")
+    .notNull()
+    .references(() => reflectionEntries.id, { onDelete: "cascade" }),
+  storageKey: text("storage_key").notNull(),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  durationSeconds: integer("duration_seconds"),
+  createdAt: text("created_at").notNull(),
+});
+
+export const reflectionTags = sqliteTable(
+  "reflection_tags",
+  {
+    id: text("id").primaryKey(),
+    reflectionId: text("reflection_id")
+      .notNull()
+      .references(() => reflectionEntries.id, { onDelete: "cascade" }),
+    tag: text("tag").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => ({
+    reflectionTagUnique: uniqueIndex("reflection_tags_reflection_id_tag_unique").on(
+      table.reflectionId,
+      table.tag,
+    ),
+  }),
+);
+
+export const reflectionProcessingJobs = sqliteTable("reflection_processing_jobs", {
+  id: text("id").primaryKey(),
+  reflectionId: text("reflection_id")
+    .notNull()
+    .references(() => reflectionEntries.id, { onDelete: "cascade" }),
+  step: text("step").$type<ReflectionProcessingStep>().notNull(),
+  status: text("status").$type<ReflectionProcessingJobStatus>().notNull(),
+  errorMessage: text("error_message"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const reflectionEvents = sqliteTable("reflection_events", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  reflectionId: text("reflection_id").references(() => reflectionEntries.id, {
+    onDelete: "set null",
+  }),
+  eventType: text("event_type").$type<ReflectionEventType>().notNull(),
+  metadataJson: text("metadata_json").notNull().default("{}"),
+  createdAt: text("created_at").notNull(),
+});
+
 export const userContentCompletions = sqliteTable(
   "user_content_completions",
   {
@@ -394,6 +483,24 @@ export const chatMessages = sqliteTable("chat_messages", {
   role: text("role").$type<"user" | "assistant">().notNull(),
   content: text("content").notNull(),
   createdAt: text("created_at").notNull(),
+});
+
+export const chatThreadContexts = sqliteTable("chat_thread_contexts", {
+  id: text("id").primaryKey(),
+  threadId: text("thread_id")
+    .notNull()
+    .unique()
+    .references(() => chatThreads.id, { onDelete: "cascade" }),
+  summary: text("summary").notNull().default(""),
+  summarizedMessageCount: integer("summarized_message_count").notNull().default(0),
+  estimatedPromptTokens: integer("estimated_prompt_tokens").notNull().default(0),
+  contextCapacity: integer("context_capacity").notNull().default(24000),
+  usagePercent: integer("usage_percent").notNull().default(0),
+  state: text("state").notNull().default("ok"),
+  autoSummariesCount: integer("auto_summaries_count").notNull().default(0),
+  lastSummarizedAt: text("last_summarized_at"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
 });
 
 export const userCompanionPreferences = sqliteTable("user_companion_preferences", {

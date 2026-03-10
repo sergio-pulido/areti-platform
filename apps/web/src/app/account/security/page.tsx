@@ -34,6 +34,7 @@ export default async function AccountSecurityPage({ searchParams }: AccountSecur
   const saved = first(params.saved) === "1";
   const error = first(params.error);
   const focus = first(params.focus);
+  const hasPasskeys = passkeys.length > 0;
 
   return (
     <div>
@@ -62,42 +63,60 @@ export default async function AccountSecurityPage({ searchParams }: AccountSecur
               enabled={security.mfaEnabled}
               className={getAccountFocusHighlightClass(focus === "totp")}
             />
-            <PasskeyManager
-              id="passkeys"
-              enabled={security.passkeyEnabled}
-              className={getAccountFocusHighlightClass(focus === "passkeys")}
-            />
-            <form
-              action={setPasskeyEnabledAction}
-              className={cn(
-                "rounded-xl border border-night-700 bg-night-950/70 p-3",
-                getAccountFocusHighlightClass(focus === "passkey-policy"),
-              )}
-              id="passkey-policy"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-sand-100">Passkey sign-in policy</p>
-                  <p className="text-xs text-night-200">Turn passkey sign-in on or off for this account.</p>
-                </div>
-                <span
-                  className={`rounded-full border px-2 py-1 text-[10px] ${
-                    security.passkeyEnabled
-                      ? "border-sage-300/40 bg-sage-500/15 text-sage-100"
-                      : "border-night-600 bg-night-900 text-night-200"
-                  }`}
-                >
-                  {security.passkeyEnabled ? "ENABLED" : "DISABLED"}
-                </span>
-              </div>
-              <input type="hidden" name="enabled" value={security.passkeyEnabled ? "false" : "true"} />
-              <button
-                type="submit"
-                className="mt-3 rounded-lg border border-night-600 bg-night-900 px-3 py-1.5 text-xs text-sand-100 hover:border-sage-300"
+            {!hasPasskeys ? (
+              <div
+                id="passkeys"
+                className={cn(
+                  "rounded-xl border border-night-700 bg-night-950/70 p-3",
+                  getAccountFocusHighlightClass(focus === "passkeys"),
+                )}
               >
-                {security.passkeyEnabled ? "Disable passkey sign-in" : "Enable passkey sign-in"}
-              </button>
-            </form>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-sand-100">Passkeys</p>
+                    <p className="text-xs text-night-200">
+                      No passkeys registered yet. Add one below to complete passkey setup.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-night-600 bg-night-900 px-2 py-1 text-[10px] text-night-200">
+                    NOT SETUP
+                  </span>
+                </div>
+              </div>
+            ) : null}
+            {hasPasskeys ? (
+              <form
+                action={setPasskeyEnabledAction}
+                className={cn(
+                  "rounded-xl border border-night-700 bg-night-950/70 p-3",
+                  getAccountFocusHighlightClass(focus === "passkey-policy"),
+                )}
+                id="passkey-policy"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-sand-100">Passkey sign-in policy</p>
+                    <p className="text-xs text-night-200">Turn passkey sign-in on or off for this account.</p>
+                  </div>
+                  <span
+                    className={`rounded-full border px-2 py-1 text-[10px] ${
+                      security.passkeyEnabled
+                        ? "border-sage-300/40 bg-sage-500/15 text-sage-100"
+                        : "border-night-600 bg-night-900 text-night-200"
+                    }`}
+                  >
+                    {security.passkeyEnabled ? "ENABLED" : "DISABLED"}
+                  </span>
+                </div>
+                <input type="hidden" name="enabled" value={security.passkeyEnabled ? "false" : "true"} />
+                <button
+                  type="submit"
+                  className="mt-3 rounded-lg border border-night-600 bg-night-900 px-3 py-1.5 text-xs text-sand-100 hover:border-sage-300"
+                >
+                  {security.passkeyEnabled ? "Disable passkey sign-in" : "Enable passkey sign-in"}
+                </button>
+              </form>
+            ) : null}
           </div>
         </SurfaceCard>
 
@@ -155,10 +174,15 @@ export default async function AccountSecurityPage({ searchParams }: AccountSecur
 
         <SurfaceCard
           title="Registered passkeys"
-          subtitle="Rename or revoke existing passkeys"
-          className={getAccountFocusHighlightClass(focus === "passkey-list")}
+          subtitle="Add, rename, or revoke passkeys"
+          id={hasPasskeys ? "passkeys" : undefined}
+          className={getAccountFocusHighlightClass(focus === "passkey-list" || (focus === "passkeys" && hasPasskeys))}
         >
-          <div className="space-y-2">
+          <div className="space-y-3">
+            <PasskeyManager
+              variant="inline"
+              buttonLabel={hasPasskeys ? "Add another passkey" : "Register first passkey"}
+            />
             {passkeys.length === 0 ? (
               <p className="rounded-lg border border-night-700 bg-night-950/70 p-3 text-xs text-night-300">
                 No passkeys registered yet.
