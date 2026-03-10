@@ -241,7 +241,7 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
   }
 
   const token = session.accessToken;
-  const [content, auditLogs, previewAnalytics, systemJobSummary, systemJobRuns, chatEvents] = await Promise.all([
+  const [content, auditLogs, previewAnalytics, systemJobSummary, systemJobRuns, chatEvents, chatEvents7d] = await Promise.all([
     apiAdminContent(token),
     apiAdminAudit(token, 14),
     apiAdminPreviewAnalytics(token, 30),
@@ -261,7 +261,22 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
       memoryOnly: chatEventScope === "memory",
       eventType: chatEventType === "all" ? undefined : chatEventType,
     }),
+    apiAdminChatEvents(token, {
+      limit: 500,
+      days: 7,
+    }),
   ]);
+
+  const actionEventTypes: ApiChatEventType[] = [
+    "message_quoted",
+    "message_pinned",
+    "thread_branched",
+    "thread_branch_auto_asked",
+  ];
+  const actionEventCountByType = actionEventTypes.reduce<Record<ApiChatEventType, number>>((acc, eventType) => {
+    acc[eventType] = chatEvents7d.filter((event) => event.eventType === eventType).length;
+    return acc;
+  }, {} as Record<ApiChatEventType, number>);
 
   return (
     <div className="space-y-6">
@@ -504,6 +519,33 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
 
       <section>
         <SurfaceCard title="Companion Memory Events" subtitle="Context lifecycle observability">
+          <div className="mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">Quoted (7d)</p>
+              <p className="mt-1 text-base font-semibold text-sand-100">
+                {actionEventCountByType.message_quoted ?? 0}
+              </p>
+            </article>
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">Pinned (7d)</p>
+              <p className="mt-1 text-base font-semibold text-sand-100">
+                {actionEventCountByType.message_pinned ?? 0}
+              </p>
+            </article>
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">Branched (7d)</p>
+              <p className="mt-1 text-base font-semibold text-sand-100">
+                {actionEventCountByType.thread_branched ?? 0}
+              </p>
+            </article>
+            <article className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-xs">
+              <p className="text-night-300">Branch + Ask (7d)</p>
+              <p className="mt-1 text-base font-semibold text-sand-100">
+                {actionEventCountByType.thread_branch_auto_asked ?? 0}
+              </p>
+            </article>
+          </div>
+
           <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
             <span className="text-night-300">Scope</span>
             <Link

@@ -30,6 +30,8 @@
 - Branch + ask flow now performs optimistic turn rendering (immediate user turn + pending assistant row) so the new branch feels responsive before the first response resolves.
 - Pinned insights now support drag-to-reorder and one-click `Unpin all` cleanup per thread.
 - Companion now records additional lightweight chat action telemetry (`thread_branched`, `thread_branch_auto_asked`, `message_quoted`, `message_pinned`) without storing message content.
+- Companion `Branch + ask` now has an in-flight idempotency guard to prevent accidental duplicate branch creation from rapid repeated clicks.
+- CMS Companion memory telemetry now includes 7-day action counters for quote/pin/branch behaviors, powered by a time-window filter on admin chat events.
 - Public preview section is now available at `/preview` (no auth), including lightweight previews for chat, journal, library, and practices to let guests evaluate core UX before signup.
 - Public preview now also includes `/preview/dashboard` to demonstrate the action-first member home with sample momentum data.
 - `/preview/chat` now runs on a no-auth preview chat API with strict token-budget testing (fixed session budget, per-turn input/output caps, response clipping, resettable sandbox session).

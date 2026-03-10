@@ -12,6 +12,12 @@
 - **Why:** Enables lightweight adoption monitoring for high-value chat actions while preserving privacy boundaries (no raw message content in analytics payloads).
 - **Tradeoff:** Adds a small event-ingestion surface to the chat API and increases event volume in admin telemetry views.
 
+## 2026-03-10 - Add branch idempotency guard and 7-day action visibility in CMS
+- **Context:** Branch + ask interaction could be triggered repeatedly by rapid clicks, and CMS event streams lacked quick action-specific trend signals.
+- **Decision:** Add a client-side in-flight guard for Branch + ask to suppress duplicate submissions during active branch creation, and add an optional `days` window filter to admin chat events consumed by CMS to show 7-day counters for quote/pin/branch event types.
+- **Why:** Reduces accidental duplicate branches and gives operators immediate short-window adoption telemetry without external reporting tools.
+- **Tradeoff:** Relies on UI-level idempotency (not a server idempotency token) and adds one extra admin events query on CMS load.
+
 ## 2026-03-10 - Ship Reflections as a dedicated domain with async AI processing and secure audio handling
 - **Context:** Journal existed, but product scope required a richer reflection workflow (voice/text capture, transcript cleanup, refined writing, concise commentary, history, and companion handoff) without introducing heavy new infrastructure.
 - **Decision:** Add a dedicated Reflections domain (`/reflections`, `/reflections/new`, `/reflections/:id`) with new DB tables for entries/audio/tags/jobs/events; implement API endpoints under `/api/v1/reflections*`; extract reflections services (`repository`, `storage`, `ai`, `processing`, `service`) while keeping route registration in `server.ts`; store audio locally with auth-gated streaming; run pipeline asynchronously in-process with persisted status/job steps and retry.

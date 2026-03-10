@@ -161,6 +161,7 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [pinsByThreadId, setPinsByThreadId] = useState<Record<string, PinnedInsight[]>>({});
   const [draggingPinnedInsightId, setDraggingPinnedInsightId] = useState<string | null>(null);
+  const branchAskInFlightRef = useRef(false);
   const consumedPromptRef = useRef<string | null>(null);
 
   const activeThread = useMemo(
@@ -730,12 +731,19 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
   }
 
   async function branchAndAskFromMessage(message: ChatMessage): Promise<void> {
+    if (branchAskInFlightRef.current) {
+      return;
+    }
+
+    branchAskInFlightRef.current = true;
+
     const suggestedPrompt =
       input.trim() ||
       "Continue from this point. Help me examine the assumptions and define one concrete next step.";
     const promptValue = window.prompt("First prompt for this branch:", suggestedPrompt);
 
     if (promptValue === null) {
+      branchAskInFlightRef.current = false;
       return;
     }
 
@@ -743,10 +751,15 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
     if (autoPrompt.length < 3) {
       setError("Please enter at least 3 characters for the first prompt.");
       pushToast("First prompt is too short.", "error");
+      branchAskInFlightRef.current = false;
       return;
     }
 
-    await branchFromMessage(message, { autoPrompt, action: "branch_ask" });
+    try {
+      await branchFromMessage(message, { autoPrompt, action: "branch_ask" });
+    } finally {
+      branchAskInFlightRef.current = false;
+    }
   }
 
   useEffect(() => {
@@ -1044,6 +1057,7 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
             {activePinnedInsights.map((insight) => (
               <div
                 key={insight.id}
+                data-testid="pinned-insight-chip"
                 draggable
                 onDragStart={() => setDraggingPinnedInsightId(insight.id)}
                 onDragEnd={() => setDraggingPinnedInsightId(null)}

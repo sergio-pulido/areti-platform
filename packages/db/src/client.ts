@@ -4746,6 +4746,7 @@ export function listChatEvents(input: {
   threadId?: string;
   userId?: string;
   eventTypes?: ChatEventType[];
+  sinceCreatedAt?: string;
 }): ChatEventRecord[] {
   const filters: SQL[] = [];
   const eventTypes = input.eventTypes ?? [];
@@ -4766,6 +4767,10 @@ export function listChatEvents(input: {
     if (compoundFilter) {
       filters.push(compoundFilter);
     }
+  }
+
+  if (input.sinceCreatedAt) {
+    filters.push(gt(chatEvents.createdAt, input.sinceCreatedAt));
   }
 
   const whereClause = filters.length > 0 ? and(...filters) : undefined;

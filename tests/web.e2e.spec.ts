@@ -150,6 +150,68 @@ test("reflections flow creates, processes, and sends to companion", async ({ pag
   await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
 });
 
+test("chat message actions support pin reorder and branch+ask idempotency", async ({ page }) => {
+  await signupAndGoDashboard(page);
+
+  await page.goto("/chat");
+  const composer = page.getByLabel("Chat prompt");
+  const send = page.getByRole("button", { name: "Send chat message" });
+
+  await composer.fill("First thread message for action testing.");
+  await send.click();
+  await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
+  const sourceThreadId = new URL(page.url()).searchParams.get("thread");
+  expect(sourceThreadId).toBeTruthy();
+
+  await composer.fill("Second thread message so we can pin and reorder.");
+  await send.click();
+
+  const threadButtons = page.getByRole("button", { name: /Mar \d+/ });
+  const threadCountBeforeBranch = await threadButtons.count();
+
+  const pinButtons = page.getByRole("button", { name: "Pin message as insight" });
+  await expect(pinButtons.first()).toBeVisible();
+  await pinButtons.nth(0).click();
+  await pinButtons.nth(1).click();
+
+  const pinnedChips = page.getByTestId("pinned-insight-chip");
+  await expect(pinnedChips).toHaveCount(2);
+  const firstBeforeReorder = (await pinnedChips.nth(0).textContent()) ?? "";
+  await pinnedChips.nth(1).dragTo(pinnedChips.nth(0));
+  await expect
+    .poll(async () => (await pinnedChips.nth(0).textContent()) ?? "", { timeout: 5000 })
+    .not.toBe(firstBeforeReorder);
+
+  const branchAndAskButton = page
+    .getByRole("button", { name: "Create a branch and send a first prompt" })
+    .first();
+
+  let promptDialogCount = 0;
+  page.on("dialog", (dialog) => {
+    promptDialogCount += 1;
+    void dialog.accept("Start this branch with one practical next step.");
+  });
+
+  await branchAndAskButton.dblclick();
+  await expect.poll(() => promptDialogCount, { timeout: 5000 }).toBe(1);
+  await expect(page).toHaveURL(/\/chat\?thread=/, { timeout: 15000 });
+
+  await expect.poll(async () => await threadButtons.count(), { timeout: 20000 }).toBe(threadCountBeforeBranch + 1);
+  await expect(page.getByRole("heading", { level: 2 })).toContainText("Branch:", { timeout: 20000 });
+
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("thread"), { timeout: 20000 })
+    .not.toBe(sourceThreadId);
+  const resolvedBranchedThreadId = new URL(page.url()).searchParams.get("thread");
+  expect(resolvedBranchedThreadId).toBeTruthy();
+
+  await expect(
+    page
+      .getByTestId("chat-conversation-scroller")
+      .getByText("Start this branch with one practical next step.", { exact: true }),
+  ).toBeVisible({ timeout: 15000 });
+});
+
 test("public preview section is accessible without authentication", async ({ page }) => {
   await page.goto("/preview");
   const cookieAccept = page.getByRole("button", { name: "Accept cookies" });

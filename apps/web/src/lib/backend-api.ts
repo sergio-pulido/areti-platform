@@ -1047,6 +1047,7 @@ export async function apiAdminChatEvents(
     threadId?: string;
     userId?: string;
     eventType?: ApiChatEventType;
+    days?: number;
     memoryOnly?: boolean;
   },
 ): Promise<ApiChatEvent[]> {
@@ -1061,6 +1062,9 @@ export async function apiAdminChatEvents(
   }
   if (input?.eventType) {
     params.set("eventType", input.eventType);
+  }
+  if (typeof input?.days === "number" && Number.isFinite(input.days) && input.days > 0) {
+    params.set("days", String(Math.floor(input.days)));
   }
   if (input?.memoryOnly) {
     params.set("memoryOnly", "true");

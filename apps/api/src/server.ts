@@ -2000,6 +2000,7 @@ const adminChatEventsQuerySchema = z.object({
   threadId: z.string().uuid().optional(),
   userId: z.string().uuid().optional(),
   eventType: chatEventTypeSchema.optional(),
+  days: z.coerce.number().int().positive().max(365).optional(),
   memoryOnly: z
     .preprocess((value) => {
       if (typeof value === "string") {
@@ -5271,12 +5272,18 @@ export function createApp() {
       return;
     }
 
+    const sinceCreatedAt =
+      typeof parsed.data.days === "number"
+        ? new Date(Date.now() - parsed.data.days * 24 * 60 * 60 * 1000).toISOString()
+        : undefined;
+
     res.json({
       data: listChatEvents({
         limit: parsed.data.limit,
         threadId: parsed.data.threadId,
         userId: parsed.data.userId,
         eventTypes,
+        sinceCreatedAt,
       }),
     });
   });
