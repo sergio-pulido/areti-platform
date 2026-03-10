@@ -2,23 +2,48 @@ import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { Badge } from "@/components/ui/badge";
-import { getAllConcepts, getConceptLinksBySlug } from "@/lib/academy/knowledge-service";
+import { apiAcademyConceptLinks, apiAcademyConcepts } from "@/lib/backend-api";
 
-function groupConceptsByFamily() {
-  const grouped = new Map<string, ReturnType<typeof getAllConcepts>>();
+export default async function ConceptIndexPage() {
+  const concepts = await apiAcademyConcepts({ limit: 200 });
 
-  for (const concept of getAllConcepts()) {
+  const linksBySlug = new Map<
+    string,
+    {
+      traditions: number;
+      persons: number;
+      works: number;
+    }
+  >();
+
+  await Promise.all(
+    concepts.map(async (concept) => {
+      try {
+        const links = await apiAcademyConceptLinks(concept.slug);
+        linksBySlug.set(concept.slug, {
+          traditions: links.traditions.length,
+          persons: links.persons.length,
+          works: links.works.length,
+        });
+      } catch {
+        linksBySlug.set(concept.slug, {
+          traditions: 0,
+          persons: 0,
+          works: 0,
+        });
+      }
+    }),
+  );
+
+  const grouped = new Map<string, typeof concepts>();
+  for (const concept of concepts) {
     const family = concept.conceptFamily ?? "general";
     const bucket = grouped.get(family) ?? [];
     bucket.push(concept);
     grouped.set(family, bucket);
   }
 
-  return [...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-}
-
-export default function ConceptIndexPage() {
-  const groupedConcepts = groupConceptsByFamily();
+  const groupedConcepts = [...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
   return (
     <div className="space-y-5">
@@ -29,15 +54,19 @@ export default function ConceptIndexPage() {
       />
 
       <div className="grid gap-4 xl:grid-cols-2">
-        {groupedConcepts.map(([family, concepts]) => (
+        {groupedConcepts.map(([family, items]) => (
           <SurfaceCard
             key={family}
             title={family.charAt(0).toUpperCase() + family.slice(1)}
-            subtitle={`${concepts.length} concepts`}
+            subtitle={`${items.length} concepts`}
           >
             <div className="flex flex-wrap gap-2">
-              {concepts.map((concept) => {
-                const links = getConceptLinksBySlug(concept.slug);
+              {items.map((concept) => {
+                const linkCounts = linksBySlug.get(concept.slug) ?? {
+                  traditions: 0,
+                  persons: 0,
+                  works: 0,
+                };
 
                 return (
                   <Link
@@ -47,7 +76,7 @@ export default function ConceptIndexPage() {
                   >
                     <span className="font-medium text-sand-100">{concept.name}</span>
                     <span className="mt-1 block text-[11px] text-night-300">
-                      {links.traditions.length} traditions · {links.persons.length} thinkers · {links.works.length} works
+                      {linkCounts.traditions} traditions · {linkCounts.persons} thinkers · {linkCounts.works} works
                     </span>
                   </Link>
                 );

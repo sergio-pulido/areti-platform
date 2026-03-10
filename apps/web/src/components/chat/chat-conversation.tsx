@@ -10,6 +10,10 @@ type ChatConversationProps = {
   messages: ChatMessage[];
   pending: boolean;
   loading?: boolean;
+  followUpOptions?: Array<{
+    label: string;
+    prompt: string;
+  }>;
   onFollowUpSelect?: (prompt: string) => void;
   onCopyMessage?: (message: ChatMessage) => void;
   onQuoteMessage?: (message: ChatMessage) => void;
@@ -167,6 +171,7 @@ export function ChatConversation({
   messages,
   pending,
   loading = false,
+  followUpOptions,
   onFollowUpSelect,
   onCopyMessage,
   onQuoteMessage,
@@ -192,6 +197,11 @@ export function ChatConversation({
 
     return null;
   }, [messages]);
+
+  const resolvedFollowUpOptions = useMemo(
+    () => (followUpOptions && followUpOptions.length > 0 ? followUpOptions : [...FOLLOW_UP_OPTIONS]),
+    [followUpOptions],
+  );
 
   useEffect(() => {
     if (loading) {
@@ -371,7 +381,7 @@ export function ChatConversation({
 
                 {isLatestAssistant && !pending && onFollowUpSelect ? (
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {FOLLOW_UP_OPTIONS.map((option) => (
+                    {resolvedFollowUpOptions.map((option) => (
                       <button
                         key={option.label}
                         type="button"

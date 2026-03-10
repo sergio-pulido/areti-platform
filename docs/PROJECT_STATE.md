@@ -278,9 +278,19 @@
   - Added API integration assertions for new dashboard completion-history payload (`recentCompletions`).
   - Added API integration coverage for reflections lifecycle, authorization boundaries, processing outputs, and Companion handoff.
   - Added API integration coverage for Academy endpoints (overview, domain/tradition browsing, concept links, search, and authenticated internal query).
+  - Added API integration coverage for admin Academy curation workflows (path metadata/order updates, path item replacement, editorial metadata updates, and relation upsert/delete).
   - Added service-level integration coverage for reflections processing orchestration with mocked dependencies.
   - Added web e2e coverage for the critical reflections journey (create -> process -> read -> send to companion).
   - Added web e2e coverage for Academy structured navigation/search/credibility context and extended accessibility smoke checks to include `/academy`.
+  - Academy web runtime reads now source exclusively from `/api/v1/academy/*` endpoints on all Academy routes, replacing local JSON selector usage in page rendering.
+  - Added lightweight Academy search indexing + in-memory TTL caching to stabilize `/api/v1/academy/search` latency as the Academy dataset grows.
+  - Added admin/editor Academy curation workflows:
+    - New admin API routes under `/api/v1/admin/academy/*` for path ordering/metadata, path item replacement, thinker credibility/evidence/risk metadata edits, and relation maintenance.
+    - New CMS route `/creator/cms/academy` with practical form-based workflows for curators/editors.
+  - Added recommendation/agent adapters that directly consume authenticated `POST /api/v1/academy/query`:
+    - `apps/web/src/lib/academy/academy-query-adapters.ts` generates starter path suggestions + guided follow-up prompts.
+    - `/api/academy/adapters` exposes adapter payloads to web clients.
+    - Chat UI now consumes adapter outputs for empty-state starters and follow-up chips.
   - Hardened dashboard e2e selectors for prompt starter and journal form targeting to reduce strict-mode ambiguities.
   - Updated e2e/a11y signup helpers for legal consent, email verification, onboarding completion, and cookie gate behavior.
   - Forced Playwright API startup to `EMAIL_TRANSPORT=disabled` so signup/resend tests never consume external email quotas.

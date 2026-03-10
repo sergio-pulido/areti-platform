@@ -538,6 +538,42 @@ export type ApiAcademyQueryResult = {
   conceptLinks: ApiAcademyConceptLinks[];
 };
 
+export type ApiAcademyConceptRelationEntityType = "tradition" | "person" | "work";
+
+export type ApiAcademyCurationBundle = {
+  domains: ApiAcademyDomain[];
+  traditions: ApiAcademyTradition[];
+  persons: ApiAcademyPerson[];
+  works: ApiAcademyWork[];
+  concepts: ApiAcademyConcept[];
+  paths: ApiAcademyPath[];
+  personRelationships: ApiAcademyPersonRelationship[];
+  conceptTraditionLinks: Array<{
+    id: number;
+    conceptId: number;
+    traditionId: number;
+    sortOrder: number;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  conceptPersonLinks: Array<{
+    id: number;
+    conceptId: number;
+    personId: number;
+    sortOrder: number;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  conceptWorkLinks: Array<{
+    id: number;
+    conceptId: number;
+    workId: number;
+    sortOrder: number;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+};
+
 export type ApiAdminAuditLog = {
   id: string;
   adminUserId: string;
@@ -1446,6 +1482,143 @@ export async function apiAcademyQuery(
     "/api/v1/academy/query",
     withAuth(token, {
       method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminAcademyCuration(
+  token: string,
+  limit = 300,
+): Promise<ApiAcademyCurationBundle> {
+  return requestJson<ApiAcademyCurationBundle>(
+    `/api/v1/admin/academy/curation?limit=${limit}`,
+    withAuth(token),
+  );
+}
+
+export async function apiAdminUpdateAcademyPath(
+  token: string,
+  id: number,
+  input: {
+    title?: string;
+    summary?: string;
+    tone?: "beginner" | "intermediate";
+    difficultyLevel?: "beginner" | "intermediate" | "advanced";
+    progressionOrder?: number;
+    recommendationWeight?: number;
+    recommendationHint?: string;
+    isFeatured?: boolean;
+  },
+): Promise<ApiAcademyPath> {
+  return requestJson<ApiAcademyPath>(
+    `/api/v1/admin/academy/paths/${id}`,
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminReplaceAcademyPathItems(
+  token: string,
+  id: number,
+  items: Array<{
+    entityType: "tradition" | "person" | "work" | "concept";
+    entityId: number;
+    rationale?: string;
+    sortOrder?: number;
+  }>,
+): Promise<ApiAcademyPath> {
+  return requestJson<ApiAcademyPath>(
+    `/api/v1/admin/academy/paths/${id}/items`,
+    withAuth(token, {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    }),
+  );
+}
+
+export async function apiAdminUpdateAcademyPersonEditorial(
+  token: string,
+  id: number,
+  input: {
+    credibilityBand?: "foundational" | "major" | "secondary" | "popularizer" | "controversial" | null;
+    evidenceProfile?: string | null;
+    claimRiskLevel?: "low" | "medium" | "high" | null;
+    bioShort?: string | null;
+  },
+): Promise<ApiAcademyPerson> {
+  return requestJson<ApiAcademyPerson>(
+    `/api/v1/admin/academy/persons/${id}/editorial`,
+    withAuth(token, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminUpsertAcademyPersonRelationship(
+  token: string,
+  input: {
+    id?: number;
+    sourcePersonId: number;
+    targetPersonId: number;
+    relationshipType: string;
+    notes?: string | null;
+  },
+): Promise<ApiAcademyPersonRelationship> {
+  return requestJson<ApiAcademyPersonRelationship>(
+    "/api/v1/admin/academy/relationships/persons",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminDeleteAcademyPersonRelationship(
+  token: string,
+  id: number,
+): Promise<void> {
+  await requestJson<{ ok: true }>(
+    `/api/v1/admin/academy/relationships/persons/${id}`,
+    withAuth(token, {
+      method: "DELETE",
+    }),
+  );
+}
+
+export async function apiAdminUpsertAcademyConceptRelation(
+  token: string,
+  input: {
+    conceptId: number;
+    entityType: ApiAcademyConceptRelationEntityType;
+    entityId: number;
+    sortOrder?: number;
+  },
+): Promise<{ ok: true; links: ApiAcademyConceptLinks | null }> {
+  return requestJson<{ ok: true; links: ApiAcademyConceptLinks | null }>(
+    "/api/v1/admin/academy/relationships/concepts",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function apiAdminDeleteAcademyConceptRelation(
+  token: string,
+  input: {
+    conceptId: number;
+    entityType: ApiAcademyConceptRelationEntityType;
+    entityId: number;
+  },
+): Promise<void> {
+  await requestJson<{ ok: true }>(
+    "/api/v1/admin/academy/relationships/concepts",
+    withAuth(token, {
+      method: "DELETE",
       body: JSON.stringify(input),
     }),
   );

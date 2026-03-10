@@ -4,7 +4,7 @@ import { CredibilityBadge, WorkAuthorityBadge } from "@/components/academy/acade
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { Badge } from "@/components/ui/badge";
-import { getConceptBySlug, getConceptLinksBySlug, getPersonForWork } from "@/lib/academy/knowledge-service";
+import { apiAcademyConceptBySlug, apiAcademyPersons } from "@/lib/backend-api";
 
 type ConceptDetailPageProps = {
   params: Promise<{
@@ -14,13 +14,20 @@ type ConceptDetailPageProps = {
 
 export default async function ConceptDetailPage({ params }: ConceptDetailPageProps) {
   const { slug } = await params;
-  const concept = getConceptBySlug(slug);
+  const detail = await apiAcademyConceptBySlug(slug).catch(() => null);
 
-  if (!concept) {
+  if (!detail) {
     notFound();
   }
 
-  const links = getConceptLinksBySlug(concept.slug);
+  const { concept, links } = detail;
+
+  if (!links) {
+    notFound();
+  }
+
+  const people = await apiAcademyPersons({ limit: 500 });
+  const peopleById = new Map(people.map((person) => [person.id, person] as const));
 
   return (
     <div className="space-y-5">
@@ -51,9 +58,7 @@ export default async function ConceptDetailPage({ params }: ConceptDetailPagePro
                 {tradition.name}
               </Link>
             ))}
-            {links.traditions.length === 0 ? (
-              <p className="text-sm text-night-300">No related traditions linked yet.</p>
-            ) : null}
+            {links.traditions.length === 0 ? <p className="text-sm text-night-300">No related traditions linked yet.</p> : null}
           </div>
         </SurfaceCard>
 
@@ -78,7 +83,7 @@ export default async function ConceptDetailPage({ params }: ConceptDetailPagePro
         <SurfaceCard title="Related works" subtitle="Texts where this concept is central">
           <div className="space-y-2">
             {links.works.map((work) => {
-              const author = getPersonForWork(work);
+              const author = work.personId !== null ? (peopleById.get(work.personId) ?? null) : null;
 
               return (
                 <Link

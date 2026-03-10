@@ -363,6 +363,168 @@ describe("API integration", () => {
     expect(typeof authQuery.body.data.paths[0].recommendationWeight).toBe("number");
   });
 
+  it("supports admin academy curation workflows", async () => {
+    const curation = await request(app)
+      .get("/api/v1/admin/academy/curation?limit=120")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(curation.status).toBe(200);
+    expect(Array.isArray(curation.body.data.paths)).toBe(true);
+    expect(Array.isArray(curation.body.data.persons)).toBe(true);
+    expect(Array.isArray(curation.body.data.concepts)).toBe(true);
+
+    const path = curation.body.data.paths[0] as {
+      id: number;
+      title: string;
+      summary: string;
+      progressionOrder: number;
+      recommendationWeight: number;
+      recommendationHint: string;
+      items: Array<{
+        entityType: "tradition" | "person" | "work" | "concept";
+        entityId: number;
+        rationale: string;
+        sortOrder: number;
+      }>;
+    };
+    const person = curation.body.data.persons[0] as { id: number };
+    const sourcePerson = curation.body.data.persons[0] as { id: number };
+    const targetPerson = curation.body.data.persons[1] as { id: number };
+    const concept = curation.body.data.concepts[0] as { id: number };
+    const tradition = curation.body.data.traditions[0] as { id: number };
+    const conceptTraditionLinks = curation.body.data.conceptTraditionLinks as Array<{
+      conceptId: number;
+      traditionId: number;
+    }>;
+
+    const availableConcepts = curation.body.data.concepts as Array<{ id: number }>;
+    const availableTraditions = curation.body.data.traditions as Array<{ id: number }>;
+
+    const existingPairs = new Set(
+      conceptTraditionLinks.map((link) => `${link.conceptId}:${link.traditionId}`),
+    );
+
+    const candidatePair =
+      availableConcepts.flatMap((conceptItem) =>
+        availableTraditions.map((traditionItem) => ({
+          conceptId: conceptItem.id,
+          traditionId: traditionItem.id,
+        })),
+      ).find((pair) => !existingPairs.has(`${pair.conceptId}:${pair.traditionId}`)) ?? null;
+
+    expect(path).toBeTruthy();
+    expect(person).toBeTruthy();
+    expect(sourcePerson).toBeTruthy();
+    expect(targetPerson).toBeTruthy();
+    expect(concept).toBeTruthy();
+    expect(tradition).toBeTruthy();
+
+    const updatedPath = await request(app)
+      .patch(`/api/v1/admin/academy/paths/${path.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: path.title,
+        summary: path.summary,
+        progressionOrder: path.progressionOrder + 1,
+        recommendationWeight: path.recommendationWeight + 1,
+        recommendationHint: path.recommendationHint,
+      });
+
+    expect(updatedPath.status).toBe(200);
+    expect(updatedPath.body.data.progressionOrder).toBe(path.progressionOrder + 1);
+
+    const replacedItems = await request(app)
+      .put(`/api/v1/admin/academy/paths/${path.id}/items`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        items: (path.items ?? []).slice(0, 3).map((item, index) => ({
+          entityType: item.entityType,
+          entityId: item.entityId,
+          rationale: `${item.rationale ?? ""}`.slice(0, 100),
+          sortOrder: index,
+        })),
+      });
+
+    expect(replacedItems.status).toBe(200);
+    expect(Array.isArray(replacedItems.body.data.items)).toBe(true);
+
+    const updatedPerson = await request(app)
+      .patch(`/api/v1/admin/academy/persons/${person.id}/editorial`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        credibilityBand: "major",
+        evidenceProfile: "curated-editorial",
+        claimRiskLevel: "low",
+      });
+
+    expect(updatedPerson.status).toBe(200);
+    expect(updatedPerson.body.data.credibilityBand).toBe("major");
+    expect(updatedPerson.body.data.evidenceProfile).toBe("curated-editorial");
+    expect(updatedPerson.body.data.claimRiskLevel).toBe("low");
+
+    const upsertRelationship = await request(app)
+      .post("/api/v1/admin/academy/relationships/persons")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        sourcePersonId: sourcePerson.id,
+        targetPersonId: targetPerson.id,
+        relationshipType: "influenced_by",
+        notes: "integration-test",
+      });
+
+    expect(upsertRelationship.status).toBe(200);
+    expect(typeof upsertRelationship.body.data.id).toBe("number");
+
+    const deleteRelationship = await request(app)
+      .delete(`/api/v1/admin/academy/relationships/persons/${upsertRelationship.body.data.id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(deleteRelationship.status).toBe(200);
+    expect(deleteRelationship.body.data.ok).toBe(true);
+
+    const conceptIdForRelation = candidatePair?.conceptId ?? concept.id;
+    const traditionIdForRelation = candidatePair?.traditionId ?? tradition.id;
+
+    const upsertConceptRelation = await request(app)
+      .post("/api/v1/admin/academy/relationships/concepts")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        conceptId: conceptIdForRelation,
+        entityType: "tradition",
+        entityId: traditionIdForRelation,
+        sortOrder: 1,
+      });
+
+    expect(upsertConceptRelation.status).toBe(200);
+    expect(upsertConceptRelation.body.data.ok).toBe(true);
+
+    const deleteConceptRelation = await request(app)
+      .delete("/api/v1/admin/academy/relationships/concepts")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        conceptId: conceptIdForRelation,
+        entityType: "tradition",
+        entityId: traditionIdForRelation,
+      });
+
+    expect(deleteConceptRelation.status).toBe(200);
+    expect(deleteConceptRelation.body.data.ok).toBe(true);
+
+    if (!candidatePair) {
+      const restoreConceptRelation = await request(app)
+        .post("/api/v1/admin/academy/relationships/concepts")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          conceptId: conceptIdForRelation,
+          entityType: "tradition",
+          entityId: traditionIdForRelation,
+          sortOrder: 1,
+        });
+
+      expect(restoreConceptRelation.status).toBe(200);
+    }
+  });
+
   it("supports full reflections lifecycle, processing, and companion handoff", async () => {
     const created = await request(app)
       .post("/api/v1/reflections")

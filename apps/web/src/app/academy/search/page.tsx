@@ -3,7 +3,7 @@ import { AcademySearchForm } from "@/components/academy/academy-search-form";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { Badge } from "@/components/ui/badge";
-import { searchAcademy } from "@/lib/academy/knowledge-service";
+import { apiAcademySearch, type ApiAcademySearchResult } from "@/lib/backend-api";
 
 type AcademySearchPageProps = {
   searchParams: Promise<{
@@ -11,10 +11,27 @@ type AcademySearchPageProps = {
   }>;
 };
 
+function searchResultHref(result: ApiAcademySearchResult): string {
+  switch (result.type) {
+    case "domain":
+      return `/academy/traditions?domain=${result.slug}`;
+    case "tradition":
+      return `/academy/traditions/${result.slug}`;
+    case "person":
+      return `/academy/thinkers/${result.slug}`;
+    case "work":
+      return `/academy/works/${result.slug}`;
+    case "concept":
+      return `/academy/concepts/${result.slug}`;
+    default:
+      return "/academy";
+  }
+}
+
 export default async function AcademySearchPage({ searchParams }: AcademySearchPageProps) {
   const params = await searchParams;
   const query = params.q?.trim() ?? "";
-  const results = query ? searchAcademy(query, 80) : [];
+  const results = query ? await apiAcademySearch(query, 80) : [];
 
   return (
     <div className="space-y-5">
@@ -48,7 +65,7 @@ export default async function AcademySearchPage({ searchParams }: AcademySearchP
                 ))}
               </div>
               <Link
-                href={result.href}
+                href={searchResultHref(result)}
                 className="mt-4 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/10 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20"
               >
                 Open

@@ -4,16 +4,12 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { Badge } from "@/components/ui/badge";
 import {
-  getAllDomains,
-  getAllPersons,
-  getAllTraditions,
-  getDomainBySlug,
-  getDomainForTradition,
-  getPersonsByDomain,
-  getPersonsByTradition,
-  getTraditionBySlug,
-  getTraditionForPerson,
-} from "@/lib/academy/knowledge-service";
+  apiAcademyDomainBySlug,
+  apiAcademyDomains,
+  apiAcademyPersons,
+  apiAcademyTraditionBySlug,
+  apiAcademyTraditions,
+} from "@/lib/backend-api";
 import { formatRoleLabel } from "@/lib/academy/knowledge-presentation";
 
 type ThinkersIndexPageProps = {
@@ -40,17 +36,25 @@ function filterHref(params: { domain?: string; tradition?: string }): string {
 
 export default async function ThinkersIndexPage({ searchParams }: ThinkersIndexPageProps) {
   const params = await searchParams;
-  const selectedDomain = params.domain ? getDomainBySlug(params.domain) : null;
-  const selectedTradition = params.tradition ? getTraditionBySlug(params.tradition) : null;
 
-  const thinkers = selectedTradition
-    ? getPersonsByTradition(selectedTradition.id)
-    : selectedDomain
-      ? getPersonsByDomain(selectedDomain.id)
-      : getAllPersons();
+  const [domains, traditions, selectedDomainResult, selectedTraditionResult] = await Promise.all([
+    apiAcademyDomains({ limit: 200 }),
+    apiAcademyTraditions({ limit: 300 }),
+    params.domain ? apiAcademyDomainBySlug(params.domain).catch(() => null) : Promise.resolve(null),
+    params.tradition ? apiAcademyTraditionBySlug(params.tradition).catch(() => null) : Promise.resolve(null),
+  ]);
 
-  const domains = getAllDomains();
-  const traditions = getAllTraditions();
+  const selectedDomain = selectedDomainResult?.domain ?? null;
+  const selectedTradition = selectedTraditionResult?.tradition ?? null;
+
+  const thinkers = await apiAcademyPersons({
+    limit: 300,
+    traditionId: selectedTradition?.id,
+    domainId: selectedTradition ? undefined : selectedDomain?.id,
+  });
+
+  const traditionById = new Map(traditions.map((tradition) => [tradition.id, tradition] as const));
+  const domainById = new Map(domains.map((domain) => [domain.id, domain] as const));
 
   return (
     <div className="space-y-5">
@@ -102,8 +106,8 @@ export default async function ThinkersIndexPage({ searchParams }: ThinkersIndexP
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {thinkers.map((thinker) => {
-          const tradition = getTraditionForPerson(thinker);
-          const domain = tradition ? getDomainForTradition(tradition) : null;
+          const tradition = thinker.traditionId !== null ? (traditionById.get(thinker.traditionId) ?? null) : null;
+          const domain = tradition ? (domainById.get(tradition.domainId) ?? null) : null;
 
           return (
             <SurfaceCard key={thinker.slug} title={thinker.displayName} subtitle={thinker.bioShort ?? "No short bio yet."}>

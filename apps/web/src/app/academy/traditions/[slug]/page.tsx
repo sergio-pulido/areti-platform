@@ -1,20 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CredibilityBadge, WorkAuthorityBadge } from "@/components/academy/academy-metadata-badges";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { Badge } from "@/components/ui/badge";
 import {
-  getChildTraditions,
-  getDomainForTradition,
-  getParentTradition,
-  getPersonForWork,
-  getPersonsByTradition,
-  getRelatedConceptsForTradition,
-  getRelatedTraditions,
-  getTraditionBySlug,
-  getWorksByTradition,
-} from "@/lib/academy/knowledge-service";
-import { CredibilityBadge, WorkAuthorityBadge } from "@/components/academy/academy-metadata-badges";
+  apiAcademyDomains,
+  apiAcademyPersons,
+  apiAcademyTraditionBySlug,
+  apiAcademyTraditions,
+} from "@/lib/backend-api";
 
 type TraditionDetailPageProps = {
   params: Promise<{
@@ -24,20 +19,34 @@ type TraditionDetailPageProps = {
 
 export default async function TraditionDetailPage({ params }: TraditionDetailPageProps) {
   const { slug } = await params;
-  const tradition = getTraditionBySlug(slug);
 
-  if (!tradition) {
+  const detail = await apiAcademyTraditionBySlug(slug).catch(() => null);
+  if (!detail) {
     notFound();
   }
 
-  const domain = getDomainForTradition(tradition);
-  const parentTradition = getParentTradition(tradition);
-  const childTraditions = getChildTraditions(tradition.id);
-  const majorThinkers = getPersonsByTradition(tradition.id);
-  const notableWorks = getWorksByTradition(tradition.id);
-  const relatedConcepts = getRelatedConceptsForTradition(tradition.id);
-  const relatedTraditions = getRelatedTraditions(tradition).filter((item) => item.id !== tradition.id);
-  const linkedTraditions = [...new Map([...childTraditions, ...relatedTraditions].map((item) => [item.id, item])).values()];
+  const [domains, allTraditions, allPersons] = await Promise.all([
+    apiAcademyDomains({ limit: 200 }),
+    apiAcademyTraditions({ limit: 400 }),
+    apiAcademyPersons({ limit: 500 }),
+  ]);
+
+  const { tradition, persons: majorThinkers, works: notableWorks, concepts: relatedConcepts } = detail;
+
+  const domain = domains.find((candidate) => candidate.id === tradition.domainId) ?? null;
+  const parentTradition =
+    tradition.parentTraditionId !== null
+      ? allTraditions.find((candidate) => candidate.id === tradition.parentTraditionId) ?? null
+      : null;
+
+  const childTraditions = allTraditions.filter((candidate) => candidate.parentTraditionId === tradition.id);
+  const sameDomainTraditions = allTraditions.filter(
+    (candidate) => candidate.domainId === tradition.domainId && candidate.id !== tradition.id,
+  );
+  const relatedTraditions = [...childTraditions, ...sameDomainTraditions].slice(0, 16);
+  const linkedTraditions = [...new Map(relatedTraditions.map((item) => [item.id, item])).values()];
+
+  const peopleById = new Map(allPersons.map((person) => [person.id, person] as const));
 
   return (
     <div className="space-y-5">
@@ -84,16 +93,14 @@ export default async function TraditionDetailPage({ params }: TraditionDetailPag
                 </div>
               </Link>
             ))}
-            {majorThinkers.length === 0 ? (
-              <p className="text-sm text-night-300">No thinkers linked yet.</p>
-            ) : null}
+            {majorThinkers.length === 0 ? <p className="text-sm text-night-300">No thinkers linked yet.</p> : null}
           </div>
         </SurfaceCard>
 
         <SurfaceCard title="Notable works" subtitle="Texts and works associated with this tradition">
           <div className="space-y-2">
             {notableWorks.map((work) => {
-              const author = getPersonForWork(work);
+              const author = work.personId !== null ? (peopleById.get(work.personId) ?? null) : null;
 
               return (
                 <Link
@@ -109,9 +116,7 @@ export default async function TraditionDetailPage({ params }: TraditionDetailPag
                 </Link>
               );
             })}
-            {notableWorks.length === 0 ? (
-              <p className="text-sm text-night-300">No works linked yet.</p>
-            ) : null}
+            {notableWorks.length === 0 ? <p className="text-sm text-night-300">No works linked yet.</p> : null}
           </div>
         </SurfaceCard>
       </div>
@@ -128,9 +133,7 @@ export default async function TraditionDetailPage({ params }: TraditionDetailPag
                 {concept.name}
               </Link>
             ))}
-            {relatedConcepts.length === 0 ? (
-              <p className="text-sm text-night-300">No concepts linked yet.</p>
-            ) : null}
+            {relatedConcepts.length === 0 ? <p className="text-sm text-night-300">No concepts linked yet.</p> : null}
           </div>
         </SurfaceCard>
 

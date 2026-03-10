@@ -3,14 +3,12 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { Badge } from "@/components/ui/badge";
 import {
-  getAllDomains,
-  getAllTraditions,
-  getDomainBySlug,
-  getDomainForTradition,
-  getPersonsByTradition,
-  getTraditionsByDomain,
-  getWorksByTradition,
-} from "@/lib/academy/knowledge-service";
+  apiAcademyDomainBySlug,
+  apiAcademyDomains,
+  apiAcademyPersons,
+  apiAcademyTraditions,
+  apiAcademyWorks,
+} from "@/lib/backend-api";
 
 type TraditionIndexPageProps = {
   searchParams: Promise<{
@@ -28,11 +26,41 @@ function createDomainHref(domainSlug: string | null): string {
 
 export default async function TraditionIndexPage({ searchParams }: TraditionIndexPageProps) {
   const params = await searchParams;
-  const selectedDomain = params.domain ? getDomainBySlug(params.domain) : null;
-  const domains = getAllDomains();
+
+  const [domains, selectedDomainResult, allTraditions, persons, works] = await Promise.all([
+    apiAcademyDomains({ limit: 200 }),
+    params.domain ? apiAcademyDomainBySlug(params.domain).catch(() => null) : Promise.resolve(null),
+    apiAcademyTraditions({ limit: 300 }),
+    apiAcademyPersons({ limit: 400 }),
+    apiAcademyWorks({ limit: 600 }),
+  ]);
+
+  const selectedDomain = selectedDomainResult?.domain ?? null;
   const traditions = selectedDomain
-    ? getTraditionsByDomain(selectedDomain.id)
-    : getAllTraditions();
+    ? allTraditions.filter((tradition) => tradition.domainId === selectedDomain.id)
+    : allTraditions;
+
+  const thinkerCountByTradition = new Map<number, number>();
+  for (const person of persons) {
+    if (person.traditionId !== null) {
+      thinkerCountByTradition.set(
+        person.traditionId,
+        (thinkerCountByTradition.get(person.traditionId) ?? 0) + 1,
+      );
+    }
+  }
+
+  const workCountByTradition = new Map<number, number>();
+  for (const work of works) {
+    if (work.traditionId !== null) {
+      workCountByTradition.set(
+        work.traditionId,
+        (workCountByTradition.get(work.traditionId) ?? 0) + 1,
+      );
+    }
+  }
+
+  const domainById = new Map(domains.map((domain) => [domain.id, domain] as const));
 
   return (
     <div className="space-y-5">
@@ -64,9 +92,9 @@ export default async function TraditionIndexPage({ searchParams }: TraditionInde
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {traditions.map((tradition) => {
-          const domain = getDomainForTradition(tradition);
-          const thinkerCount = getPersonsByTradition(tradition.id).length;
-          const workCount = getWorksByTradition(tradition.id).length;
+          const domain = domainById.get(tradition.domainId) ?? null;
+          const thinkerCount = thinkerCountByTradition.get(tradition.id) ?? 0;
+          const workCount = workCountByTradition.get(tradition.id) ?? 0;
 
           return (
             <SurfaceCard key={tradition.slug} title={tradition.name} subtitle={tradition.originRegion ?? "Region unknown"}>

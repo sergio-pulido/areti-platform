@@ -714,6 +714,61 @@ export type AcademyKnowledgeQueryResult = {
   conceptLinks: AcademyConceptLinksRecord[];
 };
 
+export type AcademyConceptRelationEntityType = "tradition" | "person" | "work";
+
+export type AcademyCurationSnapshotRecord = {
+  domains: AcademyDomainRecord[];
+  traditions: AcademyTraditionRecord[];
+  persons: AcademyPersonRecord[];
+  works: AcademyWorkRecord[];
+  concepts: AcademyConceptRecord[];
+  paths: AcademyPathDetailRecord[];
+  personRelationships: AcademyPersonRelationshipRecord[];
+  conceptTraditionLinks: AcademyConceptTraditionLinkRecord[];
+  conceptPersonLinks: AcademyConceptPersonLinkRecord[];
+  conceptWorkLinks: AcademyConceptWorkLinkRecord[];
+};
+
+export type AcademyPathCurationPatchInput = {
+  title?: string;
+  summary?: string;
+  tone?: AcademyPathTone;
+  difficultyLevel?: AcademyPathDifficulty;
+  progressionOrder?: number;
+  recommendationWeight?: number;
+  recommendationHint?: string;
+  isFeatured?: boolean;
+};
+
+export type AcademyPathItemCurationInput = {
+  entityType: AcademyPathEntityType;
+  entityId: number;
+  rationale?: string | null;
+  sortOrder?: number;
+};
+
+export type AcademyPersonEditorialPatchInput = {
+  credibilityBand?: string | null;
+  evidenceProfile?: string | null;
+  claimRiskLevel?: string | null;
+  bioShort?: string | null;
+};
+
+export type AcademyPersonRelationshipUpsertInput = {
+  id?: number;
+  sourcePersonId: number;
+  targetPersonId: number;
+  relationshipType: string;
+  notes?: string | null;
+};
+
+export type AcademyConceptRelationUpsertInput = {
+  conceptId: number;
+  entityType: AcademyConceptRelationEntityType;
+  entityId: number;
+  sortOrder?: number;
+};
+
 const globalForDb = globalThis as unknown as {
   sqlite?: Database.Database;
   migrated?: boolean;
@@ -967,6 +1022,56 @@ function sortByPathPriority(a: AcademyPathRecord, b: AcademyPathRecord): number 
   }
 
   return a.title.localeCompare(b.title);
+}
+
+type AcademySearchIndexedRecord = {
+  key: string;
+  record: AcademySearchResultRecord;
+  searchableText: string;
+  tokens: Set<string>;
+};
+
+type AcademySearchIndexState = {
+  version: number;
+  records: AcademySearchIndexedRecord[];
+  byKey: Map<string, AcademySearchIndexedRecord>;
+  tokenToKeys: Map<string, string[]>;
+};
+
+type AcademySearchCacheEntry = {
+  version: number;
+  expiresAt: number;
+  results: AcademySearchResultRecord[];
+};
+
+const ACADEMY_SEARCH_CACHE_TTL_MS = 60 * 1000;
+const ACADEMY_SEARCH_MAX_CANDIDATES = 2400;
+
+let academyKnowledgeVersion = 0;
+let academySearchIndexState: AcademySearchIndexState | null = null;
+const academySearchCache = new Map<string, AcademySearchCacheEntry>();
+
+function academySearchResultKey(type: AcademySearchResultRecord["type"], id: number): string {
+  return `${type}:${id}`;
+}
+
+function tokenizeAcademySearchText(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/[\s-]+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 2);
+}
+
+function academySearchCacheKey(query: string, limit: number): string {
+  return `${query.toLowerCase()}::${limit}`;
+}
+
+function invalidateAcademySearchState(): void {
+  academyKnowledgeVersion += 1;
+  academySearchIndexState = null;
+  academySearchCache.clear();
 }
 
 const defaultUserPreferences: Omit<UserPreferencesRecord, "id" | "userId" | "createdAt" | "updatedAt"> = {
@@ -4433,6 +4538,10 @@ export function getAcademyConceptBySlug(slug: string): AcademyConceptRecord | nu
   return db.select().from(academyConcepts).where(eq(academyConcepts.slug, slug)).limit(1).get() ?? null;
 }
 
+export function getAcademyConceptById(id: number): AcademyConceptRecord | null {
+  return db.select().from(academyConcepts).where(eq(academyConcepts.id, id)).limit(1).get() ?? null;
+}
+
 export function getAcademyPersonRelationships(options?: {
   personId?: number;
   relationshipType?: string;
@@ -4592,20 +4701,26 @@ export function getAcademyPathBySlug(slug: string): AcademyPathDetailRecord | nu
   };
 }
 
-export function searchAcademyKnowledge(query: string, limit = 40): AcademySearchResultRecord[] {
-  const normalizedQuery = normalizeLikeQuery(query);
-  if (!normalizedQuery) {
-    return [];
+export function getAcademyPathById(id: number): AcademyPathDetailRecord | null {
+  const path = db.select().from(academyPaths).where(eq(academyPaths.id, id)).limit(1).get();
+  if (!path) {
+    return null;
   }
 
-  const limited = clampLimit(limit, 40, 120);
-  const domains = getAcademyDomains({ q: normalizedQuery, limit: limited });
-  const traditions = getAcademyTraditions({ q: normalizedQuery, limit: limited });
-  const persons = getAcademyPersons({ q: normalizedQuery, limit: limited });
-  const works = getAcademyWorks({ q: normalizedQuery, limit: limited });
-  const concepts = getAcademyConcepts({ q: normalizedQuery, limit: limited });
+  return {
+    ...path,
+    items: resolveAcademyPathItems(selectAcademyPathItems(path.id)),
+  };
+}
 
-  const results: AcademySearchResultRecord[] = [
+function buildAcademySearchIndex(): AcademySearchIndexState {
+  const domains = db.select().from(academyDomains).all();
+  const traditions = db.select().from(academyTraditions).all();
+  const persons = db.select().from(academyPersons).all();
+  const works = db.select().from(academyWorks).all();
+  const concepts = db.select().from(academyConcepts).all();
+
+  const raw: AcademySearchResultRecord[] = [
     ...domains.map((domain) => ({
       type: "domain" as const,
       id: domain.id,
@@ -4613,7 +4728,7 @@ export function searchAcademyKnowledge(query: string, limit = 40): AcademySearch
       title: domain.name,
       subtitle: "Domain",
       summary: domain.descriptionShort ?? "Academy domain",
-      score: scoreMatch(normalizedQuery, domain.name, domain.slug, domain.descriptionShort),
+      score: 0,
       tags: ["domain"],
     })),
     ...traditions.map((tradition) => ({
@@ -4623,13 +4738,7 @@ export function searchAcademyKnowledge(query: string, limit = 40): AcademySearch
       title: tradition.name,
       subtitle: tradition.originRegion ?? "Tradition",
       summary: tradition.descriptionShort ?? "Academy tradition",
-      score: scoreMatch(
-        normalizedQuery,
-        tradition.name,
-        tradition.slug,
-        tradition.originRegion,
-        tradition.descriptionShort,
-      ),
+      score: 0,
       tags: ["tradition"],
     })),
     ...persons.map((person) => ({
@@ -4639,7 +4748,7 @@ export function searchAcademyKnowledge(query: string, limit = 40): AcademySearch
       title: person.displayName,
       subtitle: person.roleType ?? "Thinker",
       summary: person.bioShort ?? "Academy thinker",
-      score: scoreMatch(normalizedQuery, person.displayName, person.slug, person.roleType, person.bioShort),
+      score: 0,
       tags: [person.credibilityBand ?? "uncategorized"],
     })),
     ...works.map((work) => ({
@@ -4649,7 +4758,7 @@ export function searchAcademyKnowledge(query: string, limit = 40): AcademySearch
       title: work.title,
       subtitle: work.workType ?? "Work",
       summary: work.summaryShort ?? "Academy work",
-      score: scoreMatch(normalizedQuery, work.title, work.slug, work.workType, work.summaryShort),
+      score: 0,
       tags: [work.isPrimaryText ? "primary" : "secondary"],
     })),
     ...concepts.map((concept) => ({
@@ -4659,10 +4768,98 @@ export function searchAcademyKnowledge(query: string, limit = 40): AcademySearch
       title: concept.name,
       subtitle: concept.conceptFamily ?? "Concept",
       summary: concept.description ?? "Academy concept",
-      score: scoreMatch(normalizedQuery, concept.name, concept.slug, concept.conceptFamily, concept.description),
+      score: 0,
       tags: [concept.conceptFamily ?? "concept"],
     })),
   ];
+
+  const records: AcademySearchIndexedRecord[] = raw.map((record) => {
+    const searchableText = [record.title, record.slug, record.subtitle, record.summary, ...record.tags]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    const tokens = new Set(tokenizeAcademySearchText(searchableText));
+
+    return {
+      key: academySearchResultKey(record.type, record.id),
+      record,
+      searchableText,
+      tokens,
+    };
+  });
+
+  const tokenToKeys = new Map<string, string[]>();
+  for (const item of records) {
+    for (const token of item.tokens) {
+      const existing = tokenToKeys.get(token) ?? [];
+      existing.push(item.key);
+      tokenToKeys.set(token, existing);
+    }
+  }
+
+  return {
+    version: academyKnowledgeVersion,
+    records,
+    byKey: new Map(records.map((item) => [item.key, item] as const)),
+    tokenToKeys,
+  };
+}
+
+function getAcademySearchIndex(): AcademySearchIndexState {
+  if (!academySearchIndexState || academySearchIndexState.version !== academyKnowledgeVersion) {
+    academySearchIndexState = buildAcademySearchIndex();
+  }
+
+  return academySearchIndexState;
+}
+
+function scoreAcademySearchIndexedRecord(
+  query: string,
+  queryTokens: string[],
+  indexed: AcademySearchIndexedRecord,
+): number {
+  const baseScore = scoreMatch(
+    query,
+    indexed.record.title,
+    indexed.record.slug,
+    indexed.record.subtitle,
+    indexed.record.summary,
+  );
+
+  if (baseScore <= 0) {
+    return 0;
+  }
+
+  let tokenMatches = 0;
+  for (const token of queryTokens) {
+    if (indexed.tokens.has(token)) {
+      tokenMatches += 1;
+    }
+  }
+
+  const coverageBonus =
+    queryTokens.length > 0 ? Math.round((tokenMatches / queryTokens.length) * 24) : 0;
+  const containsQueryBonus = indexed.searchableText.includes(query.toLowerCase()) ? 6 : 0;
+
+  return baseScore + coverageBonus + containsQueryBonus;
+}
+
+export function searchAcademyKnowledge(query: string, limit = 40): AcademySearchResultRecord[] {
+  const normalizedQuery = normalizeLikeQuery(query);
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const limited = clampLimit(limit, 40, 120);
+  const cacheKey = academySearchCacheKey(normalizedQuery, limited);
+  const cached = academySearchCache.get(cacheKey);
+
+  if (cached && cached.version === academyKnowledgeVersion && cached.expiresAt > Date.now()) {
+    return cached.results.slice(0, limited);
+  }
+
+  const queryTokens = tokenizeAcademySearchText(normalizedQuery);
+  const index = getAcademySearchIndex();
 
   const typeOrder: Record<AcademySearchResultRecord["type"], number> = {
     tradition: 1,
@@ -4672,17 +4869,47 @@ export function searchAcademyKnowledge(query: string, limit = 40): AcademySearch
     domain: 5,
   };
 
-  const deduped = new Map<string, AcademySearchResultRecord>();
-  for (const result of results) {
-    const key = `${result.type}:${result.id}`;
-    const existing = deduped.get(key);
-    if (!existing || result.score > existing.score) {
-      deduped.set(key, result);
+  let candidates: AcademySearchIndexedRecord[] = [];
+
+  if (queryTokens.length === 0) {
+    candidates = index.records.slice(0, ACADEMY_SEARCH_MAX_CANDIDATES);
+  } else {
+    const candidateKeys = new Set<string>();
+    for (const token of queryTokens) {
+      const keys = index.tokenToKeys.get(token) ?? [];
+      for (const key of keys) {
+        candidateKeys.add(key);
+        if (candidateKeys.size >= ACADEMY_SEARCH_MAX_CANDIDATES) {
+          break;
+        }
+      }
+      if (candidateKeys.size >= ACADEMY_SEARCH_MAX_CANDIDATES) {
+        break;
+      }
+    }
+
+    if (candidateKeys.size === 0) {
+      candidates = index.records.slice(0, ACADEMY_SEARCH_MAX_CANDIDATES);
+    } else {
+      candidates = [...candidateKeys]
+        .map((key) => index.byKey.get(key) ?? null)
+        .filter((item): item is AcademySearchIndexedRecord => item !== null);
     }
   }
 
-  return [...deduped.values()]
-    .filter((result) => result.score > 0)
+  const ranked = candidates
+    .map((item) => {
+      const score = scoreAcademySearchIndexedRecord(normalizedQuery, queryTokens, item);
+      if (score <= 0) {
+        return null;
+      }
+
+      return {
+        ...item.record,
+        score,
+      };
+    })
+    .filter((result): result is AcademySearchResultRecord => result !== null)
     .sort((a, b) => {
       if (a.score !== b.score) {
         return b.score - a.score;
@@ -4697,6 +4924,14 @@ export function searchAcademyKnowledge(query: string, limit = 40): AcademySearch
       return a.title.localeCompare(b.title);
     })
     .slice(0, limited);
+
+  academySearchCache.set(cacheKey, {
+    version: academyKnowledgeVersion,
+    expiresAt: Date.now() + ACADEMY_SEARCH_CACHE_TTL_MS,
+    results: ranked,
+  });
+
+  return ranked;
 }
 
 export function queryAcademyKnowledge(input: AcademyKnowledgeQueryInput = {}): AcademyKnowledgeQueryResult {
@@ -4802,6 +5037,487 @@ export function queryAcademyKnowledge(input: AcademyKnowledgeQueryInput = {}): A
     paths,
     conceptLinks,
   };
+}
+
+export function getAcademyCurationSnapshot(options?: { limit?: number }): AcademyCurationSnapshotRecord {
+  const limit = clampLimit(options?.limit, 300, 1000);
+
+  return {
+    domains: db.select().from(academyDomains).orderBy(asc(academyDomains.name)).limit(limit).all(),
+    traditions: db
+      .select()
+      .from(academyTraditions)
+      .orderBy(asc(academyTraditions.name))
+      .limit(limit)
+      .all(),
+    persons: db
+      .select()
+      .from(academyPersons)
+      .orderBy(asc(academyPersons.displayName))
+      .limit(limit)
+      .all(),
+    works: db.select().from(academyWorks).orderBy(asc(academyWorks.title)).limit(limit).all(),
+    concepts: db.select().from(academyConcepts).orderBy(asc(academyConcepts.name)).limit(limit).all(),
+    paths: getAcademyPaths({
+      includeItems: true,
+      limit,
+    }) as AcademyPathDetailRecord[],
+    personRelationships: db
+      .select()
+      .from(academyPersonRelationships)
+      .orderBy(asc(academyPersonRelationships.relationshipType), asc(academyPersonRelationships.id))
+      .limit(limit)
+      .all(),
+    conceptTraditionLinks: db
+      .select()
+      .from(academyConceptTraditions)
+      .orderBy(asc(academyConceptTraditions.conceptId), asc(academyConceptTraditions.sortOrder))
+      .limit(limit)
+      .all(),
+    conceptPersonLinks: db
+      .select()
+      .from(academyConceptPersons)
+      .orderBy(asc(academyConceptPersons.conceptId), asc(academyConceptPersons.sortOrder))
+      .limit(limit)
+      .all(),
+    conceptWorkLinks: db
+      .select()
+      .from(academyConceptWorks)
+      .orderBy(asc(academyConceptWorks.conceptId), asc(academyConceptWorks.sortOrder))
+      .limit(limit)
+      .all(),
+  };
+}
+
+export function updateAcademyPathCuration(
+  pathId: number,
+  input: AcademyPathCurationPatchInput,
+): AcademyPathDetailRecord | null {
+  const existing = getAcademyPathById(pathId);
+  if (!existing) {
+    return null;
+  }
+
+  const now = nowIso();
+  const patch: Partial<{
+    title: string;
+    summary: string;
+    tone: AcademyPathTone;
+    difficultyLevel: AcademyPathDifficulty;
+    progressionOrder: number;
+    recommendationWeight: number;
+    recommendationHint: string;
+    isFeatured: boolean;
+    updatedAt: string;
+  }> = {
+    updatedAt: now,
+  };
+
+  if (typeof input.title === "string") {
+    patch.title = input.title.trim();
+  }
+  if (typeof input.summary === "string") {
+    patch.summary = input.summary.trim();
+  }
+  if (input.tone) {
+    patch.tone = input.tone;
+  }
+  if (input.difficultyLevel) {
+    patch.difficultyLevel = input.difficultyLevel;
+  }
+  if (typeof input.progressionOrder === "number" && Number.isFinite(input.progressionOrder)) {
+    patch.progressionOrder = Math.trunc(input.progressionOrder);
+  }
+  if (typeof input.recommendationWeight === "number" && Number.isFinite(input.recommendationWeight)) {
+    patch.recommendationWeight = Math.trunc(input.recommendationWeight);
+  }
+  if (typeof input.recommendationHint === "string") {
+    patch.recommendationHint = input.recommendationHint.trim();
+  }
+  if (typeof input.isFeatured === "boolean") {
+    patch.isFeatured = input.isFeatured;
+  }
+
+  db.update(academyPaths).set(patch).where(eq(academyPaths.id, pathId)).run();
+  invalidateAcademySearchState();
+  return getAcademyPathById(pathId);
+}
+
+export function replaceAcademyPathItems(
+  pathId: number,
+  items: AcademyPathItemCurationInput[],
+): AcademyPathDetailRecord | null {
+  const existing = getAcademyPathById(pathId);
+  if (!existing) {
+    return null;
+  }
+
+  const timestamp = nowIso();
+  const normalizedItems = items
+    .map((item, index) => ({
+      pathId,
+      entityType: item.entityType,
+      entityId: item.entityId,
+      sortOrder:
+        typeof item.sortOrder === "number" && Number.isFinite(item.sortOrder)
+          ? Math.trunc(item.sortOrder)
+          : index,
+      rationale: item.rationale?.trim() ?? "",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }))
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((item, index) => ({
+      ...item,
+      sortOrder: index,
+    }));
+
+  db.transaction(() => {
+    db.delete(academyPathItems).where(eq(academyPathItems.pathId, pathId)).run();
+
+    if (normalizedItems.length > 0) {
+      db.insert(academyPathItems).values(normalizedItems).run();
+    }
+
+    db.update(academyPaths)
+      .set({
+        updatedAt: timestamp,
+      })
+      .where(eq(academyPaths.id, pathId))
+      .run();
+  });
+
+  invalidateAcademySearchState();
+  return getAcademyPathById(pathId);
+}
+
+export function updateAcademyPersonEditorialMetadata(
+  personId: number,
+  input: AcademyPersonEditorialPatchInput,
+): AcademyPersonRecord | null {
+  const existing = getAcademyPersonById(personId);
+  if (!existing) {
+    return null;
+  }
+
+  const patch: Partial<{
+    credibilityBand: string | null;
+    evidenceProfile: string | null;
+    claimRiskLevel: string | null;
+    bioShort: string | null;
+    updatedAt: string;
+  }> = {
+    updatedAt: nowIso(),
+  };
+
+  if (input.credibilityBand !== undefined) {
+    patch.credibilityBand = toNullableString(input.credibilityBand);
+  }
+  if (input.evidenceProfile !== undefined) {
+    patch.evidenceProfile = toNullableString(input.evidenceProfile);
+  }
+  if (input.claimRiskLevel !== undefined) {
+    patch.claimRiskLevel = toNullableString(input.claimRiskLevel);
+  }
+  if (input.bioShort !== undefined) {
+    patch.bioShort = toNullableString(input.bioShort);
+  }
+
+  db.update(academyPersons).set(patch).where(eq(academyPersons.id, personId)).run();
+  invalidateAcademySearchState();
+  return getAcademyPersonById(personId);
+}
+
+function nextAcademyPersonRelationshipId(): number {
+  const latest = db
+    .select({ id: academyPersonRelationships.id })
+    .from(academyPersonRelationships)
+    .orderBy(desc(academyPersonRelationships.id))
+    .limit(1)
+    .get();
+
+  return (latest?.id ?? 0) + 1;
+}
+
+export function upsertAcademyPersonRelationship(
+  input: AcademyPersonRelationshipUpsertInput,
+): AcademyPersonRelationshipRecord | null {
+  const now = nowIso();
+  const notes = toNullableString(input.notes);
+  const normalizedType = normalizeLikeQuery(input.relationshipType);
+
+  if (!normalizedType) {
+    return null;
+  }
+
+  const existingById =
+    typeof input.id === "number"
+      ? (db
+          .select()
+          .from(academyPersonRelationships)
+          .where(eq(academyPersonRelationships.id, input.id))
+          .limit(1)
+          .get() ?? null)
+      : null;
+
+  if (existingById) {
+    db.update(academyPersonRelationships)
+      .set({
+        sourcePersonId: input.sourcePersonId,
+        targetPersonId: input.targetPersonId,
+        relationshipType: normalizedType,
+        notes,
+        updatedAt: now,
+      })
+      .where(eq(academyPersonRelationships.id, existingById.id))
+      .run();
+
+    invalidateAcademySearchState();
+
+    return (
+      db
+        .select()
+        .from(academyPersonRelationships)
+        .where(eq(academyPersonRelationships.id, existingById.id))
+        .limit(1)
+        .get() ?? null
+    );
+  }
+
+  const existingByNaturalKey =
+    db
+      .select()
+      .from(academyPersonRelationships)
+      .where(
+        and(
+          eq(academyPersonRelationships.sourcePersonId, input.sourcePersonId),
+          eq(academyPersonRelationships.targetPersonId, input.targetPersonId),
+          eq(academyPersonRelationships.relationshipType, normalizedType),
+        ),
+      )
+      .limit(1)
+      .get() ?? null;
+
+  if (existingByNaturalKey) {
+    db.update(academyPersonRelationships)
+      .set({
+        notes,
+        updatedAt: now,
+      })
+      .where(eq(academyPersonRelationships.id, existingByNaturalKey.id))
+      .run();
+
+    invalidateAcademySearchState();
+    return (
+      db
+        .select()
+        .from(academyPersonRelationships)
+        .where(eq(academyPersonRelationships.id, existingByNaturalKey.id))
+        .limit(1)
+        .get() ?? null
+    );
+  }
+
+  const id = typeof input.id === "number" ? input.id : nextAcademyPersonRelationshipId();
+  db.insert(academyPersonRelationships)
+    .values({
+      id,
+      sourcePersonId: input.sourcePersonId,
+      targetPersonId: input.targetPersonId,
+      relationshipType: normalizedType,
+      notes,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+
+  invalidateAcademySearchState();
+
+  return (
+    db
+      .select()
+      .from(academyPersonRelationships)
+      .where(eq(academyPersonRelationships.id, id))
+      .limit(1)
+      .get() ?? null
+  );
+}
+
+export function deleteAcademyPersonRelationshipById(id: number): boolean {
+  const existing =
+    db
+      .select({ id: academyPersonRelationships.id })
+      .from(academyPersonRelationships)
+      .where(eq(academyPersonRelationships.id, id))
+      .limit(1)
+      .get() ?? null;
+
+  if (!existing) {
+    return false;
+  }
+
+  db.delete(academyPersonRelationships).where(eq(academyPersonRelationships.id, id)).run();
+  invalidateAcademySearchState();
+  return true;
+}
+
+export function upsertAcademyConceptRelation(input: AcademyConceptRelationUpsertInput): void {
+  const sortOrder =
+    typeof input.sortOrder === "number" && Number.isFinite(input.sortOrder) ? Math.trunc(input.sortOrder) : 0;
+  const timestamp = nowIso();
+
+  switch (input.entityType) {
+    case "tradition":
+      db.insert(academyConceptTraditions)
+        .values({
+          conceptId: input.conceptId,
+          traditionId: input.entityId,
+          sortOrder,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
+        .onConflictDoUpdate({
+          target: [academyConceptTraditions.conceptId, academyConceptTraditions.traditionId],
+          set: {
+            sortOrder,
+            updatedAt: timestamp,
+          },
+        })
+        .run();
+      break;
+    case "person":
+      db.insert(academyConceptPersons)
+        .values({
+          conceptId: input.conceptId,
+          personId: input.entityId,
+          sortOrder,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
+        .onConflictDoUpdate({
+          target: [academyConceptPersons.conceptId, academyConceptPersons.personId],
+          set: {
+            sortOrder,
+            updatedAt: timestamp,
+          },
+        })
+        .run();
+      break;
+    case "work":
+      db.insert(academyConceptWorks)
+        .values({
+          conceptId: input.conceptId,
+          workId: input.entityId,
+          sortOrder,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
+        .onConflictDoUpdate({
+          target: [academyConceptWorks.conceptId, academyConceptWorks.workId],
+          set: {
+            sortOrder,
+            updatedAt: timestamp,
+          },
+        })
+        .run();
+      break;
+  }
+
+  invalidateAcademySearchState();
+}
+
+export function deleteAcademyConceptRelation(input: {
+  conceptId: number;
+  entityType: AcademyConceptRelationEntityType;
+  entityId: number;
+}): boolean {
+  if (input.entityType === "tradition") {
+    const existing =
+      db
+        .select({ id: academyConceptTraditions.id })
+        .from(academyConceptTraditions)
+        .where(
+          and(
+            eq(academyConceptTraditions.conceptId, input.conceptId),
+            eq(academyConceptTraditions.traditionId, input.entityId),
+          ),
+        )
+        .limit(1)
+        .get() ?? null;
+
+    if (!existing) {
+      return false;
+    }
+
+    db.delete(academyConceptTraditions)
+      .where(
+        and(
+          eq(academyConceptTraditions.conceptId, input.conceptId),
+          eq(academyConceptTraditions.traditionId, input.entityId),
+        ),
+      )
+      .run();
+    invalidateAcademySearchState();
+    return true;
+  }
+
+  if (input.entityType === "person") {
+    const existing =
+      db
+        .select({ id: academyConceptPersons.id })
+        .from(academyConceptPersons)
+        .where(
+          and(
+            eq(academyConceptPersons.conceptId, input.conceptId),
+            eq(academyConceptPersons.personId, input.entityId),
+          ),
+        )
+        .limit(1)
+        .get() ?? null;
+
+    if (!existing) {
+      return false;
+    }
+
+    db.delete(academyConceptPersons)
+      .where(
+        and(
+          eq(academyConceptPersons.conceptId, input.conceptId),
+          eq(academyConceptPersons.personId, input.entityId),
+        ),
+      )
+      .run();
+    invalidateAcademySearchState();
+    return true;
+  }
+
+  const existing =
+    db
+      .select({ id: academyConceptWorks.id })
+      .from(academyConceptWorks)
+      .where(
+        and(
+          eq(academyConceptWorks.conceptId, input.conceptId),
+          eq(academyConceptWorks.workId, input.entityId),
+        ),
+      )
+      .limit(1)
+      .get() ?? null;
+
+  if (!existing) {
+    return false;
+  }
+
+  db.delete(academyConceptWorks)
+    .where(
+      and(
+        eq(academyConceptWorks.conceptId, input.conceptId),
+        eq(academyConceptWorks.workId, input.entityId),
+      ),
+    )
+    .run();
+  invalidateAcademySearchState();
+  return true;
 }
 
 export function listAllContentAdmin() {

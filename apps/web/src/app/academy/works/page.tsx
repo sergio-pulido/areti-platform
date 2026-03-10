@@ -4,17 +4,13 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { Badge } from "@/components/ui/badge";
 import {
-  getAllDomains,
-  getAllTraditions,
-  getAllWorks,
-  getDomainBySlug,
-  getDomainForTradition,
-  getPersonForWork,
-  getTraditionBySlug,
-  getTraditionForWork,
-  getTraditionsByDomain,
-  getWorksByTradition,
-} from "@/lib/academy/knowledge-service";
+  apiAcademyDomainBySlug,
+  apiAcademyDomains,
+  apiAcademyPersons,
+  apiAcademyTraditionBySlug,
+  apiAcademyTraditions,
+  apiAcademyWorks,
+} from "@/lib/backend-api";
 
 type WorksIndexPageProps = {
   searchParams: Promise<{
@@ -40,17 +36,40 @@ function buildFilterHref(filters: { domain?: string; tradition?: string }): stri
 
 export default async function WorksIndexPage({ searchParams }: WorksIndexPageProps) {
   const params = await searchParams;
-  const selectedDomain = params.domain ? getDomainBySlug(params.domain) : null;
-  const selectedTradition = params.tradition ? getTraditionBySlug(params.tradition) : null;
 
-  const works = selectedTradition
-    ? getWorksByTradition(selectedTradition.id)
-    : selectedDomain
-      ? getTraditionsByDomain(selectedDomain.id).flatMap((tradition) => getWorksByTradition(tradition.id))
-      : getAllWorks();
+  const [domains, traditions, worksAll, persons, selectedDomainResult, selectedTraditionResult] = await Promise.all([
+    apiAcademyDomains({ limit: 200 }),
+    apiAcademyTraditions({ limit: 300 }),
+    apiAcademyWorks({ limit: 800 }),
+    apiAcademyPersons({ limit: 500 }),
+    params.domain ? apiAcademyDomainBySlug(params.domain).catch(() => null) : Promise.resolve(null),
+    params.tradition ? apiAcademyTraditionBySlug(params.tradition).catch(() => null) : Promise.resolve(null),
+  ]);
 
-  const domains = getAllDomains();
-  const traditions = getAllTraditions();
+  const selectedDomain = selectedDomainResult?.domain ?? null;
+  const selectedTradition = selectedTraditionResult?.tradition ?? null;
+
+  const traditionIdsForDomain = new Set(
+    selectedDomain
+      ? traditions.filter((tradition) => tradition.domainId === selectedDomain.id).map((tradition) => tradition.id)
+      : [],
+  );
+
+  const works = worksAll.filter((work) => {
+    if (selectedTradition) {
+      return work.traditionId === selectedTradition.id;
+    }
+
+    if (selectedDomain) {
+      return work.traditionId !== null && traditionIdsForDomain.has(work.traditionId);
+    }
+
+    return true;
+  });
+
+  const traditionById = new Map(traditions.map((tradition) => [tradition.id, tradition] as const));
+  const domainById = new Map(domains.map((domain) => [domain.id, domain] as const));
+  const personById = new Map(persons.map((person) => [person.id, person] as const));
 
   return (
     <div className="space-y-5">
@@ -101,9 +120,9 @@ export default async function WorksIndexPage({ searchParams }: WorksIndexPagePro
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {works.map((work) => {
-          const author = getPersonForWork(work);
-          const tradition = getTraditionForWork(work);
-          const domain = tradition ? getDomainForTradition(tradition) : null;
+          const author = work.personId !== null ? (personById.get(work.personId) ?? null) : null;
+          const tradition = work.traditionId !== null ? (traditionById.get(work.traditionId) ?? null) : null;
+          const domain = tradition ? (domainById.get(tradition.domainId) ?? null) : null;
 
           return (
             <SurfaceCard key={work.slug} title={work.title} subtitle={author?.displayName ?? "Unknown author"}>

@@ -4,13 +4,7 @@ import { WorkAuthorityBadge } from "@/components/academy/academy-metadata-badges
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { Badge } from "@/components/ui/badge";
-import {
-  getPersonForWork,
-  getRelatedConceptsForWork,
-  getRelatedWorks,
-  getTraditionForWork,
-  getWorkBySlug,
-} from "@/lib/academy/knowledge-service";
+import { apiAcademyWorkBySlug } from "@/lib/backend-api";
 
 type WorkDetailPageProps = {
   params: Promise<{
@@ -20,16 +14,13 @@ type WorkDetailPageProps = {
 
 export default async function WorkDetailPage({ params }: WorkDetailPageProps) {
   const { slug } = await params;
-  const work = getWorkBySlug(slug);
+  const detail = await apiAcademyWorkBySlug(slug).catch(() => null);
 
-  if (!work) {
+  if (!detail) {
     notFound();
   }
 
-  const author = getPersonForWork(work);
-  const tradition = getTraditionForWork(work);
-  const relatedConcepts = getRelatedConceptsForWork(work.id);
-  const relatedWorks = getRelatedWorks(work, 6);
+  const { work, author, tradition, concepts: relatedConcepts, relatedWorks } = detail;
 
   return (
     <div className="space-y-5">
@@ -63,9 +54,7 @@ export default async function WorkDetailPage({ params }: WorkDetailPageProps) {
                 {concept.name}
               </Link>
             ))}
-            {relatedConcepts.length === 0 ? (
-              <p className="text-sm text-night-300">No concepts linked yet.</p>
-            ) : null}
+            {relatedConcepts.length === 0 ? <p className="text-sm text-night-300">No concepts linked yet.</p> : null}
           </div>
         </SurfaceCard>
 

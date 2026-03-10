@@ -284,6 +284,14 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
         eyebrow="CMS"
         title="Admin Content Studio"
         description="Create, publish, unpublish, and delete all public content blocks from one page."
+        actions={
+          <Link
+            href="/creator/cms/academy"
+            className="inline-flex rounded-xl border border-sage-300/40 bg-sage-500/10 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/20"
+          >
+            Open Academy curation
+          </Link>
+        }
       />
 
       <section className="grid gap-4 xl:grid-cols-3">

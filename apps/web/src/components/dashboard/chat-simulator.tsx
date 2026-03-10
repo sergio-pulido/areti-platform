@@ -45,6 +45,22 @@ type PinnedInsight = {
   createdAt: string;
 };
 
+type AcademyAdapterPayload = {
+  starterPathSuggestions: Array<{
+    label: string;
+    prompt: string;
+    pathSlug: string;
+    pathTitle: string;
+    hint: string;
+  }>;
+  guidedFollowUps: Array<{
+    label: string;
+    prompt: string;
+    source: "concept" | "path";
+    slug: string;
+  }>;
+};
+
 function syntheticAssistantMessage(threadId: string): ChatMessage {
   return {
     id: `welcome-${threadId}`,
@@ -161,6 +177,10 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [pinsByThreadId, setPinsByThreadId] = useState<Record<string, PinnedInsight[]>>({});
   const [draggingPinnedInsightId, setDraggingPinnedInsightId] = useState<string | null>(null);
+  const [academyStarterPrompts, setAcademyStarterPrompts] = useState<string[]>([]);
+  const [academyFollowUpOptions, setAcademyFollowUpOptions] = useState<
+    Array<{ label: string; prompt: string }>
+  >([]);
   const branchAskInFlightRef = useRef(false);
   const consumedPromptRef = useRef<string | null>(null);
 
@@ -276,6 +296,37 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
       }
     } finally {
       setMessagesLoading(false);
+    }
+  }
+
+  async function loadAcademyAdapters(context?: string): Promise<void> {
+    try {
+      const payload = await parseJsonOrThrow<AcademyAdapterPayload>(
+        await fetch("/api/academy/adapters", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            context: context?.trim().slice(0, 500) || undefined,
+          }),
+          cache: "no-store",
+        }),
+      );
+
+      const starterPrompts = payload.starterPathSuggestions
+        .map((item) => item.prompt.trim())
+        .filter(Boolean);
+      if (starterPrompts.length > 0) {
+        setAcademyStarterPrompts(starterPrompts.slice(0, 6));
+      }
+
+      const followUps = payload.guidedFollowUps
+        .map((item) => ({ label: item.label.trim(), prompt: item.prompt.trim() }))
+        .filter((item) => item.label.length > 0 && item.prompt.length > 0);
+      if (followUps.length > 0) {
+        setAcademyFollowUpOptions(followUps.slice(0, 4));
+      }
+    } catch {
+      // Adapter payload is optional; keep static fallbacks when unavailable.
     }
   }
 
@@ -843,6 +894,16 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const context = activePreview || input || undefined;
+      void loadAcademyAdapters(context);
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePreview, activeThreadId]);
+
   const providerError = error?.includes("configured chat providers")
     ? "Companion provider is temporarily unavailable. Verify API keys/provider status and retry."
     : null;
@@ -1099,6 +1160,7 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
             messages={messages}
             pending={pending}
             loading={messagesLoading}
+            followUpOptions={academyFollowUpOptions}
             onFollowUpSelect={activeThread.archived ? undefined : prefillComposer}
             onCopyMessage={copyMessage}
             onQuoteMessage={quoteMessage}
@@ -1110,7 +1172,10 @@ export function ChatSimulator({ initialPrompt, initialThreadId }: ChatSimulatorP
             className="h-full min-h-0"
           />
         ) : (
-          <ChatEmptyState prompts={EMPTY_STATE_PROMPTS} onUsePrompt={prefillComposer} />
+          <ChatEmptyState
+            prompts={academyStarterPrompts.length > 0 ? academyStarterPrompts : EMPTY_STATE_PROMPTS}
+            onUsePrompt={prefillComposer}
+          />
         )}
 
         <ChatComposer

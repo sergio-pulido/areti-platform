@@ -498,3 +498,9 @@
 - **Decision:** Add Academy relational tables in `packages/db` (core entities + concept relation tables + guided path tables), seed them from canonical Academy seed assets at startup, and expose a dedicated `/api/v1/academy/*` read API plus authenticated `/api/v1/academy/query` internal query endpoint.
 - **Why:** Creates a stable, queryable knowledge foundation for product features, search, and future AI/agent use without scraping UI-layer selectors.
 - **Tradeoff:** Introduces additional schema/seed maintenance and a temporary dual-read model (web still has local Academy selectors while backend Academy APIs are rolled in for future consumers).
+
+## 2026-03-10 - Make Academy API the single web runtime source and add curation/query adapters
+- **Context:** Academy backend APIs were available, but Academy web pages still read from local JSON selectors and there were no dedicated editor workflows or query-driven recommendation adapters.
+- **Decision:** Move all Academy page read paths in `apps/web` to `/api/v1/academy/*`, add indexed+cached Academy search execution in `packages/db` for stable `/api/v1/academy/search` latency, introduce admin Academy curation endpoints (`/api/v1/admin/academy/*`) with CMS workflows at `/creator/cms/academy`, and add chat-facing adapter flows that directly consume authenticated `POST /api/v1/academy/query` for starter paths and guided follow-ups.
+- **Why:** Eliminates split-brain runtime data sources, keeps search performance stable as data scales, gives editors practical curation controls, and enables recommendation/agent UX from the same canonical query interface.
+- **Tradeoff:** Adds admin endpoint/UI surface area and in-memory index/cache maintenance complexity that must stay aligned with Academy mutation paths.

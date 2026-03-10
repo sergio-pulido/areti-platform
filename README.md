@@ -1,4 +1,4 @@
-# Areti Monorepo
+# Areti Platform
 
 Monorepo for a Stoic + Epicurean philosophy platform with a separated frontend, backend API, and shared DB/ORM package.
 

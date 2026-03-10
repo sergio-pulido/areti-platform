@@ -1,4 +1,4 @@
-import type { AcademyPerson } from "@/lib/academy/knowledge-types";
+import type { ApiAcademyPerson } from "@/lib/backend-api";
 
 export function formatHistoricalYear(year: number | null): string {
   if (typeof year !== "number") {
@@ -12,7 +12,7 @@ export function formatHistoricalYear(year: number | null): string {
   return `${year} CE`;
 }
 
-export function formatLifespan(person: AcademyPerson): string {
+export function formatLifespan(person: Pick<ApiAcademyPerson, "birthYear" | "deathYear">): string {
   if (person.birthYear === null && person.deathYear === null) {
     return "Dates unknown";
   }

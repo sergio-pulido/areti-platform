@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  apiAdminDeleteAcademyConceptRelation,
+  apiAdminDeleteAcademyPersonRelationship,
   apiAdminCreateChallenge,
   apiAdminCreateCommunity,
   apiAdminCreateEvent,
@@ -22,6 +24,7 @@ import {
   apiAdminDeletePractice,
   apiAdminDeleteResource,
   apiAdminDeleteVideo,
+  apiAdminReplaceAcademyPathItems,
   apiAdminSetChallengeStatus,
   apiAdminSetCommunityStatus,
   apiAdminSetEventStatus,
@@ -33,6 +36,8 @@ import {
   apiAdminSetResourceStatus,
   apiAdminSetVideoStatus,
   apiAdminUnlockSystemJob,
+  apiAdminUpdateAcademyPath,
+  apiAdminUpdateAcademyPersonEditorial,
   apiAdminUpdateChallenge,
   apiAdminUpdateCommunity,
   apiAdminUpdateEvent,
@@ -42,6 +47,8 @@ import {
   apiAdminUpdatePillar,
   apiAdminUpdatePractice,
   apiAdminUpdateResource,
+  apiAdminUpsertAcademyConceptRelation,
+  apiAdminUpsertAcademyPersonRelationship,
   apiAdminUpdateVideo,
   type ContentStatus,
 } from "@/lib/backend-api";
@@ -59,6 +66,53 @@ function getNumber(formData: FormData, key: string): number {
   }
 
   return value;
+}
+
+function getOptionalString(formData: FormData, key: string): string | undefined {
+  const value = getString(formData, key).trim();
+  return value.length > 0 ? value : undefined;
+}
+
+function getOptionalNumber(formData: FormData, key: string): number | undefined {
+  const raw = getString(formData, key).trim();
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid number for ${key}`);
+  }
+
+  return parsed;
+}
+
+function getOptionalNullableString(formData: FormData, key: string): string | null | undefined {
+  if (!formData.has(key)) {
+    return undefined;
+  }
+
+  const raw = getString(formData, key).trim();
+  return raw.length > 0 ? raw : null;
+}
+
+function getOptionalBoolean(formData: FormData, key: string): boolean | undefined {
+  if (!formData.has(key)) {
+    return undefined;
+  }
+
+  const raw = getString(formData, key).trim().toLowerCase();
+  if (!raw) {
+    return undefined;
+  }
+  if (raw === "true" || raw === "1" || raw === "yes") {
+    return true;
+  }
+  if (raw === "false" || raw === "0" || raw === "no") {
+    return false;
+  }
+
+  throw new Error(`Invalid boolean for ${key}`);
 }
 
 function getStatus(formData: FormData, key: string): ContentStatus {
@@ -113,6 +167,14 @@ function revalidateCms(): void {
   revalidatePath("/creator/videos");
   revalidatePath("/creator/readings");
   revalidatePath("/creator/exercises");
+  revalidatePath("/creator/cms/academy");
+  revalidatePath("/academy");
+  revalidatePath("/academy/traditions");
+  revalidatePath("/academy/thinkers");
+  revalidatePath("/academy/works");
+  revalidatePath("/academy/concepts");
+  revalidatePath("/academy/paths");
+  revalidatePath("/academy/search");
 }
 
 export async function unlockNotificationDigestLockAdminAction(formData: FormData): Promise<void> {
@@ -606,6 +668,149 @@ export async function updateVideoAdminAction(formData: FormData): Promise<void> 
     summary: getString(formData, "summary"),
     videoUrl: getString(formData, "videoUrl"),
     status: getStatus(formData, "status"),
+  });
+
+  revalidateCms();
+}
+
+export async function updateAcademyPathCurationAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminUpdateAcademyPath(token, getNumber(formData, "id"), {
+    title: getOptionalString(formData, "title"),
+    summary: getOptionalString(formData, "summary"),
+    tone: (getOptionalString(formData, "tone") as "beginner" | "intermediate" | undefined) ?? undefined,
+    difficultyLevel:
+      (getOptionalString(formData, "difficultyLevel") as
+        | "beginner"
+        | "intermediate"
+        | "advanced"
+        | undefined) ?? undefined,
+    progressionOrder: getOptionalNumber(formData, "progressionOrder"),
+    recommendationWeight: getOptionalNumber(formData, "recommendationWeight"),
+    recommendationHint: getOptionalString(formData, "recommendationHint"),
+    isFeatured: getOptionalBoolean(formData, "isFeatured"),
+  });
+
+  revalidateCms();
+}
+
+export async function replaceAcademyPathItemsAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+  const pathId = getNumber(formData, "id");
+  const itemsJson = getString(formData, "itemsJson");
+
+  let items: Array<{
+    entityType: "tradition" | "person" | "work" | "concept";
+    entityId: number;
+    rationale?: string;
+    sortOrder?: number;
+  }> = [];
+
+  if (itemsJson.trim()) {
+    const parsed = JSON.parse(itemsJson) as Array<{
+      entityType: "tradition" | "person" | "work" | "concept";
+      entityId: number;
+      rationale?: string;
+      sortOrder?: number;
+    }>;
+    if (!Array.isArray(parsed)) {
+      throw new Error("itemsJson must be a JSON array.");
+    }
+
+    items = parsed.map((item, index) => {
+      if (
+        !item ||
+        typeof item !== "object" ||
+        (item.entityType !== "tradition" &&
+          item.entityType !== "person" &&
+          item.entityType !== "work" &&
+          item.entityType !== "concept") ||
+        typeof item.entityId !== "number" ||
+        !Number.isFinite(item.entityId)
+      ) {
+        throw new Error(`Invalid path item at index ${index}.`);
+      }
+
+      return {
+        entityType: item.entityType,
+        entityId: Math.trunc(item.entityId),
+        rationale: typeof item.rationale === "string" ? item.rationale : "",
+        sortOrder:
+          typeof item.sortOrder === "number" && Number.isFinite(item.sortOrder)
+            ? Math.trunc(item.sortOrder)
+            : index,
+      };
+    });
+  }
+
+  await apiAdminReplaceAcademyPathItems(token, pathId, items);
+
+  revalidateCms();
+}
+
+export async function updateAcademyPersonEditorialAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+  const personId = getNumber(formData, "id");
+
+  const credibilityBand = getOptionalNullableString(formData, "credibilityBand");
+  const evidenceProfile = getOptionalNullableString(formData, "evidenceProfile");
+  const claimRiskLevel = getOptionalNullableString(formData, "claimRiskLevel");
+  const bioShort = getOptionalNullableString(formData, "bioShort");
+
+  await apiAdminUpdateAcademyPersonEditorial(token, personId, {
+    credibilityBand:
+      (credibilityBand as "foundational" | "major" | "secondary" | "popularizer" | "controversial" | null | undefined) ??
+      undefined,
+    evidenceProfile,
+    claimRiskLevel: (claimRiskLevel as "low" | "medium" | "high" | null | undefined) ?? undefined,
+    bioShort,
+  });
+
+  revalidateCms();
+}
+
+export async function upsertAcademyPersonRelationshipAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+  const id = getOptionalNumber(formData, "id");
+
+  await apiAdminUpsertAcademyPersonRelationship(token, {
+    id,
+    sourcePersonId: getNumber(formData, "sourcePersonId"),
+    targetPersonId: getNumber(formData, "targetPersonId"),
+    relationshipType: getString(formData, "relationshipType"),
+    notes: getOptionalNullableString(formData, "notes"),
+  });
+
+  revalidateCms();
+}
+
+export async function deleteAcademyPersonRelationshipAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+  await apiAdminDeleteAcademyPersonRelationship(token, getNumber(formData, "id"));
+  revalidateCms();
+}
+
+export async function upsertAcademyConceptRelationAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminUpsertAcademyConceptRelation(token, {
+    conceptId: getNumber(formData, "conceptId"),
+    entityType: getString(formData, "entityType") as "tradition" | "person" | "work",
+    entityId: getNumber(formData, "entityId"),
+    sortOrder: getOptionalNumber(formData, "sortOrder"),
+  });
+
+  revalidateCms();
+}
+
+export async function deleteAcademyConceptRelationAdminAction(formData: FormData): Promise<void> {
+  const token = await requireAdminToken();
+
+  await apiAdminDeleteAcademyConceptRelation(token, {
+    conceptId: getNumber(formData, "conceptId"),
+    entityType: getString(formData, "entityType") as "tradition" | "person" | "work",
+    entityId: getNumber(formData, "entityId"),
   });
 
   revalidateCms();

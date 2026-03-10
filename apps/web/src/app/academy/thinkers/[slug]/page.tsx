@@ -10,15 +10,11 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { SurfaceCard } from "@/components/dashboard/surface-card";
 import { Badge } from "@/components/ui/badge";
 import {
-  getDomainForTradition,
-  getEnrichedPersonRelationshipsFrom,
-  getEnrichedPersonRelationshipsTo,
-  getPersonBySlug,
-  getRelatedConceptsForPerson,
-  getRelatedPeopleForPerson,
-  getTraditionForPerson,
-  getWorksByPerson,
-} from "@/lib/academy/knowledge-service";
+  apiAcademyDomains,
+  apiAcademyPersonBySlug,
+  apiAcademyPersons,
+  apiAcademyTraditions,
+} from "@/lib/backend-api";
 import { formatLifespan, formatRelationshipType, formatRoleLabel } from "@/lib/academy/knowledge-presentation";
 
 type ThinkerDetailPageProps = {
@@ -29,19 +25,52 @@ type ThinkerDetailPageProps = {
 
 export default async function ThinkerDetailPage({ params }: ThinkerDetailPageProps) {
   const { slug } = await params;
-  const thinker = getPersonBySlug(slug);
+  const detail = await apiAcademyPersonBySlug(slug).catch(() => null);
 
-  if (!thinker) {
+  if (!detail) {
     notFound();
   }
 
-  const tradition = getTraditionForPerson(thinker);
-  const domain = tradition ? getDomainForTradition(tradition) : null;
-  const works = getWorksByPerson(thinker.id);
-  const relatedConcepts = getRelatedConceptsForPerson(thinker.id);
-  const relatedThinkers = getRelatedPeopleForPerson(thinker.id);
-  const outgoingRelationships = getEnrichedPersonRelationshipsFrom(thinker.id);
-  const incomingRelationships = getEnrichedPersonRelationshipsTo(thinker.id);
+  const [traditions, domains, allPersons] = await Promise.all([
+    apiAcademyTraditions({ limit: 300 }),
+    apiAcademyDomains({ limit: 200 }),
+    apiAcademyPersons({ limit: 500 }),
+  ]);
+
+  const thinker = detail.person;
+  const tradition = thinker.traditionId !== null ? traditions.find((item) => item.id === thinker.traditionId) ?? null : null;
+  const domain = tradition ? domains.find((item) => item.id === tradition.domainId) ?? null : null;
+
+  const peopleById = new Map(allPersons.map((person) => [person.id, person] as const));
+
+  const outgoingRelationships = detail.relationships
+    .filter((relationship) => relationship.sourcePersonId === thinker.id)
+    .map((relationship) => ({
+      ...relationship,
+      targetPerson: peopleById.get(relationship.targetPersonId) ?? null,
+    }));
+
+  const incomingRelationships = detail.relationships
+    .filter((relationship) => relationship.targetPersonId === thinker.id)
+    .map((relationship) => ({
+      ...relationship,
+      sourcePerson: peopleById.get(relationship.sourcePersonId) ?? null,
+    }));
+
+  const relatedThinkers = [...new Set(
+    detail.relationships.flatMap((relationship) => {
+      if (relationship.sourcePersonId === thinker.id) {
+        return [relationship.targetPersonId];
+      }
+      if (relationship.targetPersonId === thinker.id) {
+        return [relationship.sourcePersonId];
+      }
+      return [];
+    }),
+  )]
+    .map((id) => peopleById.get(id) ?? null)
+    .filter((person): person is NonNullable<typeof person> => person !== null)
+    .slice(0, 16);
 
   return (
     <div className="space-y-5">
@@ -69,7 +98,7 @@ export default async function ThinkerDetailPage({ params }: ThinkerDetailPagePro
       <div className="grid gap-4 xl:grid-cols-2">
         <SurfaceCard title="Works" subtitle="Texts and books tied to this thinker">
           <div className="space-y-2">
-            {works.map((work) => (
+            {detail.works.map((work) => (
               <Link
                 key={work.slug}
                 href={`/academy/works/${work.slug}`}
@@ -82,13 +111,13 @@ export default async function ThinkerDetailPage({ params }: ThinkerDetailPagePro
                 </div>
               </Link>
             ))}
-            {works.length === 0 ? <p className="text-sm text-night-300">No works linked yet.</p> : null}
+            {detail.works.length === 0 ? <p className="text-sm text-night-300">No works linked yet.</p> : null}
           </div>
         </SurfaceCard>
 
         <SurfaceCard title="Related concepts" subtitle="Concepts connected in the Academy knowledge map">
           <div className="flex flex-wrap gap-2">
-            {relatedConcepts.map((concept) => (
+            {detail.concepts.map((concept) => (
               <Link
                 key={concept.slug}
                 href={`/academy/concepts/${concept.slug}`}
@@ -97,15 +126,13 @@ export default async function ThinkerDetailPage({ params }: ThinkerDetailPagePro
                 {concept.name}
               </Link>
             ))}
-            {relatedConcepts.length === 0 ? (
-              <p className="text-sm text-night-300">No concepts linked yet.</p>
-            ) : null}
+            {detail.concepts.length === 0 ? <p className="text-sm text-night-300">No concepts linked yet.</p> : null}
           </div>
         </SurfaceCard>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <SurfaceCard title="Influence and relationships" subtitle="Recorded relationship edges in the current seed">
+        <SurfaceCard title="Influence and relationships" subtitle="Recorded relationship edges in the current graph">
           <div className="space-y-2">
             {outgoingRelationships.map((relationship) => (
               <div
@@ -151,9 +178,7 @@ export default async function ThinkerDetailPage({ params }: ThinkerDetailPagePro
                 </div>
               </Link>
             ))}
-            {relatedThinkers.length === 0 ? (
-              <p className="text-sm text-night-300">No related thinkers linked yet.</p>
-            ) : null}
+            {relatedThinkers.length === 0 ? <p className="text-sm text-night-300">No related thinkers linked yet.</p> : null}
           </div>
         </SurfaceCard>
       </div>

@@ -18,9 +18,13 @@ import nodemailer, { type Transporter } from "nodemailer";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import {
+  deleteAcademyConceptRelation,
+  deleteAcademyPersonRelationshipById,
+  getAcademyConceptById,
   getAcademyConceptBySlug,
   getAcademyConceptLinksBySlug,
   getAcademyConcepts,
+  getAcademyCurationSnapshot,
   getAcademyDomainBySlug,
   getAcademyDomains,
   getAcademyKnowledgeOverview,
@@ -33,10 +37,16 @@ import {
   getAcademyTraditionById,
   getAcademyTraditionBySlug,
   getAcademyTraditions,
+  getAcademyWorkById,
   getAcademyWorkBySlug,
   getAcademyWorks,
+  replaceAcademyPathItems,
   queryAcademyKnowledge,
   searchAcademyKnowledge,
+  updateAcademyPathCuration,
+  updateAcademyPersonEditorialMetadata,
+  upsertAcademyConceptRelation,
+  upsertAcademyPersonRelationship,
   consumeEmailVerificationChallenge,
   countVerifiedUsers,
   countJournalEntriesByUser,
@@ -178,6 +188,7 @@ import {
   type ChatEventType,
   type ChatThreadScope,
   type ChatContextState,
+  type AcademyConceptRelationEntityType,
   type ContentStatus,
   type CurrentUser,
   type OnboardingProfileRecord,
@@ -2015,6 +2026,67 @@ const academyInternalQuerySchema = z.object({
   pathId: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().positive().max(120).optional(),
   includeRelations: z.boolean().optional(),
+});
+
+const academyAdminIdParamSchema = z.object({
+  id: z.coerce.number().int().positive(),
+});
+
+const academyAdminCurationQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(1000).default(300),
+});
+
+const academyAdminPathPatchSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    summary: z.string().trim().min(1).max(1000).optional(),
+    tone: z.enum(["beginner", "intermediate"]).optional(),
+    difficultyLevel: z.enum(["beginner", "intermediate", "advanced"]).optional(),
+    progressionOrder: z.coerce.number().int().min(0).max(9999).optional(),
+    recommendationWeight: z.coerce.number().int().min(0).max(9999).optional(),
+    recommendationHint: z.string().trim().min(1).max(600).optional(),
+    isFeatured: z.boolean().optional(),
+  })
+  .strict();
+
+const academyAdminPathItemsSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        entityType: z.enum(["tradition", "person", "work", "concept"]),
+        entityId: z.coerce.number().int().positive(),
+        rationale: z.string().trim().max(600).optional(),
+        sortOrder: z.coerce.number().int().min(0).optional(),
+      }),
+    )
+    .max(240),
+});
+
+const academyAdminPersonEditorialSchema = z
+  .object({
+    credibilityBand: z
+      .enum(["foundational", "major", "secondary", "popularizer", "controversial"])
+      .nullable()
+      .optional(),
+    evidenceProfile: z.string().trim().max(140).nullable().optional(),
+    claimRiskLevel: z.enum(["low", "medium", "high"]).nullable().optional(),
+    bioShort: z.string().trim().max(1200).nullable().optional(),
+  })
+  .strict();
+
+const academyAdminPersonRelationshipSchema = z.object({
+  id: z.coerce.number().int().positive().optional(),
+  sourcePersonId: z.coerce.number().int().positive(),
+  targetPersonId: z.coerce.number().int().positive(),
+  relationshipType: z.string().trim().min(2).max(100),
+  notes: z.string().trim().max(1000).nullable().optional(),
+});
+
+const academyAdminConceptRelationSchema = z.object({
+  conceptId: z.coerce.number().int().positive(),
+  entityType: z.enum(["tradition", "person", "work"]),
+  entityId: z.coerce.number().int().positive(),
+  sortOrder: z.coerce.number().int().min(0).max(10000).optional(),
 });
 
 const passkeyRenameSchema = z.object({
@@ -5617,6 +5689,265 @@ export function createApp() {
     }
 
     res.json({ data: queryAcademyKnowledge(parsed.data) });
+  });
+
+  app.get("/api/v1/admin/academy/curation", requireAuth, requireAdmin, (req, res) => {
+    const parsed = academyAdminCurationQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    res.json({
+      data: getAcademyCurationSnapshot({
+        limit: parsed.data.limit,
+      }),
+    });
+  });
+
+  app.patch("/api/v1/admin/academy/paths/:id", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const params = academyAdminIdParamSchema.safeParse(req.params);
+    const parsed = academyAdminPathPatchSchema.safeParse(req.body);
+
+    if (!params.success) {
+      res.status(400).json({ error: "Invalid path id" });
+      return;
+    }
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid path patch payload" });
+      return;
+    }
+
+    const updated = updateAcademyPathCuration(params.data.id, parsed.data);
+    if (!updated) {
+      res.status(404).json({ error: "Path not found" });
+      return;
+    }
+
+    auditAdminAction(
+      authReq,
+      "academy_path_updated",
+      "academy_path",
+      String(params.data.id),
+      parsed.data,
+    );
+
+    res.json({ data: updated });
+  });
+
+  app.put("/api/v1/admin/academy/paths/:id/items", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const params = academyAdminIdParamSchema.safeParse(req.params);
+    const parsed = academyAdminPathItemsSchema.safeParse(req.body);
+
+    if (!params.success) {
+      res.status(400).json({ error: "Invalid path id" });
+      return;
+    }
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid path items payload" });
+      return;
+    }
+
+    const updated = replaceAcademyPathItems(params.data.id, parsed.data.items);
+    if (!updated) {
+      res.status(404).json({ error: "Path not found" });
+      return;
+    }
+
+    auditAdminAction(
+      authReq,
+      "academy_path_items_replaced",
+      "academy_path",
+      String(params.data.id),
+      {
+        itemCount: parsed.data.items.length,
+      },
+    );
+
+    res.json({ data: updated });
+  });
+
+  app.patch("/api/v1/admin/academy/persons/:id/editorial", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const params = academyAdminIdParamSchema.safeParse(req.params);
+    const parsed = academyAdminPersonEditorialSchema.safeParse(req.body);
+
+    if (!params.success) {
+      res.status(400).json({ error: "Invalid person id" });
+      return;
+    }
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid editorial payload" });
+      return;
+    }
+
+    const updated = updateAcademyPersonEditorialMetadata(params.data.id, parsed.data);
+    if (!updated) {
+      res.status(404).json({ error: "Person not found" });
+      return;
+    }
+
+    auditAdminAction(
+      authReq,
+      "academy_person_editorial_updated",
+      "academy_person",
+      String(params.data.id),
+      parsed.data,
+    );
+
+    res.json({ data: updated });
+  });
+
+  app.post("/api/v1/admin/academy/relationships/persons", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = academyAdminPersonRelationshipSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid relationship payload" });
+      return;
+    }
+
+    if (parsed.data.sourcePersonId === parsed.data.targetPersonId) {
+      res.status(400).json({ error: "sourcePersonId and targetPersonId must be different" });
+      return;
+    }
+
+    const source = getAcademyPersonById(parsed.data.sourcePersonId);
+    const target = getAcademyPersonById(parsed.data.targetPersonId);
+    if (!source || !target) {
+      res.status(404).json({ error: "Related person not found" });
+      return;
+    }
+
+    const relationship = upsertAcademyPersonRelationship(parsed.data);
+    if (!relationship) {
+      res.status(400).json({ error: "Unable to upsert relationship" });
+      return;
+    }
+
+    auditAdminAction(
+      authReq,
+      "academy_person_relationship_upserted",
+      "academy_person_relationship",
+      String(relationship.id),
+      parsed.data,
+    );
+
+    res.json({ data: relationship });
+  });
+
+  app.delete("/api/v1/admin/academy/relationships/persons/:id", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const params = academyAdminIdParamSchema.safeParse(req.params);
+
+    if (!params.success) {
+      res.status(400).json({ error: "Invalid relationship id" });
+      return;
+    }
+
+    const deleted = deleteAcademyPersonRelationshipById(params.data.id);
+    if (!deleted) {
+      res.status(404).json({ error: "Relationship not found" });
+      return;
+    }
+
+    auditAdminAction(
+      authReq,
+      "academy_person_relationship_deleted",
+      "academy_person_relationship",
+      String(params.data.id),
+      {},
+    );
+
+    res.json({ data: { ok: true } });
+  });
+
+  app.post("/api/v1/admin/academy/relationships/concepts", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = academyAdminConceptRelationSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid concept relation payload" });
+      return;
+    }
+
+    const concept = getAcademyConceptById(parsed.data.conceptId);
+    if (!concept) {
+      res.status(404).json({ error: "Concept not found" });
+      return;
+    }
+
+    let targetExists = false;
+    if (parsed.data.entityType === "tradition") {
+      targetExists = Boolean(getAcademyTraditionById(parsed.data.entityId));
+    } else if (parsed.data.entityType === "person") {
+      targetExists = Boolean(getAcademyPersonById(parsed.data.entityId));
+    } else if (parsed.data.entityType === "work") {
+      targetExists = Boolean(getAcademyWorkById(parsed.data.entityId));
+    }
+
+    if (!targetExists) {
+      res.status(404).json({ error: "Related entity not found" });
+      return;
+    }
+
+    upsertAcademyConceptRelation({
+      conceptId: parsed.data.conceptId,
+      entityType: parsed.data.entityType as AcademyConceptRelationEntityType,
+      entityId: parsed.data.entityId,
+      sortOrder: parsed.data.sortOrder,
+    });
+
+    auditAdminAction(
+      authReq,
+      "academy_concept_relation_upserted",
+      "academy_concept_relation",
+      `${parsed.data.conceptId}:${parsed.data.entityType}:${parsed.data.entityId}`,
+      parsed.data,
+    );
+
+    res.json({
+      data: {
+        ok: true,
+        links: getAcademyConceptLinksBySlug(concept.slug),
+      },
+    });
+  });
+
+  app.delete("/api/v1/admin/academy/relationships/concepts", requireAuth, requireAdmin, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = academyAdminConceptRelationSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid concept relation payload" });
+      return;
+    }
+
+    const deleted = deleteAcademyConceptRelation({
+      conceptId: parsed.data.conceptId,
+      entityType: parsed.data.entityType as AcademyConceptRelationEntityType,
+      entityId: parsed.data.entityId,
+    });
+
+    if (!deleted) {
+      res.status(404).json({ error: "Concept relation not found" });
+      return;
+    }
+
+    auditAdminAction(
+      authReq,
+      "academy_concept_relation_deleted",
+      "academy_concept_relation",
+      `${parsed.data.conceptId}:${parsed.data.entityType}:${parsed.data.entityId}`,
+      parsed.data,
+    );
+
+    res.json({ data: { ok: true } });
   });
 
   app.get("/api/v1/admin/content", requireAuth, requireAdmin, (_req, res) => {
