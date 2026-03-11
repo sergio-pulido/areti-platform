@@ -741,6 +741,8 @@ export type AdminContentBundle = {
 
 const errorSchema = z.object({
   error: z.string().optional(),
+  message: z.string().optional(),
+  code: z.string().optional(),
   data: z.unknown().optional(),
 });
 
@@ -779,9 +781,11 @@ async function parseErrorPayload(response: Response): Promise<{
     const parsed = errorSchema.safeParse(await response.json());
 
     if (parsed.success) {
+      const message = parsed.data.message ?? parsed.data.error ?? response.statusText ?? "Request failed";
+
       return {
-        message: parsed.data.error ?? response.statusText ?? "Request failed",
-        code: parsed.data.error,
+        message,
+        code: parsed.data.code ?? parsed.data.error,
         data: parsed.data.data,
       };
     }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isSignupEnabled } from "@/lib/runtime-config";
 
 export type TopbarGuestAuthSwitch = {
   href: string;
@@ -10,6 +11,12 @@ type TopbarGuestActionsProps = {
 };
 
 export function TopbarGuestActions({ guestAuthSwitch }: TopbarGuestActionsProps) {
+  const signupEnabled = isSignupEnabled();
+  const showGuestAuthSwitch =
+    guestAuthSwitch && (signupEnabled || !guestAuthSwitch.href.startsWith("/auth/signup"))
+      ? guestAuthSwitch
+      : null;
+
   return (
     <nav className="flex items-center gap-2 text-sm">
       <Link
@@ -24,12 +31,12 @@ export function TopbarGuestActions({ guestAuthSwitch }: TopbarGuestActionsProps)
       >
         Terms
       </Link>
-      {guestAuthSwitch ? (
+      {showGuestAuthSwitch ? (
         <Link
-          href={guestAuthSwitch.href}
+          href={showGuestAuthSwitch.href}
           className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-1.5 font-semibold text-night-950 hover:bg-sand-50"
         >
-          {guestAuthSwitch.label}
+          {showGuestAuthSwitch.label}
         </Link>
       ) : (
         <>
@@ -39,12 +46,14 @@ export function TopbarGuestActions({ guestAuthSwitch }: TopbarGuestActionsProps)
           >
             Sign in
           </Link>
-          <Link
-            href="/auth/signup"
-            className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-1.5 font-semibold text-night-950 hover:bg-sand-50"
-          >
-            Get started
-          </Link>
+          {signupEnabled ? (
+            <Link
+              href="/auth/signup"
+              className="rounded-lg border border-sand-100 bg-sand-100 px-3 py-1.5 font-semibold text-night-950 hover:bg-sand-50"
+            >
+              Get started
+            </Link>
+          ) : null}
         </>
       )}
     </nav>

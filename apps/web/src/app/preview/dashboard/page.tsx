@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BarChart3, Bot, BookOpen, Compass, Notebook } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { PreviewSignupLink } from "@/components/preview/preview-signup-link";
+import { isSignupEnabled } from "@/lib/runtime-config";
 
 const sampleActions = [
   {
@@ -27,6 +28,8 @@ const sampleActions = [
 ] as const;
 
 export default function PreviewDashboardPage() {
+  const signupEnabled = isSignupEnabled();
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -82,13 +85,26 @@ export default function PreviewDashboardPage() {
       </section>
 
       <section className="rounded-2xl border border-sage-300/30 bg-sage-500/10 p-4">
-        <p className="text-sm text-sage-100">Create an account to unlock real progress data, continuity, and history.</p>
-        <PreviewSignupLink
-          sourcePath="/preview/dashboard"
-          className="mt-3 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/15 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/25"
-        >
-          Create account to unlock dashboard
-        </PreviewSignupLink>
+        <p className="text-sm text-sage-100">
+          {signupEnabled
+            ? "Create an account to unlock real progress data, continuity, and history."
+            : "Areti is currently available by invitation only."}
+        </p>
+        {signupEnabled ? (
+          <PreviewSignupLink
+            sourcePath="/preview/dashboard"
+            className="mt-3 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/15 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/25"
+          >
+            Create account to unlock dashboard
+          </PreviewSignupLink>
+        ) : (
+          <Link
+            href="/auth/signin"
+            className="mt-3 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/15 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/25"
+          >
+            Sign in
+          </Link>
+        )}
       </section>
     </div>
   );

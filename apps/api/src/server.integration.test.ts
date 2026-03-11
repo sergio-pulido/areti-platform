@@ -57,6 +57,7 @@ beforeAll(async () => {
   process.env.CHAT_CONTEXT_SUMMARIZE_PERCENT = "45";
   process.env.CHAT_CONTEXT_WARNING_PERCENT = "60";
   process.env.CHAT_CONTEXT_DEGRADED_PERCENT = "80";
+  process.env.SIGNUP_ENABLED = "true";
 
   const module = await import("./server.js");
   app = module.createApp();
@@ -74,6 +75,46 @@ describe("API integration", () => {
     });
 
     expect(response.status).toBe(400);
+  });
+
+  it("blocks signup when SIGNUP_ENABLED=false and preserves successful signup when re-enabled", async () => {
+    const module = await import("./server.js");
+    const email = `beta-blocked.${Date.now()}@example.com`;
+    const previous = process.env.SIGNUP_ENABLED;
+
+    process.env.SIGNUP_ENABLED = "false";
+    const disabledApp = module.createApp();
+
+    try {
+      const blocked = await request(disabledApp).post("/api/v1/auth/signup").send({
+        email,
+        password: "StrongPass123",
+        acceptLegal: true,
+      });
+
+      expect(blocked.status).toBe(403);
+      expect(blocked.body).toEqual({
+        error: "Signup is currently disabled. This beta is invite-only.",
+        code: "SIGNUP_DISABLED",
+      });
+
+      process.env.SIGNUP_ENABLED = "true";
+      const enabledApp = module.createApp();
+      const allowed = await request(enabledApp).post("/api/v1/auth/signup").send({
+        email,
+        password: "StrongPass123",
+        acceptLegal: true,
+      });
+
+      expect(allowed.status).toBe(201);
+      expect(allowed.body.data.verificationRequired).toBe(true);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.SIGNUP_ENABLED;
+      } else {
+        process.env.SIGNUP_ENABLED = previous;
+      }
+    }
   });
 
   it("signs up with verification-required response, blocks signin until verified, then verifies and returns auth token pair", async () => {

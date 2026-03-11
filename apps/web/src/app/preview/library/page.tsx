@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BookOpen, Lock } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { PreviewSignupLink } from "@/components/preview/preview-signup-link";
+import { isSignupEnabled } from "@/lib/runtime-config";
 
 const sampleLessons = [
   {
@@ -19,6 +20,8 @@ const sampleLessons = [
 ] as const;
 
 export default function PreviewLibraryPage() {
+  const signupEnabled = isSignupEnabled();
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -51,14 +54,25 @@ export default function PreviewLibraryPage() {
       <section className="rounded-2xl border border-sage-300/30 bg-sage-500/10 p-4 text-sm text-sage-100">
         <p className="flex items-center gap-2 font-medium">
           <Lock size={15} />
-          Full lesson detail, progress tracking, and recommendations require an account.
+          {signupEnabled
+            ? "Full lesson detail, progress tracking, and recommendations require an account."
+            : "Areti is currently available by invitation only."}
         </p>
-        <PreviewSignupLink
-          sourcePath="/preview/library"
-          className="mt-3 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/15 px-3 py-2 text-xs hover:bg-sage-500/25"
-        >
-          Create account to unlock library
-        </PreviewSignupLink>
+        {signupEnabled ? (
+          <PreviewSignupLink
+            sourcePath="/preview/library"
+            className="mt-3 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/15 px-3 py-2 text-xs hover:bg-sage-500/25"
+          >
+            Create account to unlock library
+          </PreviewSignupLink>
+        ) : (
+          <Link
+            href="/auth/signin"
+            className="mt-3 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/15 px-3 py-2 text-xs hover:bg-sage-500/25"
+          >
+            Sign in
+          </Link>
+        )}
       </section>
     </div>
   );

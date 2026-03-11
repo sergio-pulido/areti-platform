@@ -38,6 +38,17 @@ npm run dev
 - Required: production.
 - Example: `https://app.example.com`.
 
+### `SIGNUP_ENABLED`
+- Purpose: controls whether public self-serve signup is available.
+- Used by: API signup route enforcement and web auth/preview CTA gating.
+- Options: `true` | `false`.
+- Default when unset:
+  - production: `false` (safe invite-only default)
+  - non-production: `true` (keeps dev/test signup flows usable)
+- Behavior:
+  - `false`: `/auth/signup` shows private-beta messaging, signup CTAs are hidden, and `POST /api/v1/auth/signup` returns `403`.
+  - `true`: normal signup flow remains available.
+
 ### `API_BASE_URL`
 - Purpose: server-side web app calls to API.
 - Used by: Next.js server actions/loaders.
@@ -194,6 +205,7 @@ npm run dev
 ### Local development
 - Minimum typically needed:
   - `API_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`
+  - `SIGNUP_ENABLED=true` (unless you explicitly want invite-only behavior)
   - one chat provider key (`DEEPSEEK_API_KEY` or `OPENAI_API_KEY`)
 - Optional for auth email testing:
   - `EMAIL_TRANSPORT=smtp`
@@ -211,6 +223,7 @@ npm run dev
 - Must set:
   - `NODE_ENV=production`
   - `WEB_APP_URL`
+  - `SIGNUP_ENABLED` (`false` for private beta; `true` only when public signup is intended)
   - `EMAIL_TRANSPORT` (`resend` or `smtp`)
   - `RESEND_API_KEY` + `RESEND_FROM_EMAIL` when using `resend`
   - `SMTP_HOST` + `SMTP_FROM_EMAIL` (and optional auth vars) when using `smtp`
@@ -223,3 +236,4 @@ npm run dev
 - Rotate provider keys if leaked.
 - Use separate keys per environment (dev/staging/prod).
 - Restrict CORS/passkey origins to trusted domains only.
+- Signup protection must be enforced at API level; hiding UI links alone is not a security control.

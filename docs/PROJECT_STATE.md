@@ -38,6 +38,8 @@
 - Public preview now also includes `/preview/dashboard` to demonstrate the action-first member home with sample momentum data.
 - `/preview/chat` now runs on a no-auth preview chat API with strict token-budget testing (fixed session budget, per-turn input/output caps, response clipping, resettable sandbox session).
 - Preview analytics events are now captured for guest journeys (page views, preview signup clicks, signup views, preview chat prompt/response events) and summarized via admin endpoint `/api/v1/admin/preview/analytics`.
+- Signup availability is now runtime-controlled by `SIGNUP_ENABLED`, with invite-only mode hiding signup CTAs in web auth/preview surfaces and replacing `/auth/signup` with a private-beta message.
+- API now enforces invite-only mode for signup attempts (`POST /api/v1/auth/signup` -> `403`, `code: SIGNUP_DISABLED`) so direct client calls cannot bypass UI gating.
 - CMS now surfaces a preview-conversion panel (last 30 days) so admins can monitor preview-to-signup funnel metrics without external dashboards.
 - Preview analytics retention is now enforced in-app by purging events older than 90 days during event writes.
 - Preview guest endpoints now include lightweight anti-bot checks (`honeypot` + minimum interaction time) in addition to strict per-client rate limits.
@@ -118,6 +120,7 @@
     - `POST /api/v1/auth/resend-verification`
     - `GET /api/v1/onboarding`
     - `PUT /api/v1/onboarding`
+  - Added runtime signup gate enforcement on `POST /api/v1/auth/signup` via `SIGNUP_ENABLED` with controlled private-beta `403` payloads.
   - Updated onboarding write contract to activation-focused inputs (`primaryObjective`, `dailyTimeCommitment`, `preferredPracticeFormat`) while preserving existing profile storage compatibility.
   - Added account-domain endpoints:
     - `PATCH /api/v1/auth/me`
@@ -204,6 +207,7 @@
   - Redesigned auth shell/forms for conversion: contextual topbar (`Privacy`, `Terms`, and one auth switch), clearer left-panel value copy, modernized passkey CTA, and explicit trust microcopy.
   - Added reusable auth UI primitives (`AuthHeroPanel`, `AuthCard`, `AuthField`, `PasswordField`, `PasswordStrengthChecklist`, `LegalConsent`, `AuthDivider`, `PasskeyButton`, `AuthFooterLink`, `AuthTrustMicrocopy`).
   - Simplified signup contract in UI to `email + password + acceptLegal`, with live password criteria checklist and show/hide password controls on both sign-in and signup.
+  - Added web runtime signup gating (`SIGNUP_ENABLED`) so signup CTAs are hidden in private beta mode and `/auth/signup` is replaced by invite-only messaging with sign-in CTA.
   - Added `/auth/verify-email` flow and enforced onboarding completion routing before secured shell access.
   - Rebuilt `/onboarding` into a 3-step activation wizard with reusable option-card, step-shell, and progress-indicator components plus route personalization into first session.
   - Added global cookie consent banner with acceptance persistence and app-route gate redirect behavior.

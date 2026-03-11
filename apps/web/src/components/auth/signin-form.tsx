@@ -30,6 +30,7 @@ type PasskeyAuthOptionsData = {
 type SigninFormProps = {
   initialEmail?: string;
   autoStartPasskey?: boolean;
+  showSignupLink?: boolean;
 };
 
 function SubmitButton({ mfaRequired }: { mfaRequired: boolean }) {
@@ -68,7 +69,11 @@ function humanizePasskeyError(error: unknown): string {
   return "We couldn't complete passkey sign-in. Please try again.";
 }
 
-export function SigninForm({ initialEmail = "", autoStartPasskey = false }: SigninFormProps) {
+export function SigninForm({
+  initialEmail = "",
+  autoStartPasskey = false,
+  showSignupLink = true,
+}: SigninFormProps) {
   const router = useRouter();
   const [state, formAction] = useActionState(signinAction, initialAuthActionState);
   const [email, setEmail] = useState(initialEmail);
@@ -292,7 +297,9 @@ export function SigninForm({ initialEmail = "", autoStartPasskey = false }: Sign
         </>
       ) : null}
 
-      <AuthFooterLink text="New here?" href="/auth/signup" cta="Create your account" />
+      {showSignupLink ? (
+        <AuthFooterLink text="New here?" href="/auth/signup" cta="Create your account" />
+      ) : null}
       <AuthTrustMicrocopy text="Private by default. Fast sign-in. No unnecessary noise." />
     </form>
   );

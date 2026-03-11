@@ -422,6 +422,7 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_FROM_EMAIL: z.string().optional(),
   WEB_APP_URL: z.string().optional(),
+  SIGNUP_ENABLED: z.string().optional(),
   REFLECTION_STORAGE_PATH: z.string().optional(),
   REFLECTION_AUDIO_MAX_BYTES: z.string().optional(),
 });
@@ -2287,11 +2288,46 @@ function resolveEmailTransportMode(rawValue: string | undefined, nodeEnv: string
   throw new Error(`Unsupported EMAIL_TRANSPORT value "${rawValue}". Use: disabled, resend, or smtp.`);
 }
 
+function parseBooleanEnvFlag(rawValue: string | undefined, envName: string): boolean | null {
+  const normalized = rawValue?.trim().toLowerCase();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === "true") {
+    return true;
+  }
+
+  if (normalized === "false") {
+    return false;
+  }
+
+  throw new Error(`Unsupported ${envName} value "${rawValue}". Use: true or false.`);
+}
+
+function resolveSignupEnabled(rawValue: string | undefined, nodeEnv: string): boolean {
+  const parsed = parseBooleanEnvFlag(rawValue, "SIGNUP_ENABLED");
+
+  if (parsed !== null) {
+    return parsed;
+  }
+
+  // Safety default: production remains invite-only unless explicitly opened.
+  // Non-production defaults to enabled to preserve local/test developer workflows.
+  return nodeEnv === "production" ? false : true;
+}
+
+const SIGNUP_DISABLED_MESSAGE = "Signup is currently disabled. This beta is invite-only.";
+const SIGNUP_DISABLED_CODE = "SIGNUP_DISABLED";
+
 export function createApp() {
   const app = express();
   const env = envSchema.parse(process.env);
+  const nodeEnv = process.env.NODE_ENV ?? "development";
   const chatConfig = createChatRuntimeConfig(env);
   const chatContextConfig = createChatContextRuntimeConfig(env);
+  const signupEnabled = resolveSignupEnabled(env.SIGNUP_ENABLED, nodeEnv);
   const reflectionRepository = new ReflectionRepository();
   const reflectionAudioMaxBytes = parseBoundedInteger(
     env.REFLECTION_AUDIO_MAX_BYTES,
@@ -2327,7 +2363,6 @@ export function createApp() {
     reflectionStorageService,
     reflectionProcessingService,
   );
-  const nodeEnv = process.env.NODE_ENV ?? "development";
 
   async function resolveEffectiveSystemPromptForUser(userId: string): Promise<string> {
     const onboardingProfile = getUserOnboardingProfile(userId);
@@ -2782,6 +2817,14 @@ export function createApp() {
   });
 
   app.post("/api/v1/auth/signup", async (req, res) => {
+    if (!signupEnabled) {
+      res.status(403).json({
+        error: SIGNUP_DISABLED_MESSAGE,
+        code: SIGNUP_DISABLED_CODE,
+      });
+      return;
+    }
+
     const parsed = signupSchema.safeParse(req.body);
 
     if (!parsed.success) {

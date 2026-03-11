@@ -8,7 +8,7 @@ type AuthShellProps = {
   title: string;
   subtitle: string;
   children: ReactNode;
-  guestAuthSwitch: {
+  guestAuthSwitch?: {
     href: string;
     label: string;
   };

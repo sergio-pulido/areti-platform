@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Compass, Lock } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { PreviewSignupLink } from "@/components/preview/preview-signup-link";
+import { isSignupEnabled } from "@/lib/runtime-config";
 
 const samplePractices = [
   {
@@ -22,6 +23,8 @@ const samplePractices = [
 ] as const;
 
 export default function PreviewPracticesPage() {
+  const signupEnabled = isSignupEnabled();
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -54,14 +57,25 @@ export default function PreviewPracticesPage() {
       <section className="rounded-2xl border border-sage-300/30 bg-sage-500/10 p-4 text-sm text-sage-100">
         <p className="flex items-center gap-2 font-medium">
           <Lock size={15} />
-          Habit tracking, completion history, and tailored protocols require an account.
+          {signupEnabled
+            ? "Habit tracking, completion history, and tailored protocols require an account."
+            : "Areti is currently available by invitation only."}
         </p>
-        <PreviewSignupLink
-          sourcePath="/preview/practices"
-          className="mt-3 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/15 px-3 py-2 text-xs hover:bg-sage-500/25"
-        >
-          Create account to unlock practices
-        </PreviewSignupLink>
+        {signupEnabled ? (
+          <PreviewSignupLink
+            sourcePath="/preview/practices"
+            className="mt-3 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/15 px-3 py-2 text-xs hover:bg-sage-500/25"
+          >
+            Create account to unlock practices
+          </PreviewSignupLink>
+        ) : (
+          <Link
+            href="/auth/signin"
+            className="mt-3 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/15 px-3 py-2 text-xs hover:bg-sage-500/25"
+          >
+            Sign in
+          </Link>
+        )}
       </section>
     </div>
   );

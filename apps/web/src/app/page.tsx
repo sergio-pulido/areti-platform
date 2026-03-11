@@ -3,8 +3,10 @@ import { ArrowRight, ShieldCheck, Sparkles, Swords } from "lucide-react";
 import { AppTopbar } from "@/components/layout/app-topbar";
 import { getCurrentUser, getSessionToken } from "@/lib/auth/session";
 import { fetchLandingContent } from "@/lib/content-api";
+import { isSignupEnabled } from "@/lib/runtime-config";
 
 export default async function Home() {
+  const signupEnabled = isSignupEnabled();
   const [user, accessToken, landingContent] = await Promise.all([
     getCurrentUser(),
     getSessionToken(),
@@ -34,10 +36,10 @@ export default async function Home() {
 
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <Link
-                  href={user ? "/dashboard" : "/auth/signup"}
+                  href={user ? "/dashboard" : signupEnabled ? "/auth/signup" : "/auth/signin"}
                   className="inline-flex items-center gap-2 rounded-xl border border-sand-100 bg-sand-100 px-5 py-3 text-sm font-semibold text-night-950 hover:bg-sand-50"
                 >
-                  {user ? "Continue to dashboard" : "Create free account"}
+                  {user ? "Continue to dashboard" : signupEnabled ? "Create free account" : "Sign in"}
                   <ArrowRight size={15} />
                 </Link>
                 <Link

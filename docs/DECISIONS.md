@@ -1,5 +1,12 @@
 # Decisions
 
+## 2026-03-11 - Enforce env-driven signup gate for private beta
+- **Context:** Private-beta mode required real invite-only protection, not cosmetic hiding of signup links.
+- **Decision:** Introduce `SIGNUP_ENABLED` runtime flag and enforce it at both layers: API blocks `POST /api/v1/auth/signup` with `403` and stable payload (`code: SIGNUP_DISABLED`), while web hides signup CTAs and replaces `/auth/signup` content with private-beta messaging plus sign-in path.
+- **Decision:** Parse `SIGNUP_ENABLED` through dedicated config helpers in API and web instead of scattered `process.env` checks.
+- **Why:** Prevents direct API bypass attempts and keeps invite-only behavior consistent across UI and server.
+- **Tradeoff:** Defaults differ by environment for safety/usability (`production=false` when unset, non-production=true).
+
 ## 2026-03-11 - Runtime i18n with instant client-side locale switching
 - **Context:** The app needed Spanish coverage across existing UI copy with a language switch in the authenticated user dropdown, and the language change had to apply immediately without a full page reload.
 - **Decision:** Add a global i18n runtime provider in `apps/web` backed by a locale cookie (`areti_locale`), a user-menu language switcher (`English`/`Español`), and a client-side DOM translation pass that updates rendered text/labels live and tracks newly mounted nodes.

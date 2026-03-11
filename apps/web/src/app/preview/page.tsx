@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, BarChart3, Bot, BookOpen, Compass, NotebookPen } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { PreviewSignupLink } from "@/components/preview/preview-signup-link";
+import { isSignupEnabled } from "@/lib/runtime-config";
 
 const previewFeatures = [
   {
@@ -42,6 +43,8 @@ const previewFeatures = [
 ] as const;
 
 export default function PreviewIndexPage() {
+  const signupEnabled = isSignupEnabled();
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -78,14 +81,25 @@ export default function PreviewIndexPage() {
 
       <section className="rounded-2xl border border-sage-300/30 bg-sage-500/10 p-4">
         <p className="text-sm text-sage-100">
-          Want to save progress and unlock the full product?
+          {signupEnabled
+            ? "Want to save progress and unlock the full product?"
+            : "Areti is currently available by invitation only."}
         </p>
-        <PreviewSignupLink
-          sourcePath="/preview"
-          className="mt-3 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/15 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/25"
-        >
-          Create account
-        </PreviewSignupLink>
+        {signupEnabled ? (
+          <PreviewSignupLink
+            sourcePath="/preview"
+            className="mt-3 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/15 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/25"
+          >
+            Create account
+          </PreviewSignupLink>
+        ) : (
+          <Link
+            href="/auth/signin"
+            className="mt-3 inline-flex rounded-xl border border-sage-300/40 bg-sage-500/15 px-3 py-2 text-xs text-sage-100 hover:bg-sage-500/25"
+          >
+            Sign in
+          </Link>
+        )}
       </section>
     </div>
   );

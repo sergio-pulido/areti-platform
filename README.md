@@ -182,6 +182,7 @@ Services:
 - `CHAT_CONTEXT_DEGRADED_PERCENT` (near-limit degraded threshold; default: `95`)
 - `CHAT_CONTEXT_RECENT_RAW_MESSAGES` (raw unsummarized messages retained after compaction; default: `12`)
 - `WEB_APP_URL` (canonical web origin used in verification links)
+- `SIGNUP_ENABLED` (`true` | `false`; production default when unset: `false`, non-production default: `true`)
 - `EMAIL_TRANSPORT` (`disabled` | `resend` | `smtp`; non-prod default: `disabled`, prod default: `resend`)
 - `RESEND_API_KEY` (Resend API key for verification email delivery)
 - `RESEND_FROM_EMAIL` (verified sender identity for Resend email delivery)
@@ -198,3 +199,8 @@ Companion prompt behavior:
 - Users can add account-level custom Companion instructions in `/account/settings` under **Companion preferences**.
 - User instructions are appended after the global prompt and cannot override safety/mission constraints.
 - Companion thread context uses estimated token telemetry and summary memory compaction (auto at threshold + manual trigger) to preserve long-session continuity.
+
+Private beta signup gate:
+- Set `SIGNUP_ENABLED=false` to run invite-only mode.
+- This hides signup UI entry points and blocks `POST /api/v1/auth/signup` with `403` (`code: SIGNUP_DISABLED`).
+- UI hiding is convenience only; API enforcement is the security boundary.
