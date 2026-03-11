@@ -2,6 +2,7 @@
 
 ## Current Status
 - Monorepo architecture is active with frontend (`apps/web`), backend (`apps/api`), and shared DB/ORM (`packages/db`).
+- Runtime i18n is now active in web with a global locale provider, English/Spanish switching in the user dropdown, and immediate in-page language updates without full page reload.
 - Web app now ships as an installable Progressive Web App (manifest, install metadata, icons, service worker, and offline fallback page).
 - PWA release hygiene now includes a dedicated checklist (`docs/PWA_RELEASE_CHECKLIST.md`) and an e2e smoke test for manifest/service-worker/offline route availability.
 - Canonical section routing is active (`/dashboard` overview, standalone personal tools at `/chat`, `/journal`, `/library`, `/practices`, plus `/academy/*`, `/community/*`, `/creator/*`, `/account/*`) with contextual sidebars and topbar section entry.
@@ -170,6 +171,12 @@
     - `GET /api/v1/academy/search`
   - Added authenticated internal Academy query endpoint (`POST /api/v1/academy/query`) for future agent/recommendation consumers.
 - Web:
+  - Added runtime i18n layer in `apps/web`:
+    - global locale cookie + provider (`areti_locale`) at root layout
+    - in-dropdown language switch (`English` / `Español`) under user menu
+    - dynamic client-side translation pass for rendered UI copy (including late-mounted nodes) so language updates apply immediately without hard refresh
+    - generated Spanish dictionary + regeneration script (`apps/web/scripts/generate-es-dictionary.cjs`)
+    - account preferences language save now also persists locale cookie for consistent rendering
   - Added production PWA foundations:
     - `app/manifest.ts` with install metadata, categories, screenshots, and quick-launch shortcuts
     - generated app icons (`app/icon.tsx`, `app/apple-icon.tsx`) plus public maskable SVG icon

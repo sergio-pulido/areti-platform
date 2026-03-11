@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "i18n:generate:es": "node scripts/generate-es-dictionary.mjs --fresh"
   },
   "dependencies": {
     "@simplewebauthn/browser": "^13.2.2",

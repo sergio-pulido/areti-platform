@@ -12,6 +12,7 @@ import {
   apiSetNotificationPreferences,
 } from "@/lib/backend-api";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/constants";
+import { LOCALE_COOKIE_NAME, normalizeLocale } from "@/lib/i18n/config";
 
 function str(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -96,17 +97,26 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
 
 export async function saveSettingsAction(formData: FormData): Promise<void> {
   const session = await requireSession();
+  const selectedLanguage = normalizeLocale(str(formData, "language") || "en");
 
   try {
     await apiPatchMe(session.accessToken, {
       preferences: {
-        language: str(formData, "language") || "en",
+        language: selectedLanguage,
         timezone: str(formData, "timezone") || "UTC",
         profileVisibility: (str(formData, "profileVisibility") as "public" | "private" | "contacts") || "private",
         showEmail: bool(formData, "showEmail"),
         showPhone: bool(formData, "showPhone"),
         allowContact: bool(formData, "allowContact"),
       },
+    });
+
+    const cookieStore = await cookies();
+    cookieStore.set(LOCALE_COOKIE_NAME, selectedLanguage, {
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
     });
 
     revalidatePath("/account");

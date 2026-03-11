@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-03-11 - Runtime i18n with instant client-side locale switching
+- **Context:** The app needed Spanish coverage across existing UI copy with a language switch in the authenticated user dropdown, and the language change had to apply immediately without a full page reload.
+- **Decision:** Add a global i18n runtime provider in `apps/web` backed by a locale cookie (`areti_locale`), a user-menu language switcher (`English`/`Español`), and a client-side DOM translation pass that updates rendered text/labels live and tracks newly mounted nodes.
+- **Decision:** Generate and version a Spanish translation dictionary from current source strings via `apps/web/scripts/generate-es-dictionary.cjs`, with lightweight manual overrides for critical product copy consistency.
+- **Decision:** Keep English as fallback/default locale and persist locale both from live switch interactions (client cookie write) and account preference save flow (server cookie write) for consistent subsequent renders.
+- **Why:** Delivers broad Spanish coverage quickly over an existing large UI surface without forcing immediate invasive per-component refactors, while satisfying no-refresh language switching requirements.
+- **Tradeoff:** Dictionary quality for some long-tail phrases is machine-generated and can require iterative editorial cleanup; runtime DOM translation is less explicit than key-based component localization.
+
 ## 2026-03-10 - Introduce Academy as a dedicated knowledge domain with typed repository and route family
 - **Context:** Structured philosophy/psychology knowledge had been delivered as seed docs, while product IA reserved `/community` for interaction features and lacked a dedicated editorial knowledge home.
 - **Decision:** Add a new Academy section under `/academy` with native routes (`/academy`, `/academy/traditions`, `/academy/thinkers`, `/academy/works`, `/academy/concepts`, `/academy/paths`, `/academy/search` + slug detail pages), wire Academy into topbar/sidebar navigation as its own section, and keep Community focused on interaction modules.

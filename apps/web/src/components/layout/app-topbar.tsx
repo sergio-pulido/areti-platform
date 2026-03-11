@@ -9,6 +9,7 @@ import {
   TopbarGuestActions,
   type TopbarGuestAuthSwitch,
 } from "@/components/layout/topbar-guest-actions";
+import { LanguageSwitcher } from "@/components/i18n/language-switcher";
 import type { CurrentUser } from "@/lib/auth/session";
 import { apiNotifications } from "@/lib/backend-api";
 import { getTopbarSectionsForRole } from "@/lib/navigation";
@@ -317,6 +318,9 @@ export async function AppTopbar({ user, accessToken, guestAuthSwitch }: AppTopba
                   Terms
                 </Link>
               </div>
+
+              <div className="my-1 border-t border-night-700" />
+              <LanguageSwitcher />
 
               <div className="my-1 border-t border-night-700 lg:hidden" />
               <div className="px-2 py-1 lg:hidden">

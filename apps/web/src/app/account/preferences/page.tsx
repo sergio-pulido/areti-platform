@@ -51,7 +51,6 @@ export default async function PreferencesPage({ searchParams }: PreferencesPageP
               >
                 <option value="en">English</option>
                 <option value="es">Spanish</option>
-                <option value="ca">Catalan</option>
               </select>
             </label>
 
