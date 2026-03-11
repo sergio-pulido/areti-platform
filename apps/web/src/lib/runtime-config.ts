@@ -1,4 +1,39 @@
 import "server-only";
+import path from "node:path";
+
+function loadOptionalEnvFile(filePath: string): void {
+  if (typeof process.loadEnvFile !== "function") {
+    return;
+  }
+
+  try {
+    process.loadEnvFile(filePath);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+}
+
+function loadSignupEnvFallbacks(): void {
+  const cwd = process.cwd();
+  const candidates = new Set([
+    path.join(cwd, ".env.local"),
+    path.join(cwd, ".env"),
+    path.join(cwd, "apps", "web", ".env.local"),
+    path.join(cwd, "apps", "web", ".env"),
+    path.resolve(cwd, "..", ".env"),
+    path.resolve(cwd, "..", "..", ".env"),
+  ]);
+
+  for (const filePath of candidates) {
+    loadOptionalEnvFile(filePath);
+  }
+}
+
+loadSignupEnvFallbacks();
 
 const PRIVATE_BETA_TITLE = "Private beta";
 const PRIVATE_BETA_BODY = "Areti is currently available by invitation only.";
