@@ -3,7 +3,6 @@
 import { useActionState, useMemo, useState } from "react";
 import {
   createInvitationAdminAction,
-  initialAdminInvitationCreateState,
   revokeInvitationAdminAction,
 } from "@/actions/admin-invitations";
 import type { ApiAdminInvitation } from "@/lib/backend-api";
@@ -35,7 +34,7 @@ function toDatetimeLocalDefault(daysAhead: number): string {
 export function InvitationsAdminPanel({ invitations }: InvitationsAdminPanelProps) {
   const [state, formAction, pending] = useActionState(
     createInvitationAdminAction,
-    initialAdminInvitationCreateState,
+    {},
   );
   const [copied, setCopied] = useState<"token" | "url" | null>(null);
   const defaultExpiresAt = useMemo(() => toDatetimeLocalDefault(7), []);
