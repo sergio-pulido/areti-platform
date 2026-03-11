@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bell, Menu, Plus, Search, Sparkles, Zap } from "lucide-react";
+import { Bell, Plus, Search, Sparkles, Zap } from "lucide-react";
 import { logoutAction } from "@/actions/auth";
 import {
   markNotificationReadAction,
@@ -10,6 +10,7 @@ import {
   type TopbarGuestAuthSwitch,
 } from "@/components/layout/topbar-guest-actions";
 import { LanguageSwitcher } from "@/components/i18n/language-switcher";
+import { MobileNavSheet } from "@/components/layout/mobile-nav-sheet";
 import type { CurrentUser } from "@/lib/auth/session";
 import { apiNotifications } from "@/lib/backend-api";
 import { getTopbarSectionsForRole } from "@/lib/navigation";
@@ -73,31 +74,9 @@ export async function AppTopbar({ user, accessToken, guestAuthSwitch }: AppTopba
     <header className={TOPBAR_CLASSNAME}>
       <div className="flex w-full items-center gap-3">
         <div className="flex items-center gap-2">
-          <details className="relative lg:hidden">
-            <summary
-              className="inline-flex h-8 w-8 list-none cursor-pointer items-center justify-center rounded-lg border border-night-700 bg-night-900/80 text-sand-100 hover:border-night-600"
-              aria-label="Open mobile navigation"
-            >
-              <Menu size={16} />
-            </summary>
-            <div className="absolute left-0 mt-2 w-72 rounded-xl border border-night-700 bg-night-900/95 p-2 shadow-2xl">
-              <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Sections</p>
-              <div className="flex flex-col text-sm">
-                {topbarSections.map((section) => (
-                  <Link
-                    key={section.id}
-                    href={section.href}
-                    className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
-                  >
-                    {section.label}
-                  </Link>
-                ))}
-                <Link href="/account/profile" className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800">
-                  Account
-                </Link>
-              </div>
-            </div>
-          </details>
+          <div className="lg:hidden">
+            <MobileNavSheet role={user.role} />
+          </div>
 
           <TopbarBrand />
         </div>
@@ -294,6 +273,21 @@ export async function AppTopbar({ user, accessToken, guestAuthSwitch }: AppTopba
                   Account
                 </Link>
               </div>
+              {user.role === "admin" ? (
+                <>
+                  <div className="my-1 border-t border-night-700" />
+                  <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Admin</p>
+                  <div className="flex flex-col text-sm">
+                    <Link
+                      href="/admin"
+                      aria-label="Open admin section"
+                      className="rounded-lg px-2 py-2 text-sand-200 hover:bg-night-800"
+                    >
+                      Admin
+                    </Link>
+                  </div>
+                </>
+              ) : null}
               <div className="my-1 border-t border-night-700" />
               <p className="px-2 py-1 text-xs uppercase tracking-[0.2em] text-night-300">Sections</p>
               <div className="flex flex-col text-sm">

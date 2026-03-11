@@ -4,11 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { CurrentUser } from "@/lib/auth/session";
 import { CompanionSidenav } from "@/components/layout/companion-sidenav";
+import { SectionNavItems } from "@/components/layout/section-nav-items";
 import {
-  canAccessCreator,
-  getNavSectionById,
-  getNavSectionForPathname,
-  isNavItemActive,
+  getActiveNavSectionForRole,
 } from "@/lib/navigation";
 
 type DashboardSidenavProps = {
@@ -17,11 +15,7 @@ type DashboardSidenavProps = {
 
 export function DashboardSidenav({ user }: DashboardSidenavProps) {
   const pathname = usePathname();
-  const detectedSection = getNavSectionForPathname(pathname);
-  const activeSection =
-    !canAccessCreator(user.role) && detectedSection.id === "creator"
-      ? getNavSectionById("personal")
-      : detectedSection;
+  const activeSection = getActiveNavSectionForRole(pathname, user.role);
 
   if (activeSection.id === "companion") {
     return <CompanionSidenav />;
@@ -49,103 +43,11 @@ export function DashboardSidenav({ user }: DashboardSidenavProps) {
             )}
           </div>
 
-          {activeSection.id === "account" ? (
-            <div className="space-y-1.5">
-              {activeSection.items.map((item) => {
-                const Icon = item.icon;
-                const isActive = isNavItemActive(pathname, item);
-                const isEnabled = item.enabled !== false;
-
-                if (!isEnabled) {
-                  return (
-                    <div
-                      key={item.href}
-                      aria-disabled="true"
-                      title="Coming soon"
-                      className="group flex cursor-not-allowed items-center gap-3 rounded-xl border border-night-800/70 bg-night-950/60 px-3 py-2 opacity-70"
-                    >
-                      <span className="rounded-lg bg-night-900 p-1.5 text-night-300">
-                        <Icon size={16} />
-                      </span>
-                      <span className="text-sm font-medium text-night-100">{item.label}</span>
-                    </div>
-                  );
-                }
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`group flex items-center gap-3 rounded-xl border px-3 py-2 transition ${
-                      isActive
-                        ? "border-sage-300/90 bg-sage-500/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-                        : "border-transparent hover:border-night-600 hover:bg-night-900/60"
-                    }`}
-                  >
-                    <span
-                      className={`rounded-lg p-1.5 ${
-                        isActive ? "bg-sage-400/30 text-sage-100" : "bg-night-900 text-night-100"
-                      }`}
-                    >
-                      <Icon size={16} />
-                    </span>
-                    <span className="text-sm font-medium text-sand-100">{item.label}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              {activeSection.items.map((item) => {
-                const Icon = item.icon;
-                const isActive = isNavItemActive(pathname, item);
-                const isEnabled = item.enabled !== false;
-
-                if (!isEnabled) {
-                  return (
-                    <div
-                      key={item.href}
-                      aria-disabled="true"
-                      title="Coming soon"
-                      className="group flex cursor-not-allowed items-start gap-3 rounded-2xl border border-night-800/70 bg-night-950/60 px-3 py-3 opacity-70"
-                    >
-                      <span className="mt-0.5 rounded-lg bg-night-900 p-1.5 text-night-300">
-                        <Icon size={16} />
-                      </span>
-                      <span>
-                        <span className="block text-sm font-medium text-night-100">{item.label}</span>
-                        <span className="block text-xs text-night-400">{item.description}</span>
-                      </span>
-                    </div>
-                  );
-                }
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`group flex items-start gap-3 rounded-2xl border px-3 py-3 transition ${
-                      isActive
-                        ? "border-sage-300/90 bg-sage-500/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-                        : "border-transparent hover:border-night-600 hover:bg-night-900/60"
-                    }`}
-                  >
-                    <span
-                      className={`mt-0.5 rounded-lg p-1.5 ${
-                        isActive ? "bg-sage-400/30 text-sage-100" : "bg-night-900 text-night-100"
-                      }`}
-                    >
-                      <Icon size={16} />
-                    </span>
-                    <span>
-                      <span className="block text-sm font-medium text-sand-100">{item.label}</span>
-                      <span className="block text-xs text-night-300">{item.description}</span>
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
+          <SectionNavItems
+            items={activeSection.desktopItems}
+            pathname={pathname}
+            variant={activeSection.id === "account" ? "account" : "default"}
+          />
         </section>
       </nav>
     </aside>

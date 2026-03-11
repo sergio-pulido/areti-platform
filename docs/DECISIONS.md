@@ -1,5 +1,30 @@
 # Decisions
 
+## 2026-03-11 - Split signup into verified pending intent + completion phases
+- **Context:** One-step signup created users too early and mixed legal/password/profile capture before verified email, which conflicted with private-beta invite controls and completion safety.
+- **Decision:** Replace direct user creation on `POST /api/v1/auth/signup` with a server-side `signup_intents` lifecycle (`self_signup` or `invite`), email verification challenges tied to intent state, and a dedicated completion endpoint (`POST /api/v1/auth/signup/complete`) that is the only path that creates active users.
+- **Decision:** Add explicit completion context + invite context endpoints for web (`GET /api/v1/auth/signup/completion-context`, `GET /api/v1/auth/signup/invite-context`) and keep critical flow decisions derived from DB state/token hashes, not client query params.
+- **Decision:** Enforce legal capture by flow phase: self-signup captures Terms/Privacy at start; invite flow captures Terms/Privacy at completion; invite consumption occurs only after successful completion.
+- **Why:** Improves trust/safety guarantees, prevents premature account creation, and keeps private-beta invite-only enforcement robust against direct API calls.
+- **Tradeoff:** Adds a new pending lifecycle model and additional auth endpoints/tests to maintain.
+
+## 2026-03-11 - Centralize route-to-section resolution and ship contextual mobile navigation
+- **Context:** Mobile navigation exposed a static mixed list of unrelated links, increasing cognitive load and blurring product, account, and admin boundaries.
+- **Decision:** Replace ad-hoc navigation checks with a typed, config-driven navigation domain model in `apps/web/src/lib/navigation.ts` (section metadata, access requirements, route match rules, desktop/mobile item sets, and shared resolver helpers).
+- **Decision:** Add a dedicated client mobile nav sheet (`mobile-nav-sheet.tsx`) under the topbar with explicit `X` close action and a simplified contextual nav body (`mobile-contextual-navigation.tsx`) that renders only the active section tabs.
+- **Decision:** Extract shared section-item rendering (`section-nav-items.tsx`) and use it in both desktop sidenav and mobile contextual nav so both surfaces always show the same section tabs.
+- **Decision:** Add minimal route support for contextual actions (`/chat/new`, `/academy/saved`, `/admin/audit`) and keep desktop shell behavior unchanged while sharing resolver/config logic across desktop and mobile.
+- **Why:** Preserves calm/shallow mobile flows, enforces clear IA separation, and keeps navigation extensible for future gating (role/subscription) without scattered pathname logic.
+- **Tradeoff:** Some contextual destinations (`Academy Saved`, `Admin Audit`) are currently scaffolded placeholders and represent remaining IA/content depth to complete.
+
+## 2026-03-11 - Explicit admin roles and invitation-based admin foundation
+- **Context:** Admin access depended on implicit first-user behavior, and private-beta mode lacked secure invitation redemption.
+- **Decision:** Standardize roles to lowercase `user`/`admin` across DB/API/web, remove first-user auto-promotion, and make admin assignment explicit through `npm run admin:promote -- --email=...`.
+- **Decision:** Add hashed invitation tokens (single-use by default), admin-only invitation issuance/revocation endpoints, invite redemption audit events, and invite-aware signup that can proceed when `SIGNUP_ENABLED=false` if a valid token is provided.
+- **Decision:** Add a dedicated protected `/admin` web area (`/admin`, `/admin/users`, `/admin/invitations`) while keeping API-side authorization as the security boundary.
+- **Why:** Enforces least privilege, removes implicit privilege escalation, and establishes a production-safe invite-only onboarding path.
+- **Tradeoff:** Adds a small amount of operational overhead (explicit promotion step) and new admin/auth API surface to maintain.
+
 ## 2026-03-11 - Add private-beta regression CI and standardize auth error envelopes
 - **Context:** `SIGNUP_ENABLED` gating shipped, but needed guardrails against regressions and a consistent error contract beyond the signup endpoint.
 - **Decision:** Add a dedicated CI job that runs `tests/signup-gate.e2e.spec.ts` with `SIGNUP_ENABLED=false`, ensuring invite-only behavior stays enforced over time.
