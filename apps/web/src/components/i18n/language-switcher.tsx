@@ -13,7 +13,7 @@ export function LanguageSwitcher() {
   const heading = locale === "es" ? "Idioma" : "Language";
 
   return (
-    <div className="px-2 py-1">
+    <div className="px-2 py-1" data-i18n-ignore="true">
       <p className="mb-2 text-xs uppercase tracking-[0.2em] text-night-300">{heading}</p>
       <div className="grid grid-cols-2 gap-2">
         {LANGUAGE_OPTIONS.map((option) => {

@@ -127,6 +127,25 @@ test("landing loads API content and signup reaches dashboard", async ({ page }) 
   }
 });
 
+test("language switch in user dropdown updates copy without navigation refresh", async ({ page }) => {
+  await signupAndGoDashboard(page);
+
+  const originalUrl = page.url();
+  await expect(page.getByRole("heading", { name: "Today for you" })).toBeVisible();
+
+  await page.getByLabel("Open user menu").click();
+  await expect(page.getByRole("button", { name: "Español" })).toBeVisible();
+  await page.getByRole("button", { name: "Español" }).click();
+
+  await expect(page).toHaveURL(originalUrl);
+  await expect(page.getByRole("heading", { name: "Hoy para ti" })).toBeVisible();
+  await expect(page.getByText("Idioma", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "English" }).click();
+  await expect(page).toHaveURL(originalUrl);
+  await expect(page.getByRole("heading", { name: "Today for you" })).toBeVisible();
+});
+
 test("academy supports structured navigation, search, and credibility context", async ({ page }) => {
   await signupAndGoDashboard(page);
 
