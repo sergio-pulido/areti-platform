@@ -1,24 +1,48 @@
-# Simple Single-Server Production Runbook
+# Simple Single-Server Production Runbook — v2
 
 Reusable runbook for small/private beta deployments of web + API apps on one Ubuntu server using Docker Compose and Caddy.
+
+This v2 improves the original runbook by:
+- using **named repo directories** instead of a generic `repo/`
+- clarifying **bootstrap vs long-term deploy workflow**
+- adding both **Option 1: Automatic (recommended)** and **Option 2: Manual fallback** for deployments
+- keeping **host-level DB backups inside the server** (without Hetzner paid backups)
+- clarifying the **Docker group re-login step**
+- using a **dedicated read-only GitHub deploy key** for the server
+- making it explicit that `compose`, `.env`, and `secrets` must be adapted to the **actual repository structure**, not guessed blindly
+
+This runbook is based on the original file and the deployment decisions refined during setup. fileciteturn1file0
+
+---
 
 ## Scope
 
 This guide is for:
 - 1 Ubuntu server
-- 1 web app
-- 1 API
-- 1 reverse proxy (Caddy)
+- 1 small app stack
+- Docker Compose
+- Caddy reverse proxy with automatic HTTPS
 - file-based secrets on the host
-- small private beta / low traffic / founder-led product validation
+- private beta / low traffic / founder-led validation
 
 This is **not** a high-availability setup.
 
+---
+
 ## Target hostname pattern
 
+Recommended hostname pattern:
 - `yourdomain.com` → marketing/public site (optional)
 - `my.yourdomain.com` → authenticated product
 - `api.yourdomain.com` → API
+
+For Areti:
+- `my.areti.app`
+- `api.areti.app`
+
+During first launch, keep Cloudflare records as **DNS only** until Caddy has successfully issued certificates and both hosts respond correctly.
+
+---
 
 ## Assumptions
 
@@ -26,7 +50,8 @@ This is **not** a high-availability setup.
 - Your SSH public key was added during provisioning.
 - Server OS is Ubuntu 24.04 LTS or 22.04 LTS.
 - You control DNS for the domain/subdomains.
-- You have your app code in Git.
+- You have your app code in GitHub.
+- You are doing a **single-server bootstrap**, not full CI/CD platform engineering.
 
 ---
 
@@ -37,7 +62,9 @@ Replace these values before executing commands:
 - `DEPLOY_USER=deployer`
 - `APP_NAME=areti`
 - `APP_DIR=/opt/areti`
-- `GIT_REPO=git@github.com:YOUR_USER/YOUR_REPO.git`
+- `REPO_NAME=areti-platform`
+- `REPO_DIR=/opt/areti/areti-platform`
+- `GIT_REPO=git@github.com:sergio-pulido/areti-platform.git`
 - `GIT_BRANCH=main`
 - `PRODUCT_HOST=my.areti.app`
 - `API_HOST=api.areti.app`
@@ -75,6 +102,8 @@ hostnamectl set-hostname areti-prod-01
 hostnamectl
 ```
 
+If a kernel upgrade is installed, reboot before continuing with Docker.
+
 ---
 
 ## 2. Create non-root deployment user
@@ -83,18 +112,10 @@ Create a dedicated sudo user:
 
 ```bash
 adduser deployer
-```
-
-For this user, secure a strong password with 24-32 characters and enable 2FA if possible.
-Full Name: Deployer
-Room Number: 
-Work Phone: 
-Home Phone: 
-Other: 
-
-```bash
 usermod -aG sudo deployer
 ```
+
+Use a **long random password** stored in your password manager.
 
 Create SSH folder and copy your authorized keys from root:
 
@@ -117,11 +138,7 @@ You should get `root` after `sudo whoami`.
 
 ---
 
-Continue in the root session...
-
 ## 3. Harden SSH minimally and safely
-
-Ubuntu documents OpenSSH configuration in `/etc/ssh/sshd_config` and modular snippets in `/etc/ssh/sshd_config.d/`.
 
 Create a hardening snippet:
 
@@ -137,21 +154,14 @@ UsePAM yes
 SSHEOF
 ```
 
-Validate config:
+Validate and reload:
 
 ```bash
 sshd -t
-```
-
-Reload SSH:
-
-```bash
 systemctl reload ssh
 ```
 
-Do **not** close your current root session until you verify that `ssh deployer@YOUR_SERVER_IP` still works.
-
-Optionally lock root password:
+Only after confirming `ssh deployer@YOUR_SERVER_IP` still works:
 
 ```bash
 passwd -l root
@@ -161,9 +171,7 @@ passwd -l root
 
 ## 4. Configure firewall
 
-Ubuntu recommends `ufw` as the standard host firewall tool.
-
-Allow SSH, HTTP, HTTPS:
+Allow SSH, HTTP and HTTPS:
 
 ```bash
 ufw allow 22/tcp
@@ -173,21 +181,18 @@ ufw enable
 ufw status verbose
 ```
 
-If you changed SSH port, allow that instead of `22/tcp`.
+This is acceptable for bootstrap. Later, if practical, restrict SSH to your own IP.
 
 ---
 
 ## 5. Enable basic brute-force protection
 
-Enable and start fail2ban:
-
 ```bash
 systemctl enable fail2ban
 systemctl start fail2ban
-systemctl status fail2ban --no-pager
 ```
 
-Create minimal local jail config:
+Create local jail config:
 
 ```bash
 cat > /etc/fail2ban/jail.local <<'F2BEOF'
@@ -204,7 +209,7 @@ backend = systemd
 F2BEOF
 ```
 
-Restart fail2ban:
+Restart and verify:
 
 ```bash
 systemctl restart fail2ban
@@ -213,39 +218,32 @@ fail2ban-client status sshd
 
 ---
 
-With deployer session with sudo privileges...
-
 ## 6. Install Docker Engine and Compose plugin
 
-Docker’s official Ubuntu docs recommend removing conflicting unofficial packages first, then installing from Docker’s repository.
+Continue as `deployer` with `sudo`.
 
-In a fresh server, there should be no conflicting packages. You can check it with:
+Check if conflicting packages exist:
 
 ```bash
 dpkg -l | grep -E 'docker|containerd|runc'
 ```
 
-If there are no packages listed, you're good to go. If not, remove conflicting packages:
+If needed, remove conflicts:
 
 ```bash
 for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do sudo apt remove -y "$pkg"; done
 ```
 
-Set up Docker repository:
+Set up Docker repo:
 
 ```bash
 sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
 
-echo   "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu   $(. /etc/os-release && echo "$VERSION_CODENAME") stable" |   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 sudo apt update
-```
-
-Install Docker Engine + Compose plugin:
-
-```bash
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
@@ -263,26 +261,32 @@ Allow deploy user to run Docker without sudo:
 sudo usermod -aG docker deployer
 ```
 
-Now log out and back in as `deployer` so group membership applies.
+**Important:** group membership does not apply to the current shell session.
+Log out and back in now:
 
-Then, verify:
+```bash
+exit
+ssh deployer@YOUR_SERVER_IP
+```
+
+Then verify:
 
 ```bash
 groups
-docker --version
+docker version
 docker compose version
 ```
 
-If you did all the steps above with root user, log out and back in as `deployer` so group membership applies.
+Expected: `docker` must appear in `groups`.
 
 ---
 
 ## 7. Create app directory structure
 
-As deployer user:
+As `deployer`:
 
 ```bash
-sudo mkdir -p /opt/areti/{config/caddy,data/caddy,data/sqlite,data/uploads,backups,scripts,secrets,logs,repo}
+sudo mkdir -p /opt/areti/{config/caddy,data/caddy,data/sqlite,data/uploads,backups,scripts,secrets,logs,areti-platform}
 sudo chown -R deployer:deployer /opt/areti
 sudo chmod 755 /opt/areti
 sudo chmod 700 /opt/areti/secrets
@@ -292,7 +296,7 @@ Recommended final structure:
 
 ```text
 /opt/areti/
-  repo/
+  areti-platform/
   compose.yaml
   compose.production.yaml
   .env
@@ -306,15 +310,25 @@ Recommended final structure:
   backups/
   scripts/
   secrets/
+  logs/
 ```
 
-Use the following command to verify the structure:
+### Naming rule
 
-```bash
-ls -la /opt/areti/
+Do **not** force everything into a generic `repo/` folder if you plan to host more than one repository for the same project later.
+
+Bad:
+```text
+/opt/areti/repo
 ```
 
-Or better:
+Better:
+```text
+/opt/areti/areti-platform
+/opt/areti/areti-marketing-site
+```
+
+Verify:
 
 ```bash
 tree -a /opt/areti
@@ -325,22 +339,16 @@ ls -ld /opt/areti /opt/areti/secrets
 
 ## 8. Prepare Git access for deployer
 
-If you are not already as the `deployer` user, switch to deploy user:
+Use a **dedicated read-only deploy key** for the repository.
+Do **not** reuse your personal GitHub SSH key on the server.
+
+Generate key without passphrase for this read-only repo-specific deploy key:
 
 ```bash
-su - deployer
+ssh-keygen -t ed25519 -C "deployer@areti-prod-readonly" -f ~/.ssh/id_ed25519_github_areti
+chmod 600 ~/.ssh/id_ed25519_github_areti
+chmod 644 ~/.ssh/id_ed25519_github_areti.pub
 ```
-
-Generate a dedicated SSH key for Git deploys (recommended):
-
-```bash
-ssh-keygen -t ed25519 -C "deployer@areti-prod" -f ~/.ssh/id_ed25519_github
-chmod 600 ~/.ssh/id_ed25519_github
-```
-
-For passphrase-protected keys, you'll need to set up SSH agent or use `ssh-add` as needed.
-
-...
 
 Create SSH config:
 
@@ -349,65 +357,76 @@ cat > ~/.ssh/config <<'EOFSSH'
 Host github.com
   HostName github.com
   User git
-  IdentityFile ~/.ssh/id_ed25519_github
+  IdentityFile ~/.ssh/id_ed25519_github_areti
   IdentitiesOnly yes
 EOFSSH
 chmod 600 ~/.ssh/config
 ```
 
-Print the public key and add it to GitHub deploy keys or your account:
+Print public key and add it to GitHub as a **Deploy Key (read-only)** on this repo only:
 
 ```bash
-cat ~/.ssh/id_ed25519_github.pub
+cat ~/.ssh/id_ed25519_github_areti.pub
 ```
 
-In Github, you can use a name like "Areti Production Deployer" for the key.
-
-Test once the key is added:
+Test once added:
 
 ```bash
 ssh -T git@github.com
 ```
 
-If your repo is private, add this key as a deploy key with read access, or use a machine user.
+With a repo deploy key, GitHub may identify the repository rather than your personal username. That is expected. Successful authentication means the key is working.
 
 ---
 
 ## 9. Clone the repository
 
-As `deployer`:
+This clone is used for:
+- initial bootstrap
+- manual fallback deployments
+- emergency fixes if your CI/CD pipeline is unavailable
+
+Clone into the named repo directory:
 
 ```bash
 cd /opt/areti
-git clone git@github.com:YOUR_USER/YOUR_REPO.git repo
-cd repo
+git clone git@github.com:sergio-pulido/areti-platform.git areti-platform
+cd /opt/areti/areti-platform
 git checkout main
 ```
 
-For future deploys:
+Before writing Compose files, inspect the actual repo structure:
 
 ```bash
-cd /opt/areti/repo
-git fetch origin
-git checkout main
-git pull --ff-only origin main
+find . -maxdepth 4 -name Dockerfile
+find . -maxdepth 3 -name package.json
+find . -maxdepth 3 \( -name bun.lockb -o -name bun.lock -o -name pnpm-lock.yaml -o -name package-lock.json \)
 ```
+
+**Do not assume** paths like `apps/web/Dockerfile` or ports like `3000/3001` unless the repo actually contains them.
 
 ---
 
 ## 10. Create production compose files
 
-You can either keep production files inside the repo or symlink them from `/opt/areti`.
+Keep deployment config in `/opt/areti`, owned by the host.
 
-Recommended approach: keep them in `/opt/areti` so they are host-owned deployment config.
+### Important
 
-### `/opt/areti/compose.yaml`
+The Compose examples below are **templates**, not truth.
+You must adapt them to the **actual repository structure**, runtime commands, ports, storage paths, and secrets.
+
+If your repo does not contain Dockerfiles yet, you have two choices:
+- create proper Dockerfiles in the repository
+- or use container images / runtime commands directly in Compose as a temporary bootstrap
+
+### `/opt/areti/compose.yaml` (template)
 
 ```yaml
 services:
   web:
     build:
-      context: ./repo
+      context: ./areti-platform
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
     env_file:
@@ -421,7 +440,7 @@ services:
 
   api:
     build:
-      context: ./repo
+      context: ./areti-platform
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     env_file:
@@ -455,7 +474,7 @@ networks:
     driver: bridge
 ```
 
-### `/opt/areti/compose.production.yaml`
+### `/opt/areti/compose.production.yaml` (template)
 
 ```yaml
 services:
@@ -467,8 +486,6 @@ services:
     environment:
       NODE_ENV: production
 ```
-
-Adjust internal ports if your web/API use different container ports.
 
 ---
 
@@ -490,13 +507,15 @@ api.areti.app {
 }
 ```
 
-If your frontend proxies API calls internally and you do not need a public API hostname, you can omit the second site block.
+If your frontend handles API proxying internally and you do not need a public API hostname, you can omit the second block.
 
 ---
 
 ## 12. Create `.env`
 
-Create `/opt/areti/.env`:
+Create `/opt/areti/.env` only after confirming the exact variables the app actually needs.
+
+Safe base template:
 
 ```env
 NODE_ENV=production
@@ -505,93 +524,78 @@ TZ=Europe/Madrid
 APP_NAME=areti
 APP_URL=https://my.areti.app
 API_URL=https://api.areti.app
-PUBLIC_APP_URL=https://my.areti.app
-PUBLIC_API_URL=https://api.areti.app
 
-# App-specific non-secret config only below
 FEATURE_SIGNUP_ENABLED=false
 FEATURE_BETA_INVITES_ONLY=true
 POSTHOG_HOST=https://eu.i.posthog.com
 POSTHOG_PUBLIC_KEY=REPLACE_ME
 ```
 
-Do **not** put secrets here if you can avoid it.
-
-Protect file permissions:
+Protect it:
 
 ```bash
 chmod 600 /opt/areti/.env
 ```
 
+Do **not** dump secrets here unless you really must.
+
 ---
 
 ## 13. Create runtime secret files
 
-Create files in `/opt/areti/secrets`:
+Only create the secret files your app actually requires.
+
+Example:
 
 ```bash
-printf 'replace_me_with_real_secret' > /opt/areti/secrets/nextauth_secret.txt
-printf 'replace_me_with_real_secret' > /opt/areti/secrets/jwt_secret.txt
-printf 'replace_me_with_real_secret' > /opt/areti/secrets/openai_api_key.txt
-printf 'replace_me_with_real_secret' > /opt/areti/secrets/resend_api_key.txt
-chmod 600 /opt/areti/secrets/*
+openssl rand -hex 32 > /opt/areti/secrets/nextauth_secret.txt
+openssl rand -hex 32 > /opt/areti/secrets/jwt_secret.txt
+printf 'replace_me' > /opt/areti/secrets/openai_api_key.txt
+printf 'replace_me' > /opt/areti/secrets/resend_api_key.txt
+chmod 600 /opt/areti/secrets/*.txt
 ```
 
-If your app can read secrets from files under `/run/secrets`, define Compose secrets and mount them into the corresponding service.
+If your app supports reading from `/run/secrets`, define Compose secrets and mount them.
+If not, either:
+- adapt the app to read secret files
+- or use environment variables for now
 
-Example Compose fragment:
-
-```yaml
-services:
-  web:
-    secrets:
-      - nextauth_secret
-
-  api:
-    secrets:
-      - jwt_secret
-      - openai_api_key
-      - resend_api_key
-
-secrets:
-  nextauth_secret:
-    file: ./secrets/nextauth_secret.txt
-  jwt_secret:
-    file: ./secrets/jwt_secret.txt
-  openai_api_key:
-    file: ./secrets/openai_api_key.txt
-  resend_api_key:
-    file: ./secrets/resend_api_key.txt
-```
-
-Then make your app read either environment variables or `/run/secrets/<name>`.
+Do not create fake ceremonial secrets just for aesthetics.
 
 ---
 
 ## 14. Point DNS before first launch
 
-In your DNS provider, create:
+In Cloudflare or your DNS provider, create:
 
 - `A my.areti.app -> YOUR_SERVER_IP`
 - `A api.areti.app -> YOUR_SERVER_IP`
 
-Wait until DNS resolves from your machine:
+For first launch, keep them as **DNS only**.
+
+Validate from your machine:
 
 ```bash
 dig +short my.areti.app
 dig +short api.areti.app
 ```
 
-Do not expect Caddy to get certificates if DNS is wrong or ports 80/443 are blocked.
+Caddy cannot issue certificates if DNS is wrong or ports 80/443 are blocked.
 
 ---
 
 ## 15. First build and start
 
-As `deployer`:
+Before first launch, verify repo structure again:
 
 ```bash
-cd /opt/areti
+cd /opt/areti/areti-platform
+find . -maxdepth 4 -name Dockerfile
+```
+
+Then, from `/opt/areti`:
+
+```bash
 docker compose -f compose.yaml -f compose.production.yaml up -d --build
 ```
 
@@ -626,10 +630,48 @@ docker compose logs --tail=200 caddy
 
 ## 16. Deploy workflow for changes
 
-### Standard redeploy
+Use both options below.
+Option 1 is the normal flow.
+Option 2 is the manual fallback when you need to deploy or fix something quickly without relying on GitHub Actions.
+
+### Option 1 — Automatic deploy with GitHub Actions [Recommended]
+
+Recommended trigger:
+- `push` of a production tag, for example `v*`
+
+Alternative:
+- `workflow_dispatch` for manual controlled deploys from the GitHub UI
+
+#### Which is better?
+
+- **Tag push** is better when you want versioned, auditable, release-style deployments.
+- **workflow_dispatch** is useful when you want to choose branch/tag manually from the UI, retry a deploy, or run a hotfix deploy without inventing a throwaway tag first.
+
+Best practice for you:
+- use **tag push** as the normal production flow
+- keep **workflow_dispatch** available as an operator override
+
+#### Recommended GitHub Actions flow
+
+1. Checkout repository
+2. Validate tag / branch
+3. Optional tests / lint / build checks
+4. SSH into server
+5. `cd /opt/areti/areti-platform`
+6. `git fetch --all --tags`
+7. `git checkout <tag or main>`
+8. `cd /opt/areti`
+9. `docker compose -f compose.yaml -f compose.production.yaml up -d --build`
+10. Run smoke checks
+
+Store server SSH credentials in GitHub Actions secrets, not in the repo.
+
+### Option 2 — Manual deploy [Fallback]
+
+Standard redeploy:
 
 ```bash
-cd /opt/areti/repo
+cd /opt/areti/areti-platform
 git fetch origin
 git checkout main
 git pull --ff-only origin main
@@ -637,7 +679,17 @@ cd /opt/areti
 docker compose -f compose.yaml -f compose.production.yaml up -d --build
 ```
 
-### Redeploy only web
+Deploy a specific tag manually:
+
+```bash
+cd /opt/areti/areti-platform
+git fetch --all --tags
+git checkout vX.Y.Z
+cd /opt/areti
+docker compose -f compose.yaml -f compose.production.yaml up -d --build
+```
+
+Redeploy only web:
 
 ```bash
 cd /opt/areti
@@ -645,7 +697,7 @@ docker compose -f compose.yaml -f compose.production.yaml build web
 docker compose -f compose.yaml -f compose.production.yaml up -d --no-deps web
 ```
 
-### Redeploy only api
+Redeploy only api:
 
 ```bash
 cd /opt/areti
@@ -656,6 +708,10 @@ docker compose -f compose.yaml -f compose.production.yaml up -d --no-deps api
 ---
 
 ## 17. Backups
+
+We are **not** using Hetzner paid server backups for this bootstrap.
+That does **not** mean “no backups”.
+It means backups are handled **inside the server** for now.
 
 Create backup script:
 
@@ -679,7 +735,7 @@ Test manually:
 ls -lah /opt/areti/backups
 ```
 
-Add cron job as root:
+Add cron job:
 
 ```bash
 crontab -e
@@ -691,7 +747,11 @@ Add:
 0 3 * * * /opt/areti/scripts/backup-db.sh >/dev/null 2>&1
 ```
 
-Also plan off-server backups later. If backups live only on the same server, you are one disk failure away from regret.
+### Important reality check
+
+A backup stored only on the same server is better than nothing, but still fragile.
+Plan off-server backup copies later.
+Otherwise one disk failure, full server loss, or major operator mistake can still ruin your day.
 
 ---
 
@@ -704,7 +764,7 @@ df -h
 du -sh /opt/areti/*
 ```
 
-Prune old Docker build cache occasionally:
+Prune Docker cache carefully:
 
 ```bash
 docker system df
@@ -717,11 +777,11 @@ Do **not** run broad prune commands casually on a server you do not fully unders
 
 ## 19. PostHog for beta analytics
 
-Recommended minimal setup:
-- project in PostHog Cloud EU
+Recommended minimal setup after the app is online:
+- PostHog Cloud EU project
 - web SDK in frontend
 - server-side capture for key backend events if needed
-- no more than 10–15 core events initially
+- 10–15 core events max at the start
 
 Suggested events:
 - `invite_opened`
@@ -744,21 +804,22 @@ Suggested properties:
 - `onboarding_version`
 - `beta_group`
 
-Avoid tracking dozens of vanity events. Track only what answers product questions.
+Avoid vanity tracking.
+Track only what helps answer product questions.
 
 ---
 
 ## 20. Beta access model
 
 Recommended for this phase:
-- keep public signup disabled
+- public signup disabled
 - invite-only access
 - admin can generate invite links or create users manually
 - email invitation with tokenized link
 - expiry time on invites
 - track `invite_sent`, `invite_opened`, `invite_accepted`
 
-This is better than a public signup + hidden whitelist mess.
+This is cleaner than a fake public signup plus hidden whitelist logic.
 
 ---
 
@@ -802,7 +863,7 @@ This is better than a public signup + hidden whitelist mess.
 
 ## 22. Restore test
 
-At least once, test restore on a copy:
+At least once, test a restore on a copy:
 
 ```bash
 cp /opt/areti/backups/prod_YYYY-MM-DD_HH-MM-SS.db.gz /tmp/
@@ -810,7 +871,7 @@ gunzip /tmp/prod_YYYY-MM-DD_HH-MM-SS.db.gz
 ls -lah /tmp/prod_YYYY-MM-DD_HH-MM-SS.db
 ```
 
-A backup you never tested is just optimism in a file extension.
+A backup you never tested is just optimism disguised as process.
 
 ---
 
@@ -818,12 +879,13 @@ A backup you never tested is just optimism in a file extension.
 
 For another small app, change only:
 - app directory (`/opt/projectname`)
+- named repo directories (`/opt/projectname/project-api`, `/opt/projectname/project-marketing-site`)
 - hostnames (`my.project.com`, `api.project.com`)
 - repo URL and branch
 - Dockerfiles / service names / ports
 - `.env` and secrets list
 
-Keep the rest identical.
+Keep the server bootstrap and host hardening steps essentially identical.
 
 ---
 
