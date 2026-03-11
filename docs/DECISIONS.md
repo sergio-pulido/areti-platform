@@ -1,5 +1,12 @@
 # Decisions
 
+## 2026-03-11 - Add private-beta regression CI and standardize auth error envelopes
+- **Context:** `SIGNUP_ENABLED` gating shipped, but needed guardrails against regressions and a consistent error contract beyond the signup endpoint.
+- **Decision:** Add a dedicated CI job that runs `tests/signup-gate.e2e.spec.ts` with `SIGNUP_ENABLED=false`, ensuring invite-only behavior stays enforced over time.
+- **Decision:** Standardize `/api/v1/auth/*` error responses to include `code` + `message` while keeping `error` as a backward-compatible alias; add lightweight blocked-signup attempt counter logging when signup is disabled.
+- **Why:** Improves operational observability, client-side type safety, and confidence that private-beta protections cannot drift silently.
+- **Tradeoff:** Slightly larger auth response payloads and additional CI runtime.
+
 ## 2026-03-11 - Enforce env-driven signup gate for private beta
 - **Context:** Private-beta mode required real invite-only protection, not cosmetic hiding of signup links.
 - **Decision:** Introduce `SIGNUP_ENABLED` runtime flag and enforce it at both layers: API blocks `POST /api/v1/auth/signup` with `403` and stable payload (`code: SIGNUP_DISABLED`), while web hides signup CTAs and replaces `/auth/signup` content with private-beta messaging plus sign-in path.

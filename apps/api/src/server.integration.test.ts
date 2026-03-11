@@ -95,6 +95,7 @@ describe("API integration", () => {
       expect(blocked.status).toBe(403);
       expect(blocked.body).toEqual({
         error: "Signup is currently disabled. This beta is invite-only.",
+        message: "Signup is currently disabled. This beta is invite-only.",
         code: "SIGNUP_DISABLED",
       });
 

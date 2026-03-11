@@ -393,6 +393,26 @@ class RouteHttpError extends Error {
   }
 }
 
+function sendAuthError(
+  res: Response,
+  input: {
+    status: number;
+    code: string;
+    message: string;
+    legacyError?: string;
+    data?: unknown;
+  },
+): void {
+  const payload = {
+    error: input.legacyError ?? input.message,
+    message: input.message,
+    code: input.code,
+    ...(input.data !== undefined ? { data: input.data } : {}),
+  };
+
+  res.status(input.status).json(payload);
+}
+
 const envSchema = z.object({
   CORS_ORIGINS: z.string().optional(),
   PASSKEY_RP_ID: z.string().optional(),
@@ -2328,6 +2348,9 @@ export function createApp() {
   const chatConfig = createChatRuntimeConfig(env);
   const chatContextConfig = createChatContextRuntimeConfig(env);
   const signupEnabled = resolveSignupEnabled(env.SIGNUP_ENABLED, nodeEnv);
+  if (!signupEnabled) {
+    console.info("[auth] Public signup is disabled (SIGNUP_ENABLED=false).");
+  }
   const reflectionRepository = new ReflectionRepository();
   const reflectionAudioMaxBytes = parseBoundedInteger(
     env.REFLECTION_AUDIO_MAX_BYTES,
@@ -2363,6 +2386,7 @@ export function createApp() {
     reflectionStorageService,
     reflectionProcessingService,
   );
+  let blockedSignupAttempts = 0;
 
   async function resolveEffectiveSystemPromptForUser(userId: string): Promise<string> {
     const onboardingProfile = getUserOnboardingProfile(userId);
@@ -2818,9 +2842,15 @@ export function createApp() {
 
   app.post("/api/v1/auth/signup", async (req, res) => {
     if (!signupEnabled) {
-      res.status(403).json({
-        error: SIGNUP_DISABLED_MESSAGE,
+      blockedSignupAttempts += 1;
+      console.warn(
+        `[auth] Blocked signup attempt because SIGNUP_ENABLED=false (count=${blockedSignupAttempts}).`,
+      );
+
+      sendAuthError(res, {
+        status: 403,
         code: SIGNUP_DISABLED_CODE,
+        message: SIGNUP_DISABLED_MESSAGE,
       });
       return;
     }
@@ -2828,7 +2858,11 @@ export function createApp() {
     const parsed = signupSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid signup payload" });
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_SIGNUP_PAYLOAD",
+        message: "Invalid signup payload",
+      });
       return;
     }
 
@@ -2836,7 +2870,11 @@ export function createApp() {
       assertWithinAuthRateLimit(authKey("signup", req, parsed.data.email));
     } catch (error) {
       if (error instanceof Error) {
-        res.status(429).json({ error: error.message });
+        sendAuthError(res, {
+          status: 429,
+          code: "AUTH_RATE_LIMITED",
+          message: error.message,
+        });
         return;
       }
       throw error;
@@ -2845,7 +2883,11 @@ export function createApp() {
     const existing = getUserByEmail(parsed.data.email);
 
     if (existing) {
-      res.status(409).json({ error: "An account with this email already exists." });
+      sendAuthError(res, {
+        status: 409,
+        code: "EMAIL_ALREADY_EXISTS",
+        message: "An account with this email already exists.",
+      });
       return;
     }
 
@@ -2863,7 +2905,11 @@ export function createApp() {
     });
 
     if (!created) {
-      res.status(500).json({ error: "Failed to create user" });
+      sendAuthError(res, {
+        status: 500,
+        code: "SIGNUP_CREATE_FAILED",
+        message: "Failed to create user",
+      });
       return;
     }
 
@@ -2909,7 +2955,11 @@ export function createApp() {
       });
     } catch (error) {
       if (error instanceof Error) {
-        res.status(502).json({ error: error.message });
+        sendAuthError(res, {
+          status: 502,
+          code: "VERIFICATION_DELIVERY_FAILED",
+          message: error.message,
+        });
         return;
       }
 
@@ -2934,7 +2984,11 @@ export function createApp() {
     const parsed = verifyEmailSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid verification payload" });
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_VERIFICATION_PAYLOAD",
+        message: "Invalid verification payload",
+      });
       return;
     }
 
@@ -2948,14 +3002,22 @@ export function createApp() {
       const existing = getUserByEmail(email);
 
       if (!existing) {
-        res.status(401).json({ error: "Invalid verification code." });
+        sendAuthError(res, {
+          status: 401,
+          code: "INVALID_VERIFICATION_CODE",
+          message: "Invalid verification code.",
+        });
         return;
       }
 
       const challenge = getActiveEmailVerificationChallengeByCodeHash(existing.id, hashToken(code));
 
       if (!challenge) {
-        res.status(401).json({ error: "Invalid verification code." });
+        sendAuthError(res, {
+          status: 401,
+          code: "INVALID_VERIFICATION_CODE",
+          message: "Invalid verification code.",
+        });
         return;
       }
 
@@ -2966,7 +3028,11 @@ export function createApp() {
       const challenge = getActiveEmailVerificationChallengeByTokenHash(hashToken(token));
 
       if (!challenge) {
-        res.status(401).json({ error: "Invalid or expired verification token." });
+        sendAuthError(res, {
+          status: 401,
+          code: "INVALID_VERIFICATION_TOKEN",
+          message: "Invalid or expired verification token.",
+        });
         return;
       }
 
@@ -2975,12 +3041,20 @@ export function createApp() {
     }
 
     if (!user) {
-      res.status(404).json({ error: "User not found." });
+      sendAuthError(res, {
+        status: 404,
+        code: "USER_NOT_FOUND",
+        message: "User not found.",
+      });
       return;
     }
 
     if (!consumeEmailVerificationChallenge(challengeId)) {
-      res.status(401).json({ error: "Verification challenge is no longer valid." });
+      sendAuthError(res, {
+        status: 401,
+        code: "VERIFICATION_CHALLENGE_INVALID",
+        message: "Verification challenge is no longer valid.",
+      });
       return;
     }
 
@@ -2991,7 +3065,11 @@ export function createApp() {
       const verifiedUser = markUserEmailVerified(user.id);
 
       if (!verifiedUser) {
-        res.status(500).json({ error: "Unable to verify account email." });
+        sendAuthError(res, {
+          status: 500,
+          code: "EMAIL_VERIFICATION_FAILED",
+          message: "Unable to verify account email.",
+        });
         return;
       }
 
@@ -3003,7 +3081,11 @@ export function createApp() {
     const refreshedUser = getUserById(user.id);
 
     if (!refreshedUser) {
-      res.status(404).json({ error: "User not found." });
+      sendAuthError(res, {
+        status: 404,
+        code: "USER_NOT_FOUND",
+        message: "User not found.",
+      });
       return;
     }
 
@@ -3032,7 +3114,11 @@ export function createApp() {
     const parsed = resendVerificationSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid resend payload" });
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_RESEND_PAYLOAD",
+        message: "Invalid resend payload",
+      });
       return;
     }
 
@@ -3040,7 +3126,11 @@ export function createApp() {
       assertWithinAuthRateLimit(authKey("signup", req, parsed.data.email));
     } catch (error) {
       if (error instanceof Error) {
-        res.status(429).json({ error: error.message });
+        sendAuthError(res, {
+          status: 429,
+          code: "AUTH_RATE_LIMITED",
+          message: error.message,
+        });
         return;
       }
       throw error;
@@ -3067,8 +3157,10 @@ export function createApp() {
       );
 
       if (elapsedSeconds < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS) {
-        res.status(429).json({
-          error: `Please wait ${EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS - elapsedSeconds}s before requesting another code.`,
+        sendAuthError(res, {
+          status: 429,
+          code: "VERIFICATION_RESEND_COOLDOWN",
+          message: `Please wait ${EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS - elapsedSeconds}s before requesting another code.`,
         });
         return;
       }
@@ -3114,7 +3206,11 @@ export function createApp() {
       });
     } catch (error) {
       if (error instanceof Error) {
-        res.status(502).json({ error: error.message });
+        sendAuthError(res, {
+          status: 502,
+          code: "VERIFICATION_DELIVERY_FAILED",
+          message: error.message,
+        });
         return;
       }
       throw error;
@@ -3137,7 +3233,11 @@ export function createApp() {
     const parsed = signinSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid signin payload" });
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_SIGNIN_PAYLOAD",
+        message: "Invalid signin payload",
+      });
       return;
     }
 
@@ -3145,7 +3245,11 @@ export function createApp() {
       assertWithinAuthRateLimit(authKey("signin", req, parsed.data.email));
     } catch (error) {
       if (error instanceof Error) {
-        res.status(429).json({ error: error.message });
+        sendAuthError(res, {
+          status: 429,
+          code: "AUTH_RATE_LIMITED",
+          message: error.message,
+        });
         return;
       }
       throw error;
@@ -3154,19 +3258,32 @@ export function createApp() {
     const existing = getUserByEmail(parsed.data.email);
 
     if (!existing || existing.deletedAt) {
-      res.status(401).json({ error: "Invalid email or password." });
+      sendAuthError(res, {
+        status: 401,
+        code: "INVALID_CREDENTIALS",
+        message: "Invalid email or password.",
+      });
       return;
     }
 
     const valid = await argon2.verify(existing.passwordHash, parsed.data.password);
 
     if (!valid) {
-      res.status(401).json({ error: "Invalid email or password." });
+      sendAuthError(res, {
+        status: 401,
+        code: "INVALID_CREDENTIALS",
+        message: "Invalid email or password.",
+      });
       return;
     }
 
     if (!existing.emailVerifiedAt) {
-      res.status(401).json({ error: "EMAIL_NOT_VERIFIED" });
+      sendAuthError(res, {
+        status: 401,
+        code: "EMAIL_NOT_VERIFIED",
+        message: "Email not verified.",
+        legacyError: "EMAIL_NOT_VERIFIED",
+      });
       return;
     }
 
@@ -3174,13 +3291,20 @@ export function createApp() {
       const totpSecret = getUserTotpSecret(existing.id);
 
       if (!totpSecret?.verifiedAt) {
-        res.status(409).json({ error: "MFA is enabled but not fully configured." });
+        sendAuthError(res, {
+          status: 409,
+          code: "MFA_NOT_CONFIGURED",
+          message: "MFA is enabled but not fully configured.",
+        });
         return;
       }
 
       if (!parsed.data.mfaCode) {
-        res.status(401).json({
-          error: "MFA_REQUIRED",
+        sendAuthError(res, {
+          status: 401,
+          code: "MFA_REQUIRED",
+          message: "MFA challenge required.",
+          legacyError: "MFA_REQUIRED",
           data: {
             mfaRequired: true,
             mfaChallengeId: "totp",
@@ -3192,7 +3316,11 @@ export function createApp() {
       const mfaValid = verifyTotpCode(totpSecret.secret, parsed.data.mfaCode);
 
       if (!mfaValid) {
-        res.status(401).json({ error: "Invalid MFA code." });
+        sendAuthError(res, {
+          status: 401,
+          code: "INVALID_MFA_CODE",
+          message: "Invalid MFA code.",
+        });
         return;
       }
     }
@@ -3211,7 +3339,11 @@ export function createApp() {
     const signedInUser = getUserById(existing.id);
 
     if (!signedInUser) {
-      res.status(404).json({ error: "User not found." });
+      sendAuthError(res, {
+        status: 404,
+        code: "USER_NOT_FOUND",
+        message: "User not found.",
+      });
       return;
     }
 
@@ -3228,7 +3360,11 @@ export function createApp() {
     const parsed = passkeyAuthOptionsSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid passkey auth payload" });
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_PASSKEY_AUTH_PAYLOAD",
+        message: "Invalid passkey auth payload",
+      });
       return;
     }
 
@@ -3240,14 +3376,22 @@ export function createApp() {
       !existingUser.passkeyEnabled ||
       !existingUser.emailVerifiedAt
     ) {
-      res.status(401).json({ error: "Passkey sign-in is unavailable for this account." });
+      sendAuthError(res, {
+        status: 401,
+        code: "PASSKEY_UNAVAILABLE",
+        message: "Passkey sign-in is unavailable for this account.",
+      });
       return;
     }
 
     const credentials = listPasskeyCredentialsByUserId(existingUser.id);
 
     if (credentials.length === 0) {
-      res.status(401).json({ error: "Passkey sign-in is unavailable for this account." });
+      sendAuthError(res, {
+        status: 401,
+        code: "PASSKEY_UNAVAILABLE",
+        message: "Passkey sign-in is unavailable for this account.",
+      });
       return;
     }
 
@@ -3278,7 +3422,11 @@ export function createApp() {
     const parsed = passkeyVerifySchema.safeParse(req.body);
 
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid passkey verify payload" });
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_PASSKEY_VERIFY_PAYLOAD",
+        message: "Invalid passkey verify payload",
+      });
       return;
     }
 
@@ -3288,26 +3436,42 @@ export function createApp() {
     });
 
     if (!challengeRecord) {
-      res.status(401).json({ error: "Invalid or expired passkey challenge." });
+      sendAuthError(res, {
+        status: 401,
+        code: "INVALID_PASSKEY_CHALLENGE",
+        message: "Invalid or expired passkey challenge.",
+      });
       return;
     }
 
     const credential = getPasskeyCredentialByCredentialId(parsed.data.response.id);
 
     if (!credential || credential.userId !== challengeRecord.userId) {
-      res.status(401).json({ error: "Passkey credential not recognized." });
+      sendAuthError(res, {
+        status: 401,
+        code: "PASSKEY_CREDENTIAL_UNRECOGNIZED",
+        message: "Passkey credential not recognized.",
+      });
       return;
     }
 
     const user = getUserById(challengeRecord.userId);
 
     if (!user) {
-      res.status(401).json({ error: "User not found for passkey credential." });
+      sendAuthError(res, {
+        status: 401,
+        code: "USER_NOT_FOUND",
+        message: "User not found for passkey credential.",
+      });
       return;
     }
 
     if (!user.emailVerifiedAt) {
-      res.status(401).json({ error: "Passkey sign-in is unavailable for this account." });
+      sendAuthError(res, {
+        status: 401,
+        code: "PASSKEY_UNAVAILABLE",
+        message: "Passkey sign-in is unavailable for this account.",
+      });
       return;
     }
 
@@ -3329,7 +3493,11 @@ export function createApp() {
       });
 
       if (!verification.verified) {
-        res.status(401).json({ error: "Passkey assertion could not be verified." });
+        sendAuthError(res, {
+          status: 401,
+          code: "PASSKEY_ASSERTION_INVALID",
+          message: "Passkey assertion could not be verified.",
+        });
         return;
       }
 
@@ -3359,7 +3527,11 @@ export function createApp() {
         },
       });
     } catch {
-      res.status(401).json({ error: "Passkey assertion could not be verified." });
+      sendAuthError(res, {
+        status: 401,
+        code: "PASSKEY_ASSERTION_INVALID",
+        message: "Passkey assertion could not be verified.",
+      });
     }
   });
 
@@ -3367,7 +3539,11 @@ export function createApp() {
     const parsed = refreshSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid refresh payload" });
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_REFRESH_PAYLOAD",
+        message: "Invalid refresh payload",
+      });
       return;
     }
 
@@ -3375,7 +3551,11 @@ export function createApp() {
     const refreshContext = getRefreshSessionContextByTokenHash(refreshTokenHash);
 
     if (!refreshContext) {
-      res.status(401).json({ error: "Invalid or expired refresh token." });
+      sendAuthError(res, {
+        status: 401,
+        code: "INVALID_REFRESH_TOKEN",
+        message: "Invalid or expired refresh token.",
+      });
       return;
     }
     const user = refreshContext.user;
@@ -3392,7 +3572,11 @@ export function createApp() {
     });
 
     if (!rotated) {
-      res.status(401).json({ error: "Refresh token rotation failed." });
+      sendAuthError(res, {
+        status: 401,
+        code: "REFRESH_ROTATION_FAILED",
+        message: "Refresh token rotation failed.",
+      });
       return;
     }
 
@@ -3417,7 +3601,11 @@ export function createApp() {
     const currentUser = getUserById(authReq.authUser.id);
 
     if (!currentUser) {
-      res.status(401).json({ error: "Unauthorized" });
+      sendAuthError(res, {
+        status: 401,
+        code: "UNAUTHORIZED",
+        message: "Unauthorized",
+      });
       return;
     }
 
@@ -3439,7 +3627,11 @@ export function createApp() {
     const parsed = authMePatchSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid account payload" });
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_ACCOUNT_PAYLOAD",
+        message: "Invalid account payload",
+      });
       return;
     }
 
@@ -3447,7 +3639,11 @@ export function createApp() {
       const updatedUser = updateUserName(authReq.authUser.id, parsed.data.name);
 
       if (!updatedUser) {
-        res.status(404).json({ error: "User not found" });
+        sendAuthError(res, {
+          status: 404,
+          code: "USER_NOT_FOUND",
+          message: "User not found",
+        });
         return;
       }
     }
@@ -3463,7 +3659,11 @@ export function createApp() {
     const currentUser = getUserById(authReq.authUser.id);
 
     if (!currentUser) {
-      res.status(404).json({ error: "User not found" });
+      sendAuthError(res, {
+        status: 404,
+        code: "USER_NOT_FOUND",
+        message: "User not found",
+      });
       return;
     }
 
@@ -3484,26 +3684,42 @@ export function createApp() {
     const parsed = changePasswordSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid password payload" });
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_PASSWORD_PAYLOAD",
+        message: "Invalid password payload",
+      });
       return;
     }
 
     if (parsed.data.oldPassword === parsed.data.newPassword) {
-      res.status(400).json({ error: "New password must be different from current password." });
+      sendAuthError(res, {
+        status: 400,
+        code: "PASSWORD_REUSE_NOT_ALLOWED",
+        message: "New password must be different from current password.",
+      });
       return;
     }
 
     const existing = getUserAuthById(authReq.authUser.id);
 
     if (!existing || existing.deletedAt) {
-      res.status(404).json({ error: "User not found" });
+      sendAuthError(res, {
+        status: 404,
+        code: "USER_NOT_FOUND",
+        message: "User not found",
+      });
       return;
     }
 
     const validCurrentPassword = await argon2.verify(existing.passwordHash, parsed.data.oldPassword);
 
     if (!validCurrentPassword) {
-      res.status(401).json({ error: "Current password is incorrect." });
+      sendAuthError(res, {
+        status: 401,
+        code: "INVALID_CURRENT_PASSWORD",
+        message: "Current password is incorrect.",
+      });
       return;
     }
 
@@ -3516,7 +3732,11 @@ export function createApp() {
     const updated = updateUserPasswordHash(authReq.authUser.id, passwordHash);
 
     if (!updated) {
-      res.status(500).json({ error: "Unable to update password." });
+      sendAuthError(res, {
+        status: 500,
+        code: "PASSWORD_UPDATE_FAILED",
+        message: "Unable to update password.",
+      });
       return;
     }
 
@@ -3528,26 +3748,42 @@ export function createApp() {
     const parsed = deleteAccountSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid delete payload" });
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_DELETE_PAYLOAD",
+        message: "Invalid delete payload",
+      });
       return;
     }
 
     const existing = getUserAuthById(authReq.authUser.id);
 
     if (!existing || existing.deletedAt) {
-      res.status(404).json({ error: "User not found" });
+      sendAuthError(res, {
+        status: 404,
+        code: "USER_NOT_FOUND",
+        message: "User not found",
+      });
       return;
     }
 
     if (parsed.data.emailConfirm !== existing.email.toLowerCase()) {
-      res.status(401).json({ error: "Email confirmation does not match your account." });
+      sendAuthError(res, {
+        status: 401,
+        code: "EMAIL_CONFIRMATION_MISMATCH",
+        message: "Email confirmation does not match your account.",
+      });
       return;
     }
 
     const validPassword = await argon2.verify(existing.passwordHash, parsed.data.passwordConfirm);
 
     if (!validPassword) {
-      res.status(401).json({ error: "Password confirmation is invalid." });
+      sendAuthError(res, {
+        status: 401,
+        code: "INVALID_PASSWORD_CONFIRMATION",
+        message: "Password confirmation is invalid.",
+      });
       return;
     }
 
@@ -3557,7 +3793,11 @@ export function createApp() {
     });
 
     if (!deleted) {
-      res.status(409).json({ error: "Account is already deleted." });
+      sendAuthError(res, {
+        status: 409,
+        code: "ACCOUNT_ALREADY_DELETED",
+        message: "Account is already deleted.",
+      });
       return;
     }
 
