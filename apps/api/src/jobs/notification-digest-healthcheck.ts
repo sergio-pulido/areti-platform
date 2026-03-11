@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { listSystemJobRuns } from "@ataraxia/db";
+import { listSystemJobRuns } from "@areti/db";
 
 function resolveLockPath(): string {
   const configured = process.env.NOTIFICATION_DIGEST_LOCK_PATH?.trim();

@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-03-11 - Adopt hybrid rate-limit policy resolution with persisted block telemetry
+- **Context:** Critical auth/security/chat/admin endpoints needed production-grade abuse protection and operational visibility; existing route-local in-memory checks were not cross-instance safe, not extensible, and lacked auditability.
+- **Decision:** Introduce a dedicated rate-limit module in API with centralized named policies, bucket-key strategies, policy resolver precedence (`code defaults -> env overrides -> optional DB overrides`), pluggable counter store (`memory` + Redis adapter), and standardized 429 response contract.
+- **Decision:** Persist blocked events in DB (`rate_limit_block_events`) using hashed/masked IP handling and expose admin read visibility at `GET /api/v1/admin/rate-limits`; add optional override table (`rate_limit_policy_overrides`) as operational control input without replacing secure code defaults.
+- **Decision:** Wire protection explicitly at route level for auth/security/chat/reflection/preview/admin mutation endpoints; remove legacy ad-hoc per-route limiter state from `server.ts`.
+- **Why:** Provides immediate production safeguards, clean observability, and a stable foundation for future contextual tuning (plan/country/trust/perks) without rewriting route logic.
+- **Tradeoff:** Memory store remains unsuitable for multi-instance production (Redis required there), and DB override management is read-only in this iteration (no CRUD UI/editor yet).
+
 ## 2026-03-11 - Split signup into verified pending intent + completion phases
 - **Context:** One-step signup created users too early and mixed legal/password/profile capture before verified email, which conflicted with private-beta invite controls and completion safety.
 - **Decision:** Replace direct user creation on `POST /api/v1/auth/signup` with a server-side `signup_intents` lifecycle (`self_signup` or `invite`), email verification challenges tied to intent state, and a dedicated completion endpoint (`POST /api/v1/auth/signup/complete`) that is the only path that creates active users.

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createAdminAuditLog, promoteUserByEmail } from "@ataraxia/db";
+import { createAdminAuditLog, promoteUserByEmail } from "@areti/db";
 
 function parseEmailArg(argv: string[]): string | null {
   for (let index = 0; index < argv.length; index += 1) {

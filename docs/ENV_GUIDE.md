@@ -54,6 +54,63 @@ npm run dev
   - Restart running web/api processes after changing env values.
   - In local Next dev, prefer `apps/web/.env.local` (repo-root `.env` is also supported).
 
+### `RATE_LIMIT_ENABLED`
+- Purpose: enables API route-level rate limiting middleware.
+- Used by: `apps/api` rate-limit module.
+- Options: `true` | `false`.
+- Default: `true`.
+
+### `RATE_LIMIT_STORE`
+- Purpose: selects the counter storage adapter.
+- Used by: API rate-limit store factory.
+- Options: `memory` | `redis`.
+- Default: `memory`.
+- Note: `memory` is process-local and not safe for multi-instance production.
+
+### `REDIS_URL`
+- Purpose: Redis connection URL for shared rate-limit counters.
+- Used by: Redis rate-limit store.
+- Required when: `RATE_LIMIT_STORE=redis`.
+
+### `RATE_LIMIT_REDIS_PREFIX`
+- Purpose: Redis key namespace prefix for rate-limit buckets.
+- Used by: Redis rate-limit store.
+- Default: `areti:ratelimit`.
+
+### `RATE_LIMIT_TRUST_PROXY`
+- Purpose: controls Express `trust proxy` setting for safe client IP extraction.
+- Used by: API bootstrap (`app.set("trust proxy", ...)`) + rate-limit IP keying.
+- Options: `false`, `true`, integer hop count, `loopback`, `linklocal`, `uniquelocal`.
+- Default: `false`.
+
+### `RATE_LIMIT_LOG_BLOCKS`
+- Purpose: enables structured logging for each blocked request.
+- Used by: rate-limit block logger.
+- Options: `true` | `false`.
+- Default: `true`.
+
+### `RATE_LIMIT_ADMIN_MAX_ROWS`
+- Purpose: max rows returned by admin rate-limit events endpoint.
+- Used by: `GET /api/v1/admin/rate-limits`.
+- Default: `100`.
+
+### `RATE_LIMIT_USE_DB_OVERRIDES`
+- Purpose: enables DB override layer during policy resolution.
+- Used by: rate-limit resolver.
+- Options: `true` | `false`.
+- Default: `false`.
+
+### `RATE_LIMIT_IP_HASH_SALT`
+- Purpose: salt for hashing persisted client IPs in rate-limit block events.
+- Used by: rate-limit event persistence.
+- Required: set a strong secret in production.
+
+### `RATE_LIMIT_POLICY_OVERRIDES_JSON`
+- Purpose: optional JSON map of policy-level operational overrides without DB changes.
+- Used by: rate-limit resolver (env override layer).
+- Format: JSON object keyed by policy key, e.g.:
+  - `{"chat.sendMessage":{"authenticatedMaxRequests":40,"windowSeconds":60}}`
+
 ### `API_BASE_URL`
 - Purpose: server-side web app calls to API.
 - Used by: Next.js server actions/loaders.

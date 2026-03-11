@@ -23,7 +23,7 @@ import {
   type ReflectionProcessingStep,
   type ReflectionSourceType,
   type ReflectionStatus,
-} from "@ataraxia/db";
+} from "@areti/db";
 
 type ReflectionCreateRecordInput = {
   id: string;

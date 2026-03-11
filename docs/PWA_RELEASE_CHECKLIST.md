@@ -9,10 +9,10 @@ Use this checklist for any release that changes PWA metadata, caching, install b
 - [ ] Ensure `apps/web/next.config.ts` still serves `/sw.js` with `Cache-Control: no-cache, no-store, must-revalidate`.
 
 ## Validation
-- [ ] Run `npm run lint --workspace @ataraxia/web`.
-- [ ] Run `npm run build --workspace @ataraxia/web`.
+- [ ] Run `npm run lint --workspace @areti/web`.
+- [ ] Run `npm run build --workspace @areti/web`.
 - [ ] Run `npm run test:e2e -- --grep "pwa assets and offline route are available"`.
-- [ ] In a production run (`npm run start --workspace @ataraxia/web`), confirm in browser devtools:
+- [ ] In a production run (`npm run start --workspace @areti/web`), confirm in browser devtools:
   - Manifest is valid and install prompt is available.
   - Service worker is active and controlling the page.
   - Offline navigation falls back to `/offline`.

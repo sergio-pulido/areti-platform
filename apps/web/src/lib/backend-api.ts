@@ -734,6 +734,28 @@ export type ApiAdminSystemJobSummary = {
   };
 };
 
+export type ApiAdminRateLimitEvent = {
+  id: string;
+  policyKey: string;
+  route: string;
+  method: string;
+  ipHash: string;
+  ipMasked: string | null;
+  userId: string | null;
+  country: string | null;
+  plan: string | null;
+  trustLevel: string | null;
+  blocked: boolean;
+  retryAfterSeconds: number;
+  requestCount: number;
+  limitValue: number;
+  windowSeconds: number;
+  scopeType: string;
+  userAgent: string | null;
+  requestId: string | null;
+  createdAt: string;
+};
+
 export type ContentStatus = "DRAFT" | "PUBLISHED";
 
 export type AdminContentBundle = {
@@ -1850,6 +1872,55 @@ export async function apiAdminRevokeInvitation(
 
 export async function apiAdminAudit(token: string, limit = 40): Promise<ApiAdminAuditLog[]> {
   return requestJson<ApiAdminAuditLog[]>(`/api/v1/admin/audit?limit=${limit}`, withAuth(token));
+}
+
+export async function apiAdminRateLimits(
+  token: string,
+  input?: {
+    limit?: number;
+    policyKey?: string;
+    route?: string;
+    userId?: string;
+    ipHash?: string;
+    ip?: string;
+    method?: string;
+    from?: string;
+    to?: string;
+  },
+): Promise<ApiAdminRateLimitEvent[]> {
+  const params = new URLSearchParams();
+  if (typeof input?.limit === "number") {
+    params.set("limit", String(input.limit));
+  }
+  if (input?.policyKey) {
+    params.set("policyKey", input.policyKey);
+  }
+  if (input?.route) {
+    params.set("route", input.route);
+  }
+  if (input?.userId) {
+    params.set("userId", input.userId);
+  }
+  if (input?.ipHash) {
+    params.set("ipHash", input.ipHash);
+  }
+  if (input?.ip) {
+    params.set("ip", input.ip);
+  }
+  if (input?.method) {
+    params.set("method", input.method);
+  }
+  if (input?.from) {
+    params.set("from", input.from);
+  }
+  if (input?.to) {
+    params.set("to", input.to);
+  }
+  const qs = params.toString();
+  return requestJson<ApiAdminRateLimitEvent[]>(
+    `/api/v1/admin/rate-limits${qs ? `?${qs}` : ""}`,
+    withAuth(token),
+  );
 }
 
 export async function apiAdminChatEvents(

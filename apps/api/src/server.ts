@@ -129,6 +129,7 @@ import {
   getAdminOverviewStats,
   listAdminUsers,
   listInvitations,
+  listActiveRateLimitPolicyOverrides,
   listChatMessagesForThread,
   listChatThreadsByUser,
   listChatEvents,
@@ -140,6 +141,7 @@ import {
   listNotificationsByUser,
   listPasskeyCredentialsByUserId,
   listPreviewEventsByDays,
+  listRateLimitBlockEvents,
   listSystemJobRuns,
   listUserDevicesByUserId,
   markSignupIntentCompleted,
@@ -205,7 +207,7 @@ import {
   type OnboardingProfileRecord,
   type ReflectionStatus,
   type SignupFlowType,
-} from "@ataraxia/db";
+} from "@areti/db";
 import {
   ReflectionAiService,
   ReflectionProcessingService,
@@ -214,6 +216,15 @@ import {
   ReflectionStorageService,
   type ReflectionCreateInput,
 } from "./reflections/index.js";
+import {
+  createRateLimitMiddlewareFactory,
+  createRateLimitRuntimeConfig,
+  createRateLimitStore,
+  getClientIp,
+  hashIpAddress,
+  RateLimitResolver,
+  type RateLimitPolicyKey,
+} from "./modules/rate-limit/index.js";
 
 const ACCESS_SESSION_TTL_MINUTES = 20;
 const REFRESH_SESSION_TTL_DAYS = 30;
@@ -221,12 +232,6 @@ const PASSWORD_MIN_LENGTH = 10;
 const PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 const MODERATION_BLOCKED_WORDS = ["suicide", "kill myself", "bomb", "terrorist", "self-harm"];
-const CHAT_WINDOW_MS = 60 * 1000;
-const CHAT_MAX_ATTEMPTS = 20;
-const PREVIEW_CHAT_WINDOW_MS = 60 * 1000;
-const PREVIEW_CHAT_MAX_ATTEMPTS = 6;
-const PREVIEW_EVENT_WINDOW_MS = 60 * 1000;
-const PREVIEW_EVENT_MAX_ATTEMPTS = 45;
 const APPROX_CHARS_PER_TOKEN = 4;
 const PREVIEW_CHAT_SYSTEM_PROMPT = `
 You are Areti Preview Companion, a concise coach for first-time visitors.
@@ -515,13 +520,6 @@ const envSchema = z.object({
 
 type AppEnv = z.infer<typeof envSchema>;
 
-const authAttemptsByKey = new Map<string, number[]>();
-const AUTH_WINDOW_MS = 15 * 60 * 1000;
-const AUTH_MAX_ATTEMPTS = 8;
-const chatAttemptsByUser = new Map<string, number[]>();
-const previewChatAttemptsByKey = new Map<string, number[]>();
-const previewEventAttemptsByKey = new Map<string, number[]>();
-
 const serverFilePath = fileURLToPath(import.meta.url);
 const serverDirPath = path.dirname(serverFilePath);
 const apiRootPath = path.resolve(serverDirPath, "..");
@@ -562,58 +560,6 @@ const validPasskeyTransports = new Set<AuthenticatorTransportFuture>([
   "smart-card",
   "usb",
 ]);
-
-function assertWithinAuthRateLimit(key: string): void {
-  const now = Date.now();
-  const current = authAttemptsByKey.get(key) ?? [];
-  const recent = current.filter((timestamp) => now - timestamp <= AUTH_WINDOW_MS);
-
-  if (recent.length >= AUTH_MAX_ATTEMPTS) {
-    throw new Error("Too many attempts. Please wait 15 minutes and try again.");
-  }
-
-  recent.push(now);
-  authAttemptsByKey.set(key, recent);
-}
-
-function assertWithinChatRateLimit(userId: string): void {
-  const now = Date.now();
-  const current = chatAttemptsByUser.get(userId) ?? [];
-  const recent = current.filter((timestamp) => now - timestamp <= CHAT_WINDOW_MS);
-
-  if (recent.length >= CHAT_MAX_ATTEMPTS) {
-    throw new Error("Too many chat requests. Please wait a moment and try again.");
-  }
-
-  recent.push(now);
-  chatAttemptsByUser.set(userId, recent);
-}
-
-function assertWithinPreviewChatRateLimit(key: string): void {
-  const now = Date.now();
-  const current = previewChatAttemptsByKey.get(key) ?? [];
-  const recent = current.filter((timestamp) => now - timestamp <= PREVIEW_CHAT_WINDOW_MS);
-
-  if (recent.length >= PREVIEW_CHAT_MAX_ATTEMPTS) {
-    throw new Error("Too many preview chat requests. Please wait a minute and try again.");
-  }
-
-  recent.push(now);
-  previewChatAttemptsByKey.set(key, recent);
-}
-
-function assertWithinPreviewEventRateLimit(key: string): void {
-  const now = Date.now();
-  const current = previewEventAttemptsByKey.get(key) ?? [];
-  const recent = current.filter((timestamp) => now - timestamp <= PREVIEW_EVENT_WINDOW_MS);
-
-  if (recent.length >= PREVIEW_EVENT_MAX_ATTEMPTS) {
-    throw new Error("Too many preview analytics events. Please wait and retry.");
-  }
-
-  recent.push(now);
-  previewEventAttemptsByKey.set(key, recent);
-}
 
 function base32Encode(buffer: Uint8Array): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -849,27 +795,7 @@ function formatOnboardingContext(profile: OnboardingProfileRecord | null): strin
 }
 
 function getIpAddress(request: Request): string {
-  const forwardedFor = request.headers["x-forwarded-for"];
-
-  if (typeof forwardedFor === "string") {
-    return forwardedFor.split(",")[0]?.trim() ?? "unknown";
-  }
-
-  if (Array.isArray(forwardedFor) && forwardedFor.length > 0) {
-    return forwardedFor[0] ?? "unknown";
-  }
-
-  return request.headers["x-real-ip"]?.toString() ?? "unknown";
-}
-
-function authKey(intent: "signin" | "signup", request: Request, email: string): string {
-  return `${intent}:${getIpAddress(request)}:${email.toLowerCase()}`;
-}
-
-function previewClientKey(request: Request): string {
-  const ipAddress = getIpAddress(request);
-  const userAgent = request.header("user-agent")?.slice(0, 200) ?? "unknown-agent";
-  return createHash("sha256").update(`${ipAddress}|${userAgent}`).digest("hex");
+  return getClientIp(request);
 }
 
 function deriveSignupDisplayName(email: string): string {
@@ -2414,6 +2340,18 @@ const adminInvitationsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+const adminRateLimitEventsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).default(100),
+  policyKey: z.string().trim().min(1).max(120).optional(),
+  route: z.string().trim().min(1).max(240).optional(),
+  userId: z.string().uuid().optional(),
+  ipHash: z.string().trim().min(8).max(128).optional(),
+  ip: z.string().trim().min(3).max(80).optional(),
+  method: z.string().trim().min(3).max(12).optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+});
+
 const adminCreateInvitationSchema = z
   .object({
     email: z.string().trim().toLowerCase().email().max(120).optional(),
@@ -2553,6 +2491,29 @@ export function createApp() {
   const app = express();
   const env = envSchema.parse(process.env);
   const nodeEnv = process.env.NODE_ENV ?? "development";
+  const rateLimitConfig = createRateLimitRuntimeConfig(process.env);
+  app.set("trust proxy", rateLimitConfig.trustProxy);
+  const rateLimitStore = createRateLimitStore(rateLimitConfig);
+  const rateLimitResolver = new RateLimitResolver(
+    rateLimitConfig,
+    rateLimitConfig.useDbOverrides
+      ? async (policyKey, asOfIso) => listActiveRateLimitPolicyOverrides({
+          policyKey,
+          asOf: asOfIso,
+        })
+      : undefined,
+  );
+  const buildRateLimit = createRateLimitMiddlewareFactory({
+    config: rateLimitConfig,
+    resolver: rateLimitResolver,
+    store: rateLimitStore,
+  });
+  const rateLimitRoute = (policyKey: RateLimitPolicyKey, routeId: string) =>
+    buildRateLimit(policyKey, routeId);
+  const adminContentMutationRateLimit = rateLimitRoute(
+    "admin.contentMutation",
+    "MUTATION /api/v1/admin/content/*",
+  );
   const chatConfig = createChatRuntimeConfig(env);
   const chatContextConfig = createChatContextRuntimeConfig(env);
   const signupEnabled = resolveSignupEnabled(env.SIGNUP_ENABLED, nodeEnv);
@@ -2766,15 +2727,6 @@ export function createApp() {
 
     if (thread.archived) {
       throw new RouteHttpError(400, "Thread is archived. Restore it before sending new messages.");
-    }
-
-    try {
-      assertWithinChatRateLimit(input.userId);
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new RouteHttpError(429, error.message);
-      }
-      throw error;
     }
 
     const allMessages = listChatMessagesForThread(input.userId, thread.id) ?? [];
@@ -3148,7 +3100,10 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/auth/signup", async (req, res) => {
+  app.post(
+    "/api/v1/auth/signup",
+    rateLimitRoute("auth.signup", "POST /api/v1/auth/signup"),
+    async (req, res) => {
     const parsed = signupStartSchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -3225,20 +3180,6 @@ export function createApp() {
       return;
     }
 
-    try {
-      assertWithinAuthRateLimit(authKey("signup", req, signupEmail));
-    } catch (error) {
-      if (error instanceof Error) {
-        sendAuthError(res, {
-          status: 429,
-          code: "AUTH_RATE_LIMITED",
-          message: error.message,
-        });
-        return;
-      }
-      throw error;
-    }
-
     const existing = getUserByEmail(signupEmail);
 
     if (existing) {
@@ -3303,7 +3244,8 @@ export function createApp() {
           : {}),
       },
     });
-  });
+    },
+  );
 
   app.post("/api/v1/auth/verify-email", async (req, res) => {
     const parsed = verifyEmailSchema.safeParse(req.body);
@@ -3363,7 +3305,10 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/auth/resend-verification", async (req, res) => {
+  app.post(
+    "/api/v1/auth/resend-verification",
+    rateLimitRoute("auth.resendVerification", "POST /api/v1/auth/resend-verification"),
+    async (req, res) => {
     const parsed = resendVerificationSchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -3373,20 +3318,6 @@ export function createApp() {
         message: "Invalid resend payload",
       });
       return;
-    }
-
-    try {
-      assertWithinAuthRateLimit(authKey("signup", req, parsed.data.email));
-    } catch (error) {
-      if (error instanceof Error) {
-        sendAuthError(res, {
-          status: 429,
-          code: "AUTH_RATE_LIMITED",
-          message: error.message,
-        });
-        return;
-      }
-      throw error;
     }
 
     const intent = getLatestActiveSignupIntentByEmail(parsed.data.email);
@@ -3461,7 +3392,8 @@ export function createApp() {
           : {}),
       },
     });
-  });
+    },
+  );
 
   app.get("/api/v1/auth/signup/completion-context", (req, res) => {
     const parsed = signupCompletionContextSchema.safeParse(req.query);
@@ -3730,7 +3662,10 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/auth/signin", async (req, res) => {
+  app.post(
+    "/api/v1/auth/signin",
+    rateLimitRoute("auth.signin", "POST /api/v1/auth/signin"),
+    async (req, res) => {
     const parsed = signinSchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -3740,20 +3675,6 @@ export function createApp() {
         message: "Invalid signin payload",
       });
       return;
-    }
-
-    try {
-      assertWithinAuthRateLimit(authKey("signin", req, parsed.data.email));
-    } catch (error) {
-      if (error instanceof Error) {
-        sendAuthError(res, {
-          status: 429,
-          code: "AUTH_RATE_LIMITED",
-          message: error.message,
-        });
-        return;
-      }
-      throw error;
     }
 
     const existing = getUserByEmail(parsed.data.email);
@@ -3855,9 +3776,13 @@ export function createApp() {
         user: signedInUser,
       },
     });
-  });
+    },
+  );
 
-  app.post("/api/v1/auth/passkey/options", async (req, res) => {
+  app.post(
+    "/api/v1/auth/passkey/options",
+    rateLimitRoute("auth.passkeyOptions", "POST /api/v1/auth/passkey/options"),
+    async (req, res) => {
     const parsed = passkeyAuthOptionsSchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -3917,9 +3842,13 @@ export function createApp() {
         options,
       },
     });
-  });
+    },
+  );
 
-  app.post("/api/v1/auth/passkey/verify", async (req, res) => {
+  app.post(
+    "/api/v1/auth/passkey/verify",
+    rateLimitRoute("auth.passkeyVerify", "POST /api/v1/auth/passkey/verify"),
+    async (req, res) => {
     const parsed = passkeyVerifySchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -4034,9 +3963,13 @@ export function createApp() {
         message: "Passkey assertion could not be verified.",
       });
     }
-  });
+    },
+  );
 
-  app.post("/api/v1/auth/refresh", async (req, res) => {
+  app.post(
+    "/api/v1/auth/refresh",
+    rateLimitRoute("auth.refresh", "POST /api/v1/auth/refresh"),
+    async (req, res) => {
     const parsed = refreshSchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -4095,7 +4028,8 @@ export function createApp() {
         refreshToken: newRefreshToken,
       },
     });
-  });
+    },
+  );
 
   app.get("/api/v1/auth/me", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
@@ -4180,7 +4114,11 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/auth/change-password", requireAuthenticatedUser, async (req, res) => {
+  app.post(
+    "/api/v1/auth/change-password",
+    requireAuthenticatedUser,
+    rateLimitRoute("auth.passwordChange", "POST /api/v1/auth/change-password"),
+    async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = changePasswordSchema.safeParse(req.body);
 
@@ -4242,9 +4180,14 @@ export function createApp() {
     }
 
     res.json({ data: { updated: true } });
-  });
+    },
+  );
 
-  app.post("/api/v1/auth/delete", requireAuthenticatedUser, async (req, res) => {
+  app.post(
+    "/api/v1/auth/delete",
+    requireAuthenticatedUser,
+    rateLimitRoute("auth.deleteAccount", "POST /api/v1/auth/delete"),
+    async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = deleteAccountSchema.safeParse(req.body);
 
@@ -4303,7 +4246,8 @@ export function createApp() {
     }
 
     res.json({ data: { deleted: true } });
-  });
+    },
+  );
 
   app.get("/api/v1/onboarding", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
@@ -4378,7 +4322,11 @@ export function createApp() {
     res.json({ data: settings });
   });
 
-  app.post("/api/v1/security/mfa", requireAuthenticatedUser, (req, res) => {
+  app.post(
+    "/api/v1/security/mfa",
+    requireAuthenticatedUser,
+    rateLimitRoute("security.sensitive", "POST /api/v1/security/mfa"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = securityToggleSchema.safeParse(req.body);
 
@@ -4400,9 +4348,14 @@ export function createApp() {
     setUserMfaEnabled(authReq.authUser.id, parsed.data.enabled);
 
     res.json({ data: { mfaEnabled: parsed.data.enabled } });
-  });
+    },
+  );
 
-  app.post("/api/v1/security/passkeys", requireAuthenticatedUser, (req, res) => {
+  app.post(
+    "/api/v1/security/passkeys",
+    requireAuthenticatedUser,
+    rateLimitRoute("security.sensitive", "POST /api/v1/security/passkeys"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = securityToggleSchema.safeParse(req.body);
 
@@ -4414,9 +4367,14 @@ export function createApp() {
     setUserPasskeyEnabled(authReq.authUser.id, parsed.data.enabled);
 
     res.json({ data: { passkeyEnabled: parsed.data.enabled } });
-  });
+    },
+  );
 
-  app.post("/api/v1/security/passkeys/register/options", requireAuthenticatedUser, async (req, res) => {
+  app.post(
+    "/api/v1/security/passkeys/register/options",
+    requireAuthenticatedUser,
+    rateLimitRoute("security.sensitive", "POST /api/v1/security/passkeys/register/options"),
+    async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const credentials = listPasskeyCredentialsByUserId(authReq.authUser.id);
 
@@ -4449,9 +4407,14 @@ export function createApp() {
         options,
       },
     });
-  });
+    },
+  );
 
-  app.post("/api/v1/security/passkeys/register/verify", requireAuthenticatedUser, async (req, res) => {
+  app.post(
+    "/api/v1/security/passkeys/register/verify",
+    requireAuthenticatedUser,
+    rateLimitRoute("security.sensitive", "POST /api/v1/security/passkeys/register/verify"),
+    async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = passkeyVerifySchema.safeParse(req.body);
 
@@ -4527,7 +4490,8 @@ export function createApp() {
     } catch {
       res.status(401).json({ error: "Passkey registration could not be verified." });
     }
-  });
+    },
+  );
 
   app.get("/api/v1/security/passkeys", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
@@ -4541,7 +4505,11 @@ export function createApp() {
     res.json({ data: passkeys });
   });
 
-  app.patch("/api/v1/security/passkeys/:id", requireAuthenticatedUser, (req, res) => {
+  app.patch(
+    "/api/v1/security/passkeys/:id",
+    requireAuthenticatedUser,
+    rateLimitRoute("security.sensitive", "PATCH /api/v1/security/passkeys/:id"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = passkeyRenameSchema.safeParse(req.body);
 
@@ -4562,9 +4530,14 @@ export function createApp() {
     }
 
     res.json({ data: { ok: true } });
-  });
+    },
+  );
 
-  app.delete("/api/v1/security/passkeys/:id", requireAuthenticatedUser, (req, res) => {
+  app.delete(
+    "/api/v1/security/passkeys/:id",
+    requireAuthenticatedUser,
+    rateLimitRoute("security.sensitive", "DELETE /api/v1/security/passkeys/:id"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const deleted = deletePasskeyCredentialById(authReq.authUser.id, req.params.id);
 
@@ -4579,9 +4552,14 @@ export function createApp() {
     }
 
     res.status(204).send();
-  });
+    },
+  );
 
-  app.post("/api/v1/security/mfa/totp/setup", requireAuthenticatedUser, (req, res) => {
+  app.post(
+    "/api/v1/security/mfa/totp/setup",
+    requireAuthenticatedUser,
+    rateLimitRoute("security.sensitive", "POST /api/v1/security/mfa/totp/setup"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const secret = generateTotpSecret();
     const issuer = encodeURIComponent("Areti");
@@ -4600,9 +4578,14 @@ export function createApp() {
         otpAuthUrl: `otpauth://totp/${issuer}:${label}?secret=${secret}&issuer=${issuer}&digits=${TOTP_DIGITS}&period=${TOTP_STEP_SECONDS}`,
       },
     });
-  });
+    },
+  );
 
-  app.post("/api/v1/security/mfa/totp/verify", requireAuthenticatedUser, (req, res) => {
+  app.post(
+    "/api/v1/security/mfa/totp/verify",
+    requireAuthenticatedUser,
+    rateLimitRoute("security.sensitive", "POST /api/v1/security/mfa/totp/verify"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = totpVerifySchema.safeParse(req.body);
 
@@ -4629,14 +4612,20 @@ export function createApp() {
     setUserMfaEnabled(authReq.authUser.id, true);
 
     res.json({ data: { mfaEnabled: true } });
-  });
+    },
+  );
 
-  app.delete("/api/v1/security/mfa/totp", requireAuthenticatedUser, (req, res) => {
+  app.delete(
+    "/api/v1/security/mfa/totp",
+    requireAuthenticatedUser,
+    rateLimitRoute("security.sensitive", "DELETE /api/v1/security/mfa/totp"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     deleteUserTotpSecret(authReq.authUser.id);
     setUserMfaEnabled(authReq.authUser.id, false);
     res.status(204).send();
-  });
+    },
+  );
 
   app.get("/api/v1/security/devices", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
@@ -4649,7 +4638,11 @@ export function createApp() {
     res.json({ data: devices });
   });
 
-  app.delete("/api/v1/security/devices/:id", requireAuthenticatedUser, (req, res) => {
+  app.delete(
+    "/api/v1/security/devices/:id",
+    requireAuthenticatedUser,
+    rateLimitRoute("security.sensitive", "DELETE /api/v1/security/devices/:id"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const revoked = revokeUserDevice(authReq.authUser.id, req.params.id);
 
@@ -4659,7 +4652,8 @@ export function createApp() {
     }
 
     res.status(204).send();
-  });
+    },
+  );
 
   app.get("/api/v1/notifications", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
@@ -4714,7 +4708,10 @@ export function createApp() {
     res.json({ data: { updatedCount } });
   });
 
-  app.post("/api/v1/preview/chat", async (req, res) => {
+  app.post(
+    "/api/v1/preview/chat",
+    rateLimitRoute("preview.chat", "POST /api/v1/preview/chat"),
+    async (req, res) => {
     const parsed = previewChatSchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -4725,18 +4722,6 @@ export function createApp() {
     if ((parsed.data.honeypot ?? "").length > 0 || (parsed.data.interactionMs ?? 0) < 700) {
       res.status(400).json({ error: "Human verification failed." });
       return;
-    }
-
-    const rateLimitKey = previewClientKey(req);
-
-    try {
-      assertWithinPreviewChatRateLimit(rateLimitKey);
-    } catch (error) {
-      if (error instanceof Error) {
-        res.status(429).json({ error: error.message });
-        return;
-      }
-      throw error;
     }
 
     const moderationError = moderatePrompt(parsed.data.prompt);
@@ -4788,9 +4773,13 @@ export function createApp() {
 
       throw error;
     }
-  });
+    },
+  );
 
-  app.post("/api/v1/preview/events", (req, res) => {
+  app.post(
+    "/api/v1/preview/events",
+    rateLimitRoute("preview.events", "POST /api/v1/preview/events"),
+    (req, res) => {
     const parsed = previewEventSchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -4803,18 +4792,6 @@ export function createApp() {
       return;
     }
 
-    const rateLimitKey = previewClientKey(req);
-
-    try {
-      assertWithinPreviewEventRateLimit(rateLimitKey);
-    } catch (error) {
-      if (error instanceof Error) {
-        res.status(429).json({ error: error.message });
-        return;
-      }
-      throw error;
-    }
-
     createPreviewEvent({
       id: randomUUID(),
       sessionId: parsed.data.sessionId,
@@ -4825,25 +4802,20 @@ export function createApp() {
     });
 
     res.status(201).json({ data: { ok: true } });
-  });
+    },
+  );
 
-  app.post("/api/v1/chat", requireAuthenticatedUser, async (req, res) => {
+  app.post(
+    "/api/v1/chat",
+    requireAuthenticatedUser,
+    rateLimitRoute("chat.sendMessage", "POST /api/v1/chat"),
+    async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatSchema.safeParse(req.body);
 
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid prompt" });
       return;
-    }
-
-    try {
-      assertWithinChatRateLimit(authReq.authUser.id);
-    } catch (error) {
-      if (error instanceof Error) {
-        res.status(429).json({ error: error.message });
-        return;
-      }
-      throw error;
     }
 
     const moderationError = moderatePrompt(parsed.data.prompt);
@@ -4891,7 +4863,8 @@ export function createApp() {
     }
 
     res.json({ data: { answer } });
-  });
+    },
+  );
 
   app.get("/api/v1/chat/threads", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
@@ -4910,7 +4883,11 @@ export function createApp() {
     res.json({ data: threads });
   });
 
-  app.post("/api/v1/chat/threads", requireAuthenticatedUser, (req, res) => {
+  app.post(
+    "/api/v1/chat/threads",
+    requireAuthenticatedUser,
+    rateLimitRoute("chat.createThread", "POST /api/v1/chat/threads"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatThreadCreateSchema.safeParse(req.body ?? {});
 
@@ -4947,9 +4924,14 @@ export function createApp() {
         context: toContextTelemetry(threadContext),
       },
     });
-  });
+    },
+  );
 
-  app.patch("/api/v1/chat/threads/:id", requireAuthenticatedUser, (req, res) => {
+  app.patch(
+    "/api/v1/chat/threads/:id",
+    requireAuthenticatedUser,
+    rateLimitRoute("chat.threadMutation", "PATCH /api/v1/chat/threads/:id"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatThreadPatchSchema.safeParse(req.body);
 
@@ -5006,9 +4988,14 @@ export function createApp() {
     }
 
     res.json({ data: { ok: true } });
-  });
+    },
+  );
 
-  app.delete("/api/v1/chat/threads/:id", requireAuthenticatedUser, (req, res) => {
+  app.delete(
+    "/api/v1/chat/threads/:id",
+    requireAuthenticatedUser,
+    rateLimitRoute("chat.threadMutation", "DELETE /api/v1/chat/threads/:id"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const existing = getChatThreadByIdForUser(authReq.authUser.id, req.params.id);
     if (!existing) {
@@ -5030,7 +5017,8 @@ export function createApp() {
     });
 
     res.status(204).send();
-  });
+    },
+  );
 
   app.get("/api/v1/chat/preferences", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
@@ -5068,7 +5056,11 @@ export function createApp() {
     res.json({ data: messages });
   });
 
-  app.post("/api/v1/chat/threads/:id/branch", requireAuthenticatedUser, async (req, res) => {
+  app.post(
+    "/api/v1/chat/threads/:id/branch",
+    requireAuthenticatedUser,
+    rateLimitRoute("chat.threadMutation", "POST /api/v1/chat/threads/:id/branch"),
+    async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatThreadBranchSchema.safeParse(req.body ?? {});
 
@@ -5185,9 +5177,14 @@ export function createApp() {
       }
       throw error;
     }
-  });
+    },
+  );
 
-  app.post("/api/v1/chat/threads/:id/events", requireAuthenticatedUser, (req, res) => {
+  app.post(
+    "/api/v1/chat/threads/:id/events",
+    requireAuthenticatedUser,
+    rateLimitRoute("chat.threadMutation", "POST /api/v1/chat/threads/:id/events"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatThreadClientEventSchema.safeParse(req.body ?? {});
 
@@ -5219,9 +5216,14 @@ export function createApp() {
     });
 
     res.status(201).json({ data: { ok: true } });
-  });
+    },
+  );
 
-  app.post("/api/v1/chat/threads/:id/context/summarize", requireAuthenticatedUser, async (req, res) => {
+  app.post(
+    "/api/v1/chat/threads/:id/context/summarize",
+    requireAuthenticatedUser,
+    rateLimitRoute("llm.expensiveAction", "POST /api/v1/chat/threads/:id/context/summarize"),
+    async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const thread = getChatThreadByIdForUser(authReq.authUser.id, req.params.id);
 
@@ -5361,9 +5363,14 @@ export function createApp() {
       }
       throw error;
     }
-  });
+    },
+  );
 
-  app.post("/api/v1/chat/threads/:id/messages", requireAuthenticatedUser, async (req, res) => {
+  app.post(
+    "/api/v1/chat/threads/:id/messages",
+    requireAuthenticatedUser,
+    rateLimitRoute("chat.sendMessage", "POST /api/v1/chat/threads/:id/messages"),
+    async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatSchema.safeParse(req.body);
 
@@ -5382,16 +5389,6 @@ export function createApp() {
     if (thread.archived) {
       res.status(400).json({ error: "Thread is archived. Restore it before sending new messages." });
       return;
-    }
-
-    try {
-      assertWithinChatRateLimit(authReq.authUser.id);
-    } catch (error) {
-      if (error instanceof Error) {
-        res.status(429).json({ error: error.message });
-        return;
-      }
-      throw error;
     }
 
     const moderationError = moderatePrompt(parsed.data.prompt);
@@ -5627,7 +5624,8 @@ export function createApp() {
         );
       }
     })();
-  });
+    },
+  );
 
   app.post("/api/v1/progress/complete", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
@@ -5876,7 +5874,11 @@ export function createApp() {
     res.json({ data });
   });
 
-  app.post("/api/v1/reflections", requireAuthenticatedUser, async (req, res) => {
+  app.post(
+    "/api/v1/reflections",
+    requireAuthenticatedUser,
+    rateLimitRoute("llm.expensiveAction", "POST /api/v1/reflections"),
+    async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = reflectionCreateSchema.safeParse(req.body);
 
@@ -5900,7 +5902,8 @@ export function createApp() {
       }
       throw error;
     }
-  });
+    },
+  );
 
   app.get("/api/v1/reflections/:id", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
@@ -5962,7 +5965,11 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.post("/api/v1/reflections/:id/commentary/regenerate", requireAuthenticatedUser, async (req, res) => {
+  app.post(
+    "/api/v1/reflections/:id/commentary/regenerate",
+    requireAuthenticatedUser,
+    rateLimitRoute("llm.expensiveAction", "POST /api/v1/reflections/:id/commentary/regenerate"),
+    async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
 
@@ -5985,9 +5992,14 @@ export function createApp() {
       }
       throw error;
     }
-  });
+    },
+  );
 
-  app.post("/api/v1/reflections/:id/retry", requireAuthenticatedUser, (req, res) => {
+  app.post(
+    "/api/v1/reflections/:id/retry",
+    requireAuthenticatedUser,
+    rateLimitRoute("llm.expensiveAction", "POST /api/v1/reflections/:id/retry"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
 
@@ -6003,9 +6015,14 @@ export function createApp() {
     }
 
     res.json({ data: reflection });
-  });
+    },
+  );
 
-  app.post("/api/v1/reflections/:id/send-to-companion", requireAuthenticatedUser, async (req, res) => {
+  app.post(
+    "/api/v1/reflections/:id/send-to-companion",
+    requireAuthenticatedUser,
+    rateLimitRoute("llm.expensiveAction", "POST /api/v1/reflections/:id/send-to-companion"),
+    async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
 
@@ -6039,7 +6056,8 @@ export function createApp() {
       }
       throw error;
     }
-  });
+    },
+  );
 
   app.get("/api/v1/reflections/:id/audio", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
@@ -6476,6 +6494,14 @@ export function createApp() {
   });
 
   app.use("/api/v1/admin", requireAuthenticatedUser, requireAdmin);
+  app.use("/api/v1/admin/content", (req, res, next) => {
+    if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+      next();
+      return;
+    }
+
+    adminContentMutationRateLimit(req, res, next);
+  });
 
   app.get("/api/v1/admin/overview", (_req, res) => {
     const stats = getAdminOverviewStats();
@@ -6558,7 +6584,10 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/admin/invitations", (req, res) => {
+  app.post(
+    "/api/v1/admin/invitations",
+    rateLimitRoute("admin.inviteUser", "POST /api/v1/admin/invitations"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = adminCreateInvitationSchema.safeParse(req.body ?? {});
 
@@ -6622,9 +6651,13 @@ export function createApp() {
         inviteUrl: `${webAppUrl}/auth/signup?invite=${encodeURIComponent(rawToken)}`,
       },
     });
-  });
+    },
+  );
 
-  app.post("/api/v1/admin/invitations/:id/revoke", (req, res) => {
+  app.post(
+    "/api/v1/admin/invitations/:id/revoke",
+    rateLimitRoute("admin.inviteUser", "POST /api/v1/admin/invitations/:id/revoke"),
+    (req, res) => {
     const authReq = req as unknown as AuthenticatedRequest;
     const params = adminInvitationIdParamSchema.safeParse(req.params);
 
@@ -6660,7 +6693,8 @@ export function createApp() {
         revokedAt: result.invitation.revokedAt,
       },
     });
-  });
+    },
+  );
 
   app.get("/api/v1/admin/academy/curation", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const parsed = academyAdminCurationQuerySchema.safeParse(req.query);
@@ -6940,6 +6974,33 @@ export function createApp() {
     res.json({ data: listAdminAuditLogs(parsed.data.limit) });
   });
 
+  app.get("/api/v1/admin/rate-limits", (req, res) => {
+    const parsed = adminRateLimitEventsQuerySchema.safeParse(req.query);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    const computedIpHash =
+      parsed.data.ipHash ??
+      (parsed.data.ip ? hashIpAddress(parsed.data.ip.trim(), rateLimitConfig.ipHashSalt) : undefined);
+
+    const events = listRateLimitBlockEvents({
+      limit: Math.min(parsed.data.limit, rateLimitConfig.adminMaxRows),
+      policyKey: parsed.data.policyKey,
+      route: parsed.data.route,
+      userId: parsed.data.userId,
+      ipHash: computedIpHash,
+      method: parsed.data.method,
+      fromCreatedAt: parsed.data.from,
+      toCreatedAt: parsed.data.to,
+      blocked: true,
+    });
+
+    res.json({ data: events });
+  });
+
   app.get("/api/v1/admin/chat/events", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const parsed = adminChatEventsQuerySchema.safeParse(req.query);
 
@@ -7130,7 +7191,12 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/admin/system/jobs/unlock", requireAuthenticatedUser, requireAdmin, (req, res) => {
+  app.post(
+    "/api/v1/admin/system/jobs/unlock",
+    requireAuthenticatedUser,
+    requireAdmin,
+    rateLimitRoute("admin.systemUnlock", "POST /api/v1/admin/system/jobs/unlock"),
+    (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = adminSystemJobUnlockSchema.safeParse(req.body ?? {});
 
@@ -7171,7 +7237,8 @@ export function createApp() {
         lockAgeMinutes: lockInfo.ageMinutes,
       },
     });
-  });
+    },
+  );
 
   app.post("/api/v1/admin/content/lessons", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;

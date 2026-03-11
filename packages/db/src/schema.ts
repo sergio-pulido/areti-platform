@@ -23,6 +23,13 @@ export type PreviewEventType =
   | "preview_signup_view"
   | "preview_chat_prompt_submitted"
   | "preview_chat_response_received";
+export type RateLimitOverrideScopeType =
+  | "global"
+  | "user"
+  | "role"
+  | "plan"
+  | "country"
+  | "feature_flag";
 export type AcademyPathTone = "beginner" | "intermediate";
 export type AcademyPathDifficulty = "beginner" | "intermediate" | "advanced";
 export type AcademyPathEntityType = "tradition" | "person" | "work" | "concept";
@@ -824,6 +831,66 @@ export const previewEvents = sqliteTable("preview_events", {
   metadataJson: text("metadata_json").notNull().default("{}"),
   createdAt: text("created_at").notNull(),
 });
+
+export const rateLimitBlockEvents = sqliteTable(
+  "rate_limit_block_events",
+  {
+    id: text("id").primaryKey(),
+    policyKey: text("policy_key").notNull(),
+    route: text("route").notNull(),
+    method: text("method").notNull(),
+    ipHash: text("ip_hash").notNull(),
+    ipMasked: text("ip_masked"),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    country: text("country"),
+    plan: text("plan"),
+    trustLevel: text("trust_level"),
+    blocked: integer("blocked", { mode: "boolean" }).notNull().default(true),
+    retryAfterSeconds: integer("retry_after_seconds").notNull(),
+    requestCount: integer("request_count").notNull(),
+    limitValue: integer("limit_value").notNull(),
+    windowSeconds: integer("window_seconds").notNull(),
+    scopeType: text("scope_type").notNull(),
+    userAgent: text("user_agent"),
+    requestId: text("request_id"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => ({
+    createdAtIdx: index("rate_limit_block_events_created_at_idx").on(table.createdAt),
+    policyKeyIdx: index("rate_limit_block_events_policy_key_idx").on(table.policyKey),
+    routeIdx: index("rate_limit_block_events_route_idx").on(table.route),
+    userIdIdx: index("rate_limit_block_events_user_id_idx").on(table.userId),
+    ipHashIdx: index("rate_limit_block_events_ip_hash_idx").on(table.ipHash),
+  }),
+);
+
+export const rateLimitPolicyOverrides = sqliteTable(
+  "rate_limit_policy_overrides",
+  {
+    id: text("id").primaryKey(),
+    policyKey: text("policy_key").notNull(),
+    scopeType: text("scope_type").$type<RateLimitOverrideScopeType>().notNull(),
+    scopeValue: text("scope_value"),
+    windowSeconds: integer("window_seconds"),
+    maxRequests: integer("max_requests"),
+    anonymousMaxRequests: integer("anonymous_max_requests"),
+    authenticatedMaxRequests: integer("authenticated_max_requests"),
+    burstRequests: integer("burst_requests"),
+    costWeight: integer("cost_weight"),
+    enabled: integer("enabled", { mode: "boolean" }),
+    startsAt: text("starts_at"),
+    endsAt: text("ends_at"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    policyKeyIdx: index("rate_limit_policy_overrides_policy_key_idx").on(table.policyKey),
+    scopeIdx: index("rate_limit_policy_overrides_scope_idx").on(table.scopeType, table.scopeValue),
+    startsAtIdx: index("rate_limit_policy_overrides_starts_at_idx").on(table.startsAt),
+    endsAtIdx: index("rate_limit_policy_overrides_ends_at_idx").on(table.endsAt),
+    enabledIdx: index("rate_limit_policy_overrides_enabled_idx").on(table.enabled),
+  }),
+);
 
 export const systemJobRuns = sqliteTable("system_job_runs", {
   id: text("id").primaryKey(),

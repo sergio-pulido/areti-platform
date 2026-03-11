@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../..");
@@ -14,8 +14,8 @@ let adminToken = "";
 let adminRefreshToken = "";
 let adminUserId = "";
 let memberToken = "";
-let createInvitationForTest: typeof import("@ataraxia/db")["createInvitation"];
-let promoteUserByEmailForTest: typeof import("@ataraxia/db")["promoteUserByEmail"];
+let createInvitationForTest: typeof import("@areti/db")["createInvitation"];
+let promoteUserByEmailForTest: typeof import("@areti/db")["promoteUserByEmail"];
 const adminEmail = "admin@example.com";
 
 function hashToken(token: string): string {
@@ -122,6 +122,60 @@ async function waitForReflectionReady(
   throw new Error("Timed out waiting for reflection processing.");
 }
 
+async function createAppWithRateLimitOverrides(
+  overrides: Record<string, Record<string, number | boolean>>,
+): Promise<import("express").Express> {
+  const previousRateLimitEnabled = process.env.RATE_LIMIT_ENABLED;
+  const previousRateLimitStore = process.env.RATE_LIMIT_STORE;
+  const previousRateLimitLogBlocks = process.env.RATE_LIMIT_LOG_BLOCKS;
+  const previousRateLimitTrustProxy = process.env.RATE_LIMIT_TRUST_PROXY;
+  const previousRateLimitIpHashSalt = process.env.RATE_LIMIT_IP_HASH_SALT;
+  const previousRateLimitOverrides = process.env.RATE_LIMIT_POLICY_OVERRIDES_JSON;
+
+  process.env.RATE_LIMIT_ENABLED = "true";
+  process.env.RATE_LIMIT_STORE = "memory";
+  process.env.RATE_LIMIT_LOG_BLOCKS = "true";
+  process.env.RATE_LIMIT_TRUST_PROXY = "false";
+  process.env.RATE_LIMIT_IP_HASH_SALT = "integration-test-salt";
+  process.env.RATE_LIMIT_POLICY_OVERRIDES_JSON = JSON.stringify(overrides);
+
+  const module = await import("./server.js");
+  const isolatedApp = module.createApp();
+
+  if (previousRateLimitEnabled === undefined) {
+    delete process.env.RATE_LIMIT_ENABLED;
+  } else {
+    process.env.RATE_LIMIT_ENABLED = previousRateLimitEnabled;
+  }
+  if (previousRateLimitStore === undefined) {
+    delete process.env.RATE_LIMIT_STORE;
+  } else {
+    process.env.RATE_LIMIT_STORE = previousRateLimitStore;
+  }
+  if (previousRateLimitLogBlocks === undefined) {
+    delete process.env.RATE_LIMIT_LOG_BLOCKS;
+  } else {
+    process.env.RATE_LIMIT_LOG_BLOCKS = previousRateLimitLogBlocks;
+  }
+  if (previousRateLimitTrustProxy === undefined) {
+    delete process.env.RATE_LIMIT_TRUST_PROXY;
+  } else {
+    process.env.RATE_LIMIT_TRUST_PROXY = previousRateLimitTrustProxy;
+  }
+  if (previousRateLimitIpHashSalt === undefined) {
+    delete process.env.RATE_LIMIT_IP_HASH_SALT;
+  } else {
+    process.env.RATE_LIMIT_IP_HASH_SALT = previousRateLimitIpHashSalt;
+  }
+  if (previousRateLimitOverrides === undefined) {
+    delete process.env.RATE_LIMIT_POLICY_OVERRIDES_JSON;
+  } else {
+    process.env.RATE_LIMIT_POLICY_OVERRIDES_JSON = previousRateLimitOverrides;
+  }
+
+  return isolatedApp;
+}
+
 beforeAll(async () => {
   mkdirSync(path.dirname(testDbPath), { recursive: true });
   rmSync(testDbPath, { force: true });
@@ -138,8 +192,31 @@ beforeAll(async () => {
   process.env.CHAT_CONTEXT_WARNING_PERCENT = "60";
   process.env.CHAT_CONTEXT_DEGRADED_PERCENT = "80";
   process.env.SIGNUP_ENABLED = "true";
+  process.env.RATE_LIMIT_ENABLED = "true";
+  process.env.RATE_LIMIT_STORE = "memory";
+  process.env.RATE_LIMIT_TRUST_PROXY = "false";
+  process.env.RATE_LIMIT_LOG_BLOCKS = "true";
+  process.env.RATE_LIMIT_IP_HASH_SALT = "integration-suite-salt";
+  process.env.RATE_LIMIT_POLICY_OVERRIDES_JSON = JSON.stringify({
+    "auth.signin": { anonymousMaxRequests: 400, windowSeconds: 900 },
+    "auth.signup": { anonymousMaxRequests: 400, windowSeconds: 1800 },
+    "auth.resendVerification": { anonymousMaxRequests: 400, windowSeconds: 1800 },
+    "auth.passkeyOptions": { anonymousMaxRequests: 400, windowSeconds: 600 },
+    "auth.passkeyVerify": { anonymousMaxRequests: 400, windowSeconds: 600 },
+    "auth.refresh": { anonymousMaxRequests: 400, windowSeconds: 900 },
+    "chat.createThread": { authenticatedMaxRequests: 400, windowSeconds: 600 },
+    "chat.sendMessage": { authenticatedMaxRequests: 1200, windowSeconds: 60 },
+    "chat.threadMutation": { authenticatedMaxRequests: 500, windowSeconds: 300 },
+    "llm.expensiveAction": { authenticatedMaxRequests: 500, windowSeconds: 600 },
+    "preview.chat": { anonymousMaxRequests: 200, windowSeconds: 60 },
+    "preview.events": { anonymousMaxRequests: 400, windowSeconds: 60 },
+    "security.sensitive": { authenticatedMaxRequests: 400, windowSeconds: 600 },
+    "admin.contentMutation": { authenticatedMaxRequests: 500, windowSeconds: 60 },
+    "admin.inviteUser": { authenticatedMaxRequests: 300, windowSeconds: 3600 },
+    "admin.systemUnlock": { authenticatedMaxRequests: 100, windowSeconds: 600 },
+  });
 
-  const dbModule = await import("@ataraxia/db");
+  const dbModule = await import("@areti/db");
   createInvitationForTest = dbModule.createInvitation;
   promoteUserByEmailForTest = dbModule.promoteUserByEmail;
 
@@ -1827,5 +1904,201 @@ describe("API integration", () => {
       (item: { slug: string }) => item.slug === "test-draft-challenge",
     );
     expect(draftAfter).toBeDefined();
+  });
+
+  it("enforces auth rate limits with structured 429, block logs, and admin visibility", async () => {
+    const isolatedApp = await createAppWithRateLimitOverrides({
+      "auth.signin": { anonymousMaxRequests: 2, windowSeconds: 60 },
+      "auth.signup": { anonymousMaxRequests: 50, windowSeconds: 1800 },
+      "chat.createThread": { authenticatedMaxRequests: 20, windowSeconds: 600 },
+      "chat.sendMessage": { authenticatedMaxRequests: 20, windowSeconds: 60 },
+      "preview.chat": { anonymousMaxRequests: 10, windowSeconds: 60 },
+      "preview.events": { anonymousMaxRequests: 10, windowSeconds: 60 },
+      "security.sensitive": { authenticatedMaxRequests: 40, windowSeconds: 600 },
+      "admin.inviteUser": { authenticatedMaxRequests: 20, windowSeconds: 3600 },
+    });
+
+    const adminEmailForTest = `rl-admin-${Date.now()}@example.com`;
+    const signup = await completeSignupFlow({
+      appRef: isolatedApp,
+      email: adminEmailForTest,
+      password: "StrongPass123",
+      username: `rl_admin_${Date.now()}`.slice(0, 24),
+    });
+    expect(signup.complete.status).toBe(200);
+
+    const promoted = promoteUserByEmailForTest(adminEmailForTest);
+    expect(promoted.status === "promoted" || promoted.status === "already_admin").toBe(true);
+
+    const adminSignin = await request(isolatedApp).post("/api/v1/auth/signin").send({
+      email: adminEmailForTest,
+      password: "StrongPass123",
+    });
+    expect(adminSignin.status).toBe(200);
+    const isolatedAdminToken = adminSignin.body.data.accessToken as string;
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const signin1 = await request(isolatedApp).post("/api/v1/auth/signin").send({
+      email: "unknown-rate-limit@example.com",
+      password: "wrong-password",
+    });
+    const signin2 = await request(isolatedApp).post("/api/v1/auth/signin").send({
+      email: "unknown-rate-limit@example.com",
+      password: "wrong-password",
+    });
+    const signin3 = await request(isolatedApp).post("/api/v1/auth/signin").send({
+      email: "unknown-rate-limit@example.com",
+      password: "wrong-password",
+    });
+
+    expect(signin1.status).toBe(401);
+    expect(signin2.status).toBe(401);
+    expect(signin3.status).toBe(429);
+    expect(signin3.headers["retry-after"]).toBeDefined();
+    expect(signin3.body.error.code).toBe("RATE_LIMITED");
+    expect(typeof signin3.body.error.retryAfterSeconds).toBe("number");
+    expect(signin3.body.error.retryAfterSeconds).toBeGreaterThan(0);
+    expect(signin3.body.error.message).toBe("Too many requests. Please try again later.");
+
+    const loggedRateLimitEvent = warnSpy.mock.calls.some((call) => {
+      const firstArg = String(call[0] ?? "");
+      return firstArg.includes("[rate-limit]") && firstArg.includes("\"policyKey\":\"auth.signin\"");
+    });
+    expect(loggedRateLimitEvent).toBe(true);
+    warnSpy.mockRestore();
+
+    const adminRateEvents = await request(isolatedApp)
+      .get("/api/v1/admin/rate-limits?limit=20&policyKey=auth.signin")
+      .set("Authorization", `Bearer ${isolatedAdminToken}`);
+
+    expect(adminRateEvents.status).toBe(200);
+    expect(Array.isArray(adminRateEvents.body.data)).toBe(true);
+    expect(adminRateEvents.body.data.length).toBeGreaterThan(0);
+    expect(adminRateEvents.body.data.every((event: { policyKey: string }) => event.policyKey === "auth.signin")).toBe(true);
+    const createdAtValues = adminRateEvents.body.data.map((event: { createdAt: string }) =>
+      Date.parse(event.createdAt),
+    );
+    const sortedCreatedAtValues = [...createdAtValues].sort((left, right) => right - left);
+    expect(createdAtValues).toEqual(sortedCreatedAtValues);
+
+    const firstEvent = adminRateEvents.body.data[0] as {
+      ipHash: string;
+      blocked: boolean;
+      retryAfterSeconds: number;
+      createdAt: string;
+    };
+    expect(firstEvent.blocked).toBe(true);
+    expect(firstEvent.retryAfterSeconds).toBeGreaterThan(0);
+
+    const filteredByIp = await request(isolatedApp)
+      .get(`/api/v1/admin/rate-limits?limit=20&ipHash=${encodeURIComponent(firstEvent.ipHash)}`)
+      .set("Authorization", `Bearer ${isolatedAdminToken}`);
+
+    expect(filteredByIp.status).toBe(200);
+    expect(filteredByIp.body.data.length).toBeGreaterThan(0);
+    expect(
+      filteredByIp.body.data.every((event: { ipHash: string }) => event.ipHash === firstEvent.ipHash),
+    ).toBe(true);
+  });
+
+  it("keeps rate-limit buckets isolated by route and authenticated user", async () => {
+    const isolatedApp = await createAppWithRateLimitOverrides({
+      "auth.signin": { anonymousMaxRequests: 40, windowSeconds: 600 },
+      "auth.signup": { anonymousMaxRequests: 50, windowSeconds: 1800 },
+      "chat.createThread": { authenticatedMaxRequests: 20, windowSeconds: 600 },
+      "chat.sendMessage": { authenticatedMaxRequests: 1, windowSeconds: 60 },
+      "preview.chat": { anonymousMaxRequests: 2, windowSeconds: 60 },
+      "preview.events": { anonymousMaxRequests: 5, windowSeconds: 60 },
+      "security.sensitive": { authenticatedMaxRequests: 40, windowSeconds: 600 },
+    });
+
+    const firstUserEmail = `rl-user-a-${Date.now()}@example.com`;
+    const secondUserEmail = `rl-user-b-${Date.now()}@example.com`;
+
+    const signupA = await completeSignupFlow({
+      appRef: isolatedApp,
+      email: firstUserEmail,
+      password: "StrongPass123",
+      username: `rl_user_a_${Date.now()}`.slice(0, 24),
+    });
+    const signupB = await completeSignupFlow({
+      appRef: isolatedApp,
+      email: secondUserEmail,
+      password: "StrongPass123",
+      username: `rl_user_b_${Date.now()}`.slice(0, 24),
+    });
+
+    expect(signupA.complete.status).toBe(200);
+    expect(signupB.complete.status).toBe(200);
+
+    const tokenA = signupA.complete.body.data.accessToken as string;
+    const tokenB = signupB.complete.body.data.accessToken as string;
+
+    const previewChat1 = await request(isolatedApp)
+      .post("/api/v1/preview/chat")
+      .set("User-Agent", "rl-bucket-test")
+      .send({
+        prompt: "One calm action before a difficult call.",
+        interactionMs: 1200,
+      });
+    const previewChat2 = await request(isolatedApp)
+      .post("/api/v1/preview/chat")
+      .set("User-Agent", "rl-bucket-test")
+      .send({
+        prompt: "One more practical action.",
+        interactionMs: 1200,
+      });
+    const previewChat3 = await request(isolatedApp)
+      .post("/api/v1/preview/chat")
+      .set("User-Agent", "rl-bucket-test")
+      .send({
+        prompt: "Third attempt should block.",
+        interactionMs: 1200,
+      });
+
+    expect(previewChat1.status).toBe(200);
+    expect(previewChat2.status).toBe(200);
+    expect(previewChat3.status).toBe(429);
+
+    const previewEvent = await request(isolatedApp).post("/api/v1/preview/events").send({
+      sessionId: `rl-${Date.now()}`,
+      eventType: "preview_signup_click",
+      path: "/preview/chat",
+      interactionMs: 1200,
+    });
+    expect(previewEvent.status).toBe(201);
+
+    const threadA = await request(isolatedApp)
+      .post("/api/v1/chat/threads")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({ title: "Rate limit thread A" });
+    expect(threadA.status).toBe(201);
+
+    const messageA1 = await request(isolatedApp)
+      .post(`/api/v1/chat/threads/${threadA.body.data.id as string}/messages`)
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({ prompt: "First message should pass." });
+    const messageA2 = await request(isolatedApp)
+      .post(`/api/v1/chat/threads/${threadA.body.data.id as string}/messages`)
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({ prompt: "Second message should be rate limited." });
+
+    expect(messageA1.status).toBe(201);
+    expect(messageA2.status).toBe(429);
+    expect(messageA2.body.error.code).toBe("RATE_LIMITED");
+
+    const threadB = await request(isolatedApp)
+      .post("/api/v1/chat/threads")
+      .set("Authorization", `Bearer ${tokenB}`)
+      .send({ title: "Rate limit thread B" });
+    expect(threadB.status).toBe(201);
+
+    const messageB1 = await request(isolatedApp)
+      .post(`/api/v1/chat/threads/${threadB.body.data.id as string}/messages`)
+      .set("Authorization", `Bearer ${tokenB}`)
+      .send({ prompt: "Different user should have an independent bucket." });
+
+    expect(messageB1.status).toBe(201);
   });
 });

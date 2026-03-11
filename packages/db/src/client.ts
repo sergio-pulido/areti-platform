@@ -60,6 +60,8 @@ import {
   mfaChallenges,
   passkeyCredentials,
   previewEvents,
+  rateLimitBlockEvents,
+  rateLimitPolicyOverrides,
   practiceRoutines,
   refreshSessions,
   sessions,
@@ -86,6 +88,7 @@ import {
   type ReflectionProcessingStep,
   type ReflectionSourceType,
   type ReflectionStatus,
+  type RateLimitOverrideScopeType,
   type SignupFlowType,
   type UserRole,
 } from "./schema.js";
@@ -402,6 +405,46 @@ export type PreviewEventRecord = {
   referrer: string | null;
   metadataJson: string;
   createdAt: string;
+};
+
+export type RateLimitBlockEventRecord = {
+  id: string;
+  policyKey: string;
+  route: string;
+  method: string;
+  ipHash: string;
+  ipMasked: string | null;
+  userId: string | null;
+  country: string | null;
+  plan: string | null;
+  trustLevel: string | null;
+  blocked: boolean;
+  retryAfterSeconds: number;
+  requestCount: number;
+  limitValue: number;
+  windowSeconds: number;
+  scopeType: string;
+  userAgent: string | null;
+  requestId: string | null;
+  createdAt: string;
+};
+
+export type RateLimitPolicyOverrideRecord = {
+  id: string;
+  policyKey: string;
+  scopeType: RateLimitOverrideScopeType;
+  scopeValue: string | null;
+  windowSeconds: number | null;
+  maxRequests: number | null;
+  anonymousMaxRequests: number | null;
+  authenticatedMaxRequests: number | null;
+  burstRequests: number | null;
+  costWeight: number | null;
+  enabled: boolean | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type SystemJobRunRecord = {
@@ -1357,6 +1400,9 @@ const db = drizzle(sqlite, {
     reflectionTags,
     reflectionProcessingJobs,
     reflectionEvents,
+    previewEvents,
+    rateLimitBlockEvents,
+    rateLimitPolicyOverrides,
     userContentCompletions,
     contentPillars,
     contentHighlights,
@@ -7481,6 +7527,158 @@ export function listPreviewEventsByDays(days: number): PreviewEventRecord[] {
       ...row,
       eventType: row.eventType as PreviewEventType,
     }));
+}
+
+export function createRateLimitBlockEvent(input: {
+  id: string;
+  policyKey: string;
+  route: string;
+  method: string;
+  ipHash: string;
+  ipMasked?: string | null;
+  userId?: string | null;
+  country?: string | null;
+  plan?: string | null;
+  trustLevel?: string | null;
+  blocked?: boolean;
+  retryAfterSeconds: number;
+  requestCount: number;
+  limitValue: number;
+  windowSeconds: number;
+  scopeType: string;
+  userAgent?: string | null;
+  requestId?: string | null;
+}): void {
+  db.insert(rateLimitBlockEvents)
+    .values({
+      id: input.id,
+      policyKey: input.policyKey,
+      route: input.route,
+      method: input.method,
+      ipHash: input.ipHash,
+      ipMasked: input.ipMasked ?? null,
+      userId: input.userId ?? null,
+      country: input.country ?? null,
+      plan: input.plan ?? null,
+      trustLevel: input.trustLevel ?? null,
+      blocked: input.blocked ?? true,
+      retryAfterSeconds: input.retryAfterSeconds,
+      requestCount: input.requestCount,
+      limitValue: input.limitValue,
+      windowSeconds: input.windowSeconds,
+      scopeType: input.scopeType,
+      userAgent: input.userAgent ?? null,
+      requestId: input.requestId ?? null,
+      createdAt: nowIso(),
+    })
+    .run();
+}
+
+export function listRateLimitBlockEvents(input: {
+  limit: number;
+  policyKey?: string;
+  route?: string;
+  userId?: string;
+  ipHash?: string;
+  method?: string;
+  fromCreatedAt?: string;
+  toCreatedAt?: string;
+  blocked?: boolean;
+}): RateLimitBlockEventRecord[] {
+  const safeLimit = Math.max(1, Math.min(input.limit, 500));
+  const filters: SQL[] = [];
+
+  if (input.policyKey) {
+    filters.push(eq(rateLimitBlockEvents.policyKey, input.policyKey));
+  }
+
+  if (input.route) {
+    filters.push(eq(rateLimitBlockEvents.route, input.route));
+  }
+
+  if (input.userId) {
+    filters.push(eq(rateLimitBlockEvents.userId, input.userId));
+  }
+
+  if (input.ipHash) {
+    filters.push(eq(rateLimitBlockEvents.ipHash, input.ipHash));
+  }
+
+  if (input.method) {
+    filters.push(eq(rateLimitBlockEvents.method, input.method.toUpperCase()));
+  }
+
+  if (typeof input.blocked === "boolean") {
+    filters.push(eq(rateLimitBlockEvents.blocked, input.blocked));
+  }
+
+  if (input.fromCreatedAt) {
+    const fromClause = or(
+      eq(rateLimitBlockEvents.createdAt, input.fromCreatedAt),
+      gt(rateLimitBlockEvents.createdAt, input.fromCreatedAt),
+    );
+    if (fromClause) {
+      filters.push(fromClause);
+    }
+  }
+
+  if (input.toCreatedAt) {
+    const toClause = or(
+      eq(rateLimitBlockEvents.createdAt, input.toCreatedAt),
+      lt(rateLimitBlockEvents.createdAt, input.toCreatedAt),
+    );
+    if (toClause) {
+      filters.push(toClause);
+    }
+  }
+
+  const whereClause = filters.length > 0 ? and(...filters) : undefined;
+  const query = db.select().from(rateLimitBlockEvents);
+  const rows = whereClause
+    ? query.where(whereClause).orderBy(desc(rateLimitBlockEvents.createdAt)).limit(safeLimit).all()
+    : query.orderBy(desc(rateLimitBlockEvents.createdAt)).limit(safeLimit).all();
+
+  return rows;
+}
+
+export function listActiveRateLimitPolicyOverrides(input: {
+  policyKey: string;
+  asOf?: string;
+}): RateLimitPolicyOverrideRecord[] {
+  const now = input.asOf ?? nowIso();
+  const activeStartsClause = or(
+    isNull(rateLimitPolicyOverrides.startsAt),
+    eq(rateLimitPolicyOverrides.startsAt, now),
+    lt(rateLimitPolicyOverrides.startsAt, now),
+  );
+  const activeEndsClause = or(
+    isNull(rateLimitPolicyOverrides.endsAt),
+    eq(rateLimitPolicyOverrides.endsAt, now),
+    gt(rateLimitPolicyOverrides.endsAt, now),
+  );
+  const activeEnabledClause = or(
+    isNull(rateLimitPolicyOverrides.enabled),
+    eq(rateLimitPolicyOverrides.enabled, true),
+  );
+
+  const rows = db
+    .select()
+    .from(rateLimitPolicyOverrides)
+    .where(
+      and(
+        eq(rateLimitPolicyOverrides.policyKey, input.policyKey),
+        activeStartsClause,
+        activeEndsClause,
+        activeEnabledClause,
+      ),
+    )
+    .orderBy(desc(rateLimitPolicyOverrides.updatedAt))
+    .all();
+
+  return rows.map((row) => ({
+    ...row,
+    scopeType: row.scopeType as RateLimitOverrideScopeType,
+  }));
 }
 
 export function createSystemJobRun(input: {

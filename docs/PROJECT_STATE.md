@@ -2,6 +2,9 @@
 
 ## Current Status
 - Monorepo architecture is active with frontend (`apps/web`), backend (`apps/api`), and shared DB/ORM (`packages/db`).
+- API now has a dedicated production-ready rate-limit foundation (`apps/api/src/modules/rate-limit`) with centralized policies, pluggable memory/Redis counters, safe `request.ip` extraction via configurable trust-proxy, structured 429 responses, structured block logs, and DB-persisted block events.
+- Targeted route-level rate limiting is now enforced for high-risk/high-cost auth, security, preview, chat, reflections, admin invite, admin content mutations, and admin system unlock endpoints; legacy ad-hoc in-memory per-route limit checks were removed.
+- Admin operations visibility now includes `GET /api/v1/admin/rate-limits` plus a CMS "Rate Limit Blocks" panel, backed by persisted `rate_limit_block_events` and optional DB override input (`rate_limit_policy_overrides`) for future runtime tuning.
 - Runtime i18n is now active in web with a global locale provider, English/Spanish switching in the user dropdown, and immediate in-page language updates without full page reload.
 - Web app now ships as an installable Progressive Web App (manifest, install metadata, icons, service worker, and offline fallback page).
 - PWA release hygiene now includes a dedicated checklist (`docs/PWA_RELEASE_CHECKLIST.md`) and an e2e smoke test for manifest/service-worker/offline route availability.

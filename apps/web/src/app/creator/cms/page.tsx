@@ -52,6 +52,7 @@ import {
   apiAdminAudit,
   apiAdminChatEvents,
   apiAdminPreviewAnalytics,
+  apiAdminRateLimits,
   apiAdminSystemJobSummary,
   apiAdminSystemJobRuns,
   apiAdminContent,
@@ -241,7 +242,16 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
   }
 
   const token = session.accessToken;
-  const [content, auditLogs, previewAnalytics, systemJobSummary, systemJobRuns, chatEvents, chatEvents7d] = await Promise.all([
+  const [
+    content,
+    auditLogs,
+    previewAnalytics,
+    systemJobSummary,
+    systemJobRuns,
+    chatEvents,
+    chatEvents7d,
+    rateLimitEvents,
+  ] = await Promise.all([
     apiAdminContent(token),
     apiAdminAudit(token, 14),
     apiAdminPreviewAnalytics(token, 30),
@@ -265,6 +275,7 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
       limit: 500,
       days: 7,
     }),
+    apiAdminRateLimits(token, { limit: 40 }),
   ]);
 
   const actionEventTypes: ApiChatEventType[] = [
@@ -518,6 +529,39 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
                   {run.errorMessage ? (
                     <p className="mt-1 text-amber-200">error: {run.errorMessage}</p>
                   ) : null}
+                </article>
+              ))
+            )}
+          </div>
+        </SurfaceCard>
+      </section>
+
+      <section>
+        <SurfaceCard title="Rate Limit Blocks" subtitle="Recent blocked requests">
+          <div className="space-y-2">
+            {rateLimitEvents.length === 0 ? (
+              <p className="rounded-xl border border-night-700 bg-night-950/70 p-3 text-sm text-night-200">
+                No blocked requests in recent history.
+              </p>
+            ) : (
+              rateLimitEvents.map((event) => (
+                <article
+                  key={event.id}
+                  className="rounded-xl border border-night-700 bg-night-950/80 p-3 text-xs"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-semibold text-sand-100">{event.policyKey}</p>
+                    <span className="rounded-full border border-night-600 px-2 py-0.5 text-[10px] text-night-200">
+                      {new Date(event.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-night-200">
+                    {event.method} {event.route}
+                  </p>
+                  <p className="mt-1 text-night-300">
+                    user: {event.userId ?? "anonymous"} · ip: {event.ipMasked ?? event.ipHash.slice(0, 12)} · retry:{" "}
+                    {event.retryAfterSeconds}s
+                  </p>
                 </article>
               ))
             )}
