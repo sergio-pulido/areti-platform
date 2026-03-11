@@ -222,7 +222,7 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
   const chatEventScope = normalizeChatEventScope(first(params.chatEventScope));
   const chatEventType = normalizeChatEventType(first(params.chatEventType));
 
-  if (user.role !== "ADMIN") {
+  if (user.role !== "admin") {
     return (
       <div>
         <PageHeader
@@ -232,8 +232,8 @@ export default async function CmsPage({ searchParams }: CmsPageProps) {
         />
         <SurfaceCard title="Access denied" subtitle="Admin role required">
           <p className="text-sm text-night-200">
-            Your current role is <strong>{user.role}</strong>. Create the first account in a fresh
-            database to bootstrap an ADMIN user.
+            Your current role is <strong>{user.role}</strong>. Use the CLI promotion command to grant
+            admin access explicitly.
           </p>
         </SurfaceCard>
       </div>

@@ -146,7 +146,7 @@ function getStatusOrDefault(
 async function requireAdminToken(): Promise<string> {
   const session = await requireSession();
 
-  if (session.user.role !== "ADMIN") {
+  if (session.user.role !== "admin") {
     throw new Error("Admin access required.");
   }
 

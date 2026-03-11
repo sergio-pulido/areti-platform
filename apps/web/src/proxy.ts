@@ -11,6 +11,7 @@ const protectedPrefixes = [
   "/academy",
   "/community",
   "/creator",
+  "/admin",
   "/account",
   "/onboarding",
 ];

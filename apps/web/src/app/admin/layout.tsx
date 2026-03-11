@@ -1,17 +1,16 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { SecuredShell } from "@/components/layout/secured-shell";
-import { requireOnboardedSession } from "@/lib/auth/session";
+import { requireSession } from "@/lib/auth/session";
 
-type CreatorLayoutProps = {
+type AdminLayoutProps = {
   children: ReactNode;
 };
 
-export default async function CreatorLayout({ children }: CreatorLayoutProps) {
-  const session = await requireOnboardedSession();
-  const user = session.user;
+export default async function AdminLayout({ children }: AdminLayoutProps) {
+  const session = await requireSession();
 
-  if (user.role !== "admin") {
+  if (session.user.role !== "admin") {
     redirect("/dashboard");
   }
 

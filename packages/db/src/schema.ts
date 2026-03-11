@@ -1,8 +1,9 @@
-import { integer, sqliteTable, text, uniqueIndex, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, uniqueIndex, index, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
-export type UserRole = "MEMBER" | "ADMIN";
+export type UserRole = "user" | "admin";
 export type ContentStatus = "DRAFT" | "PUBLISHED";
 export type LegalPolicyType = "TERMS" | "PRIVACY";
+export type SignupFlowType = "self_signup" | "invite";
 export type ContentCompletionKind = "lesson" | "practice";
 export type ReflectionSourceType = "voice" | "upload" | "text";
 export type ReflectionStatus = "draft" | "processing" | "ready" | "failed";
@@ -31,7 +32,7 @@ export const users = sqliteTable("users", {
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
-  role: text("role").$type<UserRole>().notNull().default("MEMBER"),
+  role: text("role").$type<UserRole>().notNull().default("user"),
   mfaEnabled: integer("mfa_enabled", { mode: "boolean" }).notNull().default(false),
   passkeyEnabled: integer("passkey_enabled", { mode: "boolean" }).notNull().default(false),
   emailVerifiedAt: text("email_verified_at"),
@@ -42,21 +43,27 @@ export const users = sqliteTable("users", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const userProfiles = sqliteTable("user_profiles", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .unique()
-    .references(() => users.id, { onDelete: "cascade" }),
-  username: text("username"),
-  summary: text("summary").notNull().default(""),
-  phone: text("phone").notNull().default(""),
-  city: text("city").notNull().default(""),
-  country: text("country").notNull().default(""),
-  socialLinksJson: text("social_links_json").notNull().default("[]"),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-});
+export const userProfiles = sqliteTable(
+  "user_profiles",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: "cascade" }),
+    username: text("username"),
+    summary: text("summary").notNull().default(""),
+    phone: text("phone").notNull().default(""),
+    city: text("city").notNull().default(""),
+    country: text("country").notNull().default(""),
+    socialLinksJson: text("social_links_json").notNull().default("[]"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    usernameUnique: uniqueIndex("user_profiles_username_unique").on(table.username),
+  }),
+);
 
 export const userPreferences = sqliteTable("user_preferences", {
   id: text("id").primaryKey(),
@@ -230,6 +237,69 @@ export const adminAuditLogs = sqliteTable("admin_audit_logs", {
   payloadJson: text("payload_json").notNull(),
   createdAt: text("created_at").notNull(),
 });
+
+export const invitations = sqliteTable(
+  "invitations",
+  {
+    id: text("id").primaryKey(),
+    tokenHash: text("token_hash").notNull(),
+    email: text("email"),
+    roleToGrant: text("role_to_grant").$type<UserRole>().notNull().default("user"),
+    maxUses: integer("max_uses").notNull().default(1),
+    usedCount: integer("used_count").notNull().default(0),
+    expiresAt: text("expires_at").notNull(),
+    createdByUserId: text("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: text("created_at").notNull(),
+    usedAt: text("used_at"),
+    usedByUserId: text("used_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    revokedAt: text("revoked_at"),
+  },
+  (table) => ({
+    tokenHashUnique: uniqueIndex("invitations_token_hash_unique").on(table.tokenHash),
+    createdByIdx: index("invitations_created_by_user_idx").on(table.createdByUserId),
+    expiresAtIdx: index("invitations_expires_at_idx").on(table.expiresAt),
+  }),
+);
+
+export const signupIntents = sqliteTable(
+  "signup_intents",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(),
+    flowType: text("flow_type").$type<SignupFlowType>().notNull(),
+    inviteId: text("invite_id").references(() => invitations.id, { onDelete: "set null" }),
+    inviteTokenHash: text("invite_token_hash"),
+    verificationTokenHash: text("verification_token_hash").notNull(),
+    verificationCodeHash: text("verification_code_hash").notNull(),
+    verificationExpiresAt: text("verification_expires_at").notNull(),
+    verificationSentAt: text("verification_sent_at").notNull(),
+    verificationSendCount: integer("verification_send_count").notNull().default(1),
+    emailVerifiedAt: text("email_verified_at"),
+    completionTokenHash: text("completion_token_hash"),
+    completionExpiresAt: text("completion_expires_at"),
+    legalAcceptedAt: text("legal_accepted_at"),
+    legalTermsVersion: text("legal_terms_version"),
+    privacyVersion: text("privacy_version"),
+    locale: text("locale"),
+    expiresAt: text("expires_at").notNull(),
+    completedAt: text("completed_at"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => ({
+    verificationTokenHashUnique: uniqueIndex("signup_intents_verification_token_hash_unique").on(
+      table.verificationTokenHash,
+    ),
+    completionTokenHashUnique: uniqueIndex("signup_intents_completion_token_hash_unique").on(
+      table.completionTokenHash,
+    ),
+    emailIdx: index("signup_intents_email_idx").on(table.email),
+    inviteIdx: index("signup_intents_invite_idx").on(table.inviteId),
+    expiresAtIdx: index("signup_intents_expires_at_idx").on(table.expiresAt),
+  }),
+);
 
 export const journalEntries = sqliteTable("journal_entries", {
   id: text("id").primaryKey(),

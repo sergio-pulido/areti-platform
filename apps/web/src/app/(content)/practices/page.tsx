@@ -58,7 +58,7 @@ export default async function PracticesPage({ searchParams }: PracticesPageProps
     apiProgressCompletions(session.accessToken, 500),
   ]);
   const visibleRoutines = routines.filter((routine) => matchesPracticePath(activePath, routine));
-  const isAdmin = session.user.role === "ADMIN";
+  const isAdmin = session.user.role === "admin";
   const practiceCompletions = completions.filter((item) => item.contentKind === "practice");
   const completedPracticeSlugs = new Set(practiceCompletions.map((item) => item.contentSlug));
   const recommendedNextPractice =

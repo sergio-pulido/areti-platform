@@ -1,4 +1,5 @@
 import { mkdirSync, rmSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
@@ -11,7 +12,86 @@ const testDbPath = path.join(repoRoot, "data", "ataraxia.integration.db");
 let app: import("express").Express;
 let adminToken = "";
 let adminRefreshToken = "";
+let adminUserId = "";
+let memberToken = "";
+let createInvitationForTest: typeof import("@ataraxia/db")["createInvitation"];
+let promoteUserByEmailForTest: typeof import("@ataraxia/db")["promoteUserByEmail"];
 const adminEmail = "admin@example.com";
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function usernameFromEmail(email: string): string {
+  const localPart = email.split("@")[0] ?? "member";
+  return localPart.toLowerCase().replace(/[^a-z0-9_-]+/g, "_").slice(0, 32) || "member";
+}
+
+async function completeSignupFlow(input: {
+  appRef: import("express").Express;
+  email: string;
+  password?: string;
+  name?: string;
+  username?: string;
+  inviteToken?: string;
+  includeStartLegal?: boolean;
+  includeCompletionLegal?: boolean;
+}): Promise<{
+  start: request.Response;
+  verify: request.Response;
+  complete: request.Response;
+}> {
+  const password = input.password ?? "StrongPass123";
+  const name = input.name ?? "Test User";
+  const username = input.username ?? usernameFromEmail(input.email);
+  const includeStartLegal = input.includeStartLegal ?? !input.inviteToken;
+  const includeCompletionLegal = input.includeCompletionLegal ?? Boolean(input.inviteToken);
+
+  const start = await request(input.appRef)
+    .post("/api/v1/auth/signup")
+    .send({
+      email: input.email,
+      ...(includeStartLegal ? { acceptLegal: true } : {}),
+      ...(input.inviteToken ? { inviteToken: input.inviteToken } : {}),
+    });
+
+  if (start.status !== 201) {
+    return {
+      start,
+      verify: start,
+      complete: start,
+    };
+  }
+
+  const verify = await request(input.appRef).post("/api/v1/auth/verify-email").send({
+    email: input.email,
+    code: start.body.data.debugVerificationCode as string,
+  });
+
+  if (verify.status !== 200) {
+    return {
+      start,
+      verify,
+      complete: verify,
+    };
+  }
+
+  const complete = await request(input.appRef)
+    .post("/api/v1/auth/signup/complete")
+    .send({
+      completionToken: verify.body.data.completionToken as string,
+      name,
+      username,
+      password,
+      ...(includeCompletionLegal ? { acceptLegal: true } : {}),
+    });
+
+  return {
+    start,
+    verify,
+    complete,
+  };
+}
 
 async function waitForReflectionReady(
   appRef: import("express").Express,
@@ -59,6 +139,10 @@ beforeAll(async () => {
   process.env.CHAT_CONTEXT_DEGRADED_PERCENT = "80";
   process.env.SIGNUP_ENABLED = "true";
 
+  const dbModule = await import("@ataraxia/db");
+  createInvitationForTest = dbModule.createInvitation;
+  promoteUserByEmailForTest = dbModule.promoteUserByEmail;
+
   const module = await import("./server.js");
   app = module.createApp();
 });
@@ -71,7 +155,6 @@ describe("API integration", () => {
   it("requires legal consent during signup", async () => {
     const response = await request(app).post("/api/v1/auth/signup").send({
       email: adminEmail,
-      password: "StrongPass123",
     });
 
     expect(response.status).toBe(400);
@@ -88,7 +171,6 @@ describe("API integration", () => {
     try {
       const blocked = await request(disabledApp).post("/api/v1/auth/signup").send({
         email,
-        password: "StrongPass123",
         acceptLegal: true,
       });
 
@@ -103,7 +185,6 @@ describe("API integration", () => {
       const enabledApp = module.createApp();
       const allowed = await request(enabledApp).post("/api/v1/auth/signup").send({
         email,
-        password: "StrongPass123",
         acceptLegal: true,
       });
 
@@ -118,38 +199,59 @@ describe("API integration", () => {
     }
   });
 
-  it("signs up with verification-required response, blocks signin until verified, then verifies and returns auth token pair", async () => {
-    const response = await request(app).post("/api/v1/auth/signup").send({
+  it("signs up in two phases and returns auth token pair only after completion", async () => {
+    const start = await request(app).post("/api/v1/auth/signup").send({
       email: adminEmail,
-      password: "StrongPass123",
       acceptLegal: true,
     });
 
-    expect(response.status).toBe(201);
-    expect(response.body.data.verificationRequired).toBe(true);
-    expect(typeof response.body.data.debugVerificationCode).toBe("string");
-    expect(typeof response.body.data.debugVerificationToken).toBe("string");
+    expect(start.status).toBe(201);
+    expect(start.body.data.verificationRequired).toBe(true);
+    expect(start.body.data.flowType).toBe("self_signup");
+    expect(typeof start.body.data.debugVerificationCode).toBe("string");
+    expect(typeof start.body.data.debugVerificationToken).toBe("string");
 
     const blockedSignin = await request(app).post("/api/v1/auth/signin").send({
       email: adminEmail,
       password: "StrongPass123",
     });
     expect(blockedSignin.status).toBe(401);
-    expect(blockedSignin.body.error).toBe("EMAIL_NOT_VERIFIED");
+    expect(blockedSignin.body.code).toBe("INVALID_CREDENTIALS");
 
     const verification = await request(app).post("/api/v1/auth/verify-email").send({
-      token: "stale_token_value_which_is_long_enough",
       email: adminEmail,
-      code: response.body.data.debugVerificationCode,
+      code: start.body.data.debugVerificationCode,
     });
 
     expect(verification.status).toBe(200);
-    expect(verification.body.data.user.role).toBe("ADMIN");
-    expect(typeof verification.body.data.accessToken).toBe("string");
-    expect(typeof verification.body.data.refreshToken).toBe("string");
+    expect(verification.body.data.completionRequired).toBe(true);
+    expect(typeof verification.body.data.completionToken).toBe("string");
 
-    adminToken = verification.body.data.accessToken;
-    adminRefreshToken = verification.body.data.refreshToken;
+    const complete = await request(app).post("/api/v1/auth/signup/complete").send({
+      completionToken: verification.body.data.completionToken,
+      name: "Admin User",
+      username: "admin_user",
+      password: "StrongPass123",
+    });
+
+    expect(complete.status).toBe(200);
+    expect(complete.body.data.user.role).toBe("user");
+    expect(typeof complete.body.data.accessToken).toBe("string");
+    expect(typeof complete.body.data.refreshToken).toBe("string");
+
+    adminUserId = complete.body.data.user.id as string;
+    adminToken = complete.body.data.accessToken;
+    adminRefreshToken = complete.body.data.refreshToken;
+
+    const promoted = promoteUserByEmailForTest(adminEmail);
+    expect(promoted.status).toBe("promoted");
+    expect(promoted.user?.role).toBe("admin");
+
+    const promotedAgain = promoteUserByEmailForTest(adminEmail);
+    expect(promotedAgain.status).toBe("already_admin");
+
+    const missingPromotion = promoteUserByEmailForTest("missing-user@example.com");
+    expect(missingPromotion.status).toBe("not_found");
   });
 
   it("rotates refresh token and invalidates previous refresh session", async () => {
@@ -169,6 +271,43 @@ describe("API integration", () => {
 
     adminToken = refreshed.body.data.accessToken;
     adminRefreshToken = refreshed.body.data.refreshToken;
+  });
+
+  it("enforces admin authz boundaries on admin routes", async () => {
+    const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const memberEmail = `member-${unique}@example.com`;
+    const memberFlow = await completeSignupFlow({
+      appRef: app,
+      email: memberEmail,
+      name: "Member User",
+      username: `member_${Date.now().toString().slice(-6)}`,
+    });
+    expect(memberFlow.start.status).toBe(201);
+    expect(memberFlow.verify.status).toBe(200);
+    expect(memberFlow.complete.status).toBe(200);
+    expect(memberFlow.complete.body.data.user.role).toBe("user");
+    memberToken = memberFlow.complete.body.data.accessToken as string;
+
+    const unauthenticated = await request(app).get("/api/v1/admin/users?limit=5&offset=0");
+    expect(unauthenticated.status).toBe(401);
+
+    const forbidden = await request(app)
+      .get("/api/v1/admin/users?limit=5&offset=0")
+      .set("Authorization", `Bearer ${memberToken}`);
+    expect(forbidden.status).toBe(403);
+
+    const allowed = await request(app)
+      .get("/api/v1/admin/users?limit=5&offset=0")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(allowed.status).toBe(200);
+    expect(Array.isArray(allowed.body.data.items)).toBe(true);
+
+    const overview = await request(app)
+      .get("/api/v1/admin/overview")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(overview.status).toBe(200);
+    expect(typeof overview.body.data.users.total).toBe("number");
+    expect(typeof overview.body.data.invitations.active).toBe("number");
   });
 
   it("supports onboarding read/write and completion metadata", async () => {
@@ -403,6 +542,292 @@ describe("API integration", () => {
     expect(authQuery.body.data.paths.length).toBeGreaterThan(0);
     expect(typeof authQuery.body.data.paths[0].difficultyLevel).toBe("string");
     expect(typeof authQuery.body.data.paths[0].recommendationWeight).toBe("number");
+  });
+
+  it("supports admin-only invitation management APIs", async () => {
+    const inviteEmail = `invited-${Date.now()}@example.com`;
+
+    const created = await request(app)
+      .post("/api/v1/admin/invitations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        email: inviteEmail,
+        maxUses: 1,
+      });
+
+    expect(created.status).toBe(201);
+    expect(typeof created.body.data.token).toBe("string");
+    expect(typeof created.body.data.inviteUrl).toBe("string");
+    expect(created.body.data.invitation.email).toBe(inviteEmail);
+    expect(created.body.data.invitation.maxUses).toBe(1);
+
+    const nonAdminCreate = await request(app)
+      .post("/api/v1/admin/invitations")
+      .set("Authorization", `Bearer ${memberToken}`)
+      .send({
+        email: `blocked-${Date.now()}@example.com`,
+      });
+    expect(nonAdminCreate.status).toBe(403);
+
+    const invalidPayload = await request(app)
+      .post("/api/v1/admin/invitations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        maxUses: 2,
+      });
+    expect(invalidPayload.status).toBe(400);
+
+    const listed = await request(app)
+      .get("/api/v1/admin/invitations?limit=20&offset=0")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(listed.status).toBe(200);
+    expect(Array.isArray(listed.body.data.items)).toBe(true);
+    expect(
+      listed.body.data.items.some((item: { id: string }) => item.id === created.body.data.invitation.id),
+    ).toBe(true);
+
+    const revoked = await request(app)
+      .post(`/api/v1/admin/invitations/${created.body.data.invitation.id}/revoke`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({});
+    expect(revoked.status).toBe(200);
+    expect(typeof revoked.body.data.revokedAt).toBe("string");
+  });
+
+  it("validates invitation redemption paths during signup", async () => {
+    const now = Date.now();
+    const validInviteEmail = `valid-${now}@example.com`;
+
+    const validInvite = await request(app)
+      .post("/api/v1/admin/invitations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        email: validInviteEmail,
+        maxUses: 1,
+      });
+    expect(validInvite.status).toBe(201);
+    const validToken = validInvite.body.data.token as string;
+
+    const validFlow = await completeSignupFlow({
+      appRef: app,
+      email: validInviteEmail,
+      inviteToken: validToken,
+      name: "Invite User",
+      username: `invite_user_${Date.now().toString().slice(-5)}`,
+    });
+    expect(validFlow.start.status).toBe(201);
+    expect(validFlow.verify.status).toBe(200);
+    expect(validFlow.complete.status).toBe(200);
+
+    const usedInvite = await request(app).post("/api/v1/auth/signup").send({
+      email: `used-${now}@example.com`,
+      inviteToken: validToken,
+    });
+    expect(usedInvite.status).toBe(403);
+    expect(usedInvite.body.code).toBe("INVITATION_ALREADY_USED");
+
+    const mismatchInvite = await request(app)
+      .post("/api/v1/admin/invitations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        email: `bound-${now}@example.com`,
+        maxUses: 1,
+      });
+    expect(mismatchInvite.status).toBe(201);
+
+    const mismatchSignup = await request(app).post("/api/v1/auth/signup").send({
+      email: `mismatch-${now}@example.com`,
+      inviteToken: mismatchInvite.body.data.token as string,
+    });
+    expect(mismatchSignup.status).toBe(403);
+    expect(mismatchSignup.body.code).toBe("INVITATION_EMAIL_MISMATCH");
+
+    const revokedInvite = await request(app)
+      .post("/api/v1/admin/invitations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        maxUses: 1,
+      });
+    expect(revokedInvite.status).toBe(201);
+    const revokedId = revokedInvite.body.data.invitation.id as string;
+    const revokedToken = revokedInvite.body.data.token as string;
+
+    const revokeResponse = await request(app)
+      .post(`/api/v1/admin/invitations/${revokedId}/revoke`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({});
+    expect(revokeResponse.status).toBe(200);
+
+    const revokedSignup = await request(app).post("/api/v1/auth/signup").send({
+      email: `revoked-${now}@example.com`,
+      inviteToken: revokedToken,
+    });
+    expect(revokedSignup.status).toBe(403);
+    expect(revokedSignup.body.code).toBe("INVITATION_REVOKED");
+
+    const expiredToken = `${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}`;
+    createInvitationForTest({
+      id: randomUUID(),
+      tokenHash: hashToken(expiredToken),
+      email: null,
+      roleToGrant: "user",
+      maxUses: 1,
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      createdByUserId: adminUserId,
+    });
+
+    const expiredSignup = await request(app).post("/api/v1/auth/signup").send({
+      email: `expired-${now}@example.com`,
+      inviteToken: expiredToken,
+    });
+    expect(expiredSignup.status).toBe(403);
+    expect(expiredSignup.body.code).toBe("INVITATION_EXPIRED");
+  });
+
+  it("requires legal consent at completion for invite signup", async () => {
+    const inviteEmail = `invite-legal-${Date.now()}@example.com`;
+
+    const createdInvite = await request(app)
+      .post("/api/v1/admin/invitations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        email: inviteEmail,
+        maxUses: 1,
+      });
+    expect(createdInvite.status).toBe(201);
+
+    const start = await request(app).post("/api/v1/auth/signup").send({
+      email: inviteEmail,
+      inviteToken: createdInvite.body.data.token as string,
+    });
+    expect(start.status).toBe(201);
+    expect(start.body.data.flowType).toBe("invite");
+
+    const verify = await request(app).post("/api/v1/auth/verify-email").send({
+      email: inviteEmail,
+      code: start.body.data.debugVerificationCode as string,
+    });
+    expect(verify.status).toBe(200);
+
+    const missingLegal = await request(app).post("/api/v1/auth/signup/complete").send({
+      completionToken: verify.body.data.completionToken as string,
+      name: "Invite Legal Missing",
+      username: `invite_legal_${Date.now().toString().slice(-5)}`,
+      password: "StrongPass123",
+    });
+    expect(missingLegal.status).toBe(400);
+    expect(missingLegal.body.code).toBe("LEGAL_CONSENT_REQUIRED");
+
+    const withLegal = await request(app).post("/api/v1/auth/signup/complete").send({
+      completionToken: verify.body.data.completionToken as string,
+      name: "Invite Legal Accepted",
+      username: `invite_legal_ok_${Date.now().toString().slice(-4)}`,
+      password: "StrongPass123",
+      acceptLegal: true,
+    });
+    expect(withLegal.status).toBe(200);
+  });
+
+  it("rejects completion before verification and validates username uniqueness", async () => {
+    const firstEmail = `username-first-${Date.now()}@example.com`;
+    const secondEmail = `username-second-${Date.now()}@example.com`;
+    const sharedUsername = `shared_${Date.now().toString().slice(-6)}`;
+
+    const firstFlow = await completeSignupFlow({
+      appRef: app,
+      email: firstEmail,
+      name: "First Username Owner",
+      username: sharedUsername,
+    });
+    expect(firstFlow.complete.status).toBe(200);
+
+    const secondStart = await request(app).post("/api/v1/auth/signup").send({
+      email: secondEmail,
+      acceptLegal: true,
+    });
+    expect(secondStart.status).toBe(201);
+
+    const prematureComplete = await request(app).post("/api/v1/auth/signup/complete").send({
+      completionToken: secondStart.body.data.debugVerificationToken as string,
+      name: "Premature User",
+      username: `premature_${Date.now().toString().slice(-5)}`,
+      password: "StrongPass123",
+    });
+    expect(prematureComplete.status).toBe(401);
+    expect(prematureComplete.body.code).toBe("INVALID_COMPLETION_TOKEN");
+
+    const secondVerify = await request(app).post("/api/v1/auth/verify-email").send({
+      email: secondEmail,
+      code: secondStart.body.data.debugVerificationCode as string,
+    });
+    expect(secondVerify.status).toBe(200);
+
+    const duplicateUsername = await request(app).post("/api/v1/auth/signup/complete").send({
+      completionToken: secondVerify.body.data.completionToken as string,
+      name: "Duplicate Username User",
+      username: sharedUsername,
+      password: "StrongPass123",
+    });
+    expect(duplicateUsername.status).toBe(409);
+    expect(duplicateUsername.body.code).toBe("USERNAME_UNAVAILABLE");
+  });
+
+  it("allows invite-token signup when SIGNUP_ENABLED=false", async () => {
+    const module = await import("./server.js");
+    const previous = process.env.SIGNUP_ENABLED;
+    process.env.SIGNUP_ENABLED = "false";
+
+    const disabledApp = module.createApp();
+
+    try {
+      const createInvite = await request(disabledApp)
+        .post("/api/v1/admin/invitations")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          maxUses: 1,
+        });
+      expect(createInvite.status).toBe(201);
+
+      const allowed = await request(disabledApp).post("/api/v1/auth/signup").send({
+        email: `disabled-allowed-${Date.now()}@example.com`,
+        inviteToken: createInvite.body.data.token as string,
+      });
+      expect(allowed.status).toBe(201);
+
+      const verify = await request(disabledApp).post("/api/v1/auth/verify-email").send({
+        email: allowed.body.data.email as string,
+        code: allowed.body.data.debugVerificationCode as string,
+      });
+      expect(verify.status).toBe(200);
+
+      const complete = await request(disabledApp).post("/api/v1/auth/signup/complete").send({
+        completionToken: verify.body.data.completionToken,
+        name: "Disabled Invite User",
+        username: `beta_${Date.now().toString().slice(-5)}`,
+        password: "StrongPass123",
+        acceptLegal: true,
+      });
+      expect(complete.status).toBe(200);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.SIGNUP_ENABLED;
+      } else {
+        process.env.SIGNUP_ENABLED = previous;
+      }
+    }
+  });
+
+  it("ignores role changes in account patch payloads", async () => {
+    const response = await request(app)
+      .patch("/api/v1/auth/me")
+      .set("Authorization", `Bearer ${memberToken}`)
+      .send({
+        name: "Member Role Attempt",
+        role: "admin",
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.user.role).toBe("user");
   });
 
   it("supports admin academy curation workflows", async () => {
@@ -661,20 +1086,17 @@ describe("API integration", () => {
     const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const email = `reflection-owner-${unique}@example.com`;
     const password = "StrongPass789";
-
-    const signup = await request(app).post("/api/v1/auth/signup").send({
+    const flow = await completeSignupFlow({
+      appRef: app,
       email,
       password,
-      acceptLegal: true,
+      name: "Reflection Owner",
+      username: `reflection_owner_${Date.now().toString().slice(-5)}`,
     });
-    expect(signup.status).toBe(201);
-
-    const verify = await request(app).post("/api/v1/auth/verify-email").send({
-      email,
-      code: signup.body.data.debugVerificationCode,
-    });
-    expect(verify.status).toBe(200);
-    const otherUserToken = verify.body.data.accessToken as string;
+    expect(flow.start.status).toBe(201);
+    expect(flow.verify.status).toBe(200);
+    expect(flow.complete.status).toBe(200);
+    const otherUserToken = flow.complete.body.data.accessToken as string;
 
     const ownedReflection = await request(app)
       .post("/api/v1/reflections")
@@ -821,23 +1243,17 @@ describe("API integration", () => {
   it("deletes account with confirmation and blocks future authentication", async () => {
     const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const email = `delete+${unique}@example.com`;
-
-    const signup = await request(app).post("/api/v1/auth/signup").send({
+    const flow = await completeSignupFlow({
+      appRef: app,
       email,
       password: "DeletePass123",
-      acceptLegal: true,
+      name: "Delete Me",
+      username: `delete_user_${Date.now().toString().slice(-5)}`,
     });
-
-    expect(signup.status).toBe(201);
-    const code = signup.body.data.debugVerificationCode as string;
-
-    const verify = await request(app).post("/api/v1/auth/verify-email").send({
-      email,
-      code,
-    });
-
-    expect(verify.status).toBe(200);
-    const token = verify.body.data.accessToken as string;
+    expect(flow.start.status).toBe(201);
+    expect(flow.verify.status).toBe(200);
+    expect(flow.complete.status).toBe(200);
+    const token = flow.complete.body.data.accessToken as string;
 
     const wrongDelete = await request(app)
       .post("/api/v1/auth/delete")

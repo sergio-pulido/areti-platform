@@ -21,13 +21,51 @@ const basePassword = z
 export const signupSchema = z
   .object({
     email: baseEmail,
-    password: basePassword,
-    acceptLegal: z.boolean(),
+    acceptLegal: z.boolean().optional(),
+    acceptTerms: z.boolean().optional(),
+    acceptPrivacy: z.boolean().optional(),
+    inviteToken: z.string().trim().min(32).max(512).optional(),
+    locale: z.string().trim().min(2).max(20).optional(),
   })
-  .refine((data) => data.acceptLegal, {
-    message: "You must accept the Terms and Privacy Policy",
-    path: ["acceptLegal"],
+  .superRefine((data, ctx) => {
+    const hasInviteToken = Boolean(data.inviteToken);
+    const acceptedLegal = data.acceptLegal || (data.acceptTerms && data.acceptPrivacy);
+
+    if (!hasInviteToken && !acceptedLegal) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "You must accept the Terms and Privacy Policy",
+        path: ["acceptLegal"],
+      });
+    }
   });
+
+export const completeSignupSchema = z.object({
+  completionToken: z.string().trim().min(16).max(512),
+  name: z.string().trim().min(2).max(80),
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9_-]{3,40}$/, "Username must use 3-40 lowercase letters, numbers, _ or -"),
+  password: basePassword,
+  locale: z.string().trim().min(2).max(20).optional(),
+  acceptLegal: z.boolean().optional(),
+  acceptTerms: z.boolean().optional(),
+  acceptPrivacy: z.boolean().optional(),
+  requiresLegalAtCompletion: z.boolean().optional(),
+}).superRefine((data, ctx) => {
+  if (data.requiresLegalAtCompletion) {
+    const acceptedLegal = data.acceptLegal || (data.acceptTerms && data.acceptPrivacy);
+    if (!acceptedLegal) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "You must accept the Terms and Privacy Policy",
+        path: ["acceptLegal"],
+      });
+    }
+  }
+});
 
 export const signinSchema = z.object({
   email: baseEmail,

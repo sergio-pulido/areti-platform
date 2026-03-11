@@ -46,8 +46,13 @@ npm run dev
   - production: `false` (safe invite-only default)
   - non-production: `true` (keeps dev/test signup flows usable)
 - Behavior:
-  - `false`: `/auth/signup` shows private-beta messaging, signup CTAs are hidden, and `POST /api/v1/auth/signup` returns `403`.
-  - `true`: normal signup flow remains available.
+  - `false`: public self-signup is unavailable (`/auth/signup` shows private-beta state, public signup CTAs are hidden, and public signup starts on `POST /api/v1/auth/signup` return `403` with `code: SIGNUP_DISABLED`).
+  - `true`: public self-signup start remains available.
+  - Invite-based onboarding remains available in both modes when a valid `inviteToken` is supplied.
+  - Signup lifecycle is two-phase in both modes: `email claim + verification` then `account completion`. User creation happens only in completion.
+- Notes:
+  - Restart running web/api processes after changing env values.
+  - In local Next dev, prefer `apps/web/.env.local` (repo-root `.env` is also supported).
 
 ### `API_BASE_URL`
 - Purpose: server-side web app calls to API.
