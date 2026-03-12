@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-03-12 - Make /opt/areti a repo-owned deployment wrapper and gate production deploys on tagged release workflows
+- **Context:** Production deployment had drifted into manually maintained host files and shell history (`/opt/areti/compose*.yaml`, Caddy config, ad-hoc redeploy commands), which made repeatability, reviewability, and CD difficult.
+- **Decision:** Add `ops/server` as the source of truth for the single-server wrapper layout, matching the real host split between `/opt/areti` (runtime wrapper) and `/opt/areti/repos/areti-platform` (application checkout). Include committed compose files, Caddy config, env template, and server scripts for wrapper sync, release checkout, and redeploy.
+- **Decision:** Introduce GitHub Actions release deployment triggered by pushed tags (`v*`), gated by full repository CI plus release-time security checks (`npm audit`, Trivy), and executed remotely over SSH by checking out the tag on the server, syncing `ops/server`, and running the repo-owned deploy script.
+- **Decision:** Add ongoing repository security automation (`security.yml`, Dependabot, CodeQL) and expand CI coverage to include `develop` so the staging/integration branch is protected before release tagging.
+- **Why:** Keeps infrastructure changes reviewable in git, removes manual server drift, and creates a traceable path from tested tag to deployed revision.
+- **Tradeoff:** Release deploys now depend on correctly managed GitHub environment secrets, server SSH trust, and the health of security gates; urgent hotfixes may need vulnerability remediation or an explicit workflow adjustment before they can ship.
+
 ## 2026-03-12 - Enforce progressive-profile layering across auth, activation, onboarding, and optional enrichment
 - **Context:** Initial split signup flow was functional but still mixed profile/community data too early and used legacy onboarding dimensions that no longer matched product personalization goals.
 - **Decision:** Keep existing route topology and pending-intent lifecycle, and tighten each stage to a strict progression:

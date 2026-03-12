@@ -10,6 +10,8 @@
 
 ## Infrastructure
 - `infra/areti-beta-server-runbook.md`: single-server deployment runbook
+- `infra/areti-beta-server-runbook-v3.md`: current `/opt/areti` single-server wrapper runbook
+- `infra/tag-release-cicd.md`: tag-based GitHub Actions validation and production deploy flow
 
 ## Academy
 - `academy/START_HERE_README_fresh.md`: Academy pack overview

@@ -3,7 +3,13 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DB_PATH="$ROOT_DIR/data/ataraxia.docker.db"
+
+if [ -f "$ROOT_DIR/ops/server/scripts/deploy-release.sh" ]; then
+  echo "This helper only matches the repository-local docker-compose stack."
+  echo "For the real /opt/areti production wrapper, use:"
+  echo "  ./ops/server/scripts/sync-layout.sh /opt/areti"
+  echo "  /opt/areti/scripts/deploy-release.sh /opt/areti"
+fi
 
 cd "$ROOT_DIR"
 
@@ -15,9 +21,9 @@ docker compose down
 echo "Rebuilding images..."
 docker compose build --pull
 
-if [ -f "$DB_PATH" ]; then
-  BACKUP_PATH="${DB_PATH}.bak.$(date +%F-%H%M%S)"
-  cp "$DB_PATH" "$BACKUP_PATH"
+if [ -f data/ataraxia.docker.db ]; then
+  BACKUP_PATH="data/ataraxia.docker.db.bak.$(date +%F-%H%M%S)"
+  cp data/ataraxia.docker.db "$BACKUP_PATH"
   echo "Backed up database to $BACKUP_PATH"
 fi
 

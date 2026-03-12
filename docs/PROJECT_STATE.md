@@ -2,6 +2,10 @@
 
 ## Current Status
 - Monorepo architecture is active with frontend (`apps/web`), backend (`apps/api`), and shared DB/ORM (`packages/db`).
+- Repo-owned production wrapper assets now live under `ops/server` and mirror the real `/opt/areti` single-server deployment layout (`compose.yaml`, `compose.production.yaml`, Caddy config, env template, and runtime scripts).
+- Production deployment is now designed around a split host structure: `/opt/areti` for wrapper/runtime state and `/opt/areti/repos/areti-platform` for the checked-out application repository.
+- GitHub Actions release automation is now defined around tag pushes (`v*`): release validation, security gate, remote tag checkout, wrapper sync, image rebuild, DB migration, and compose redeploy over SSH.
+- CI coverage now explicitly targets the long-lived `develop` branch in addition to `main` and `codex/**`, and repository security automation now includes CodeQL, Trivy, npm audit, and Dependabot configuration.
 - API now has a dedicated production-ready rate-limit foundation (`apps/api/src/modules/rate-limit`) with centralized policies, pluggable memory/Redis counters, safe `request.ip` extraction via configurable trust-proxy, structured 429 responses, structured block logs, and DB-persisted block events.
 - Targeted route-level rate limiting is now enforced for high-risk/high-cost auth, security, preview, chat, reflections, admin invite, admin content mutations, and admin system unlock endpoints; legacy ad-hoc in-memory per-route limit checks were removed.
 - Admin operations visibility now includes `GET /api/v1/admin/rate-limits` plus a CMS "Rate Limit Blocks" panel, backed by persisted `rate_limit_block_events` and optional DB override input (`rate_limit_policy_overrides`) for future runtime tuning.

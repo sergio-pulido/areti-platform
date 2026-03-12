@@ -2,6 +2,8 @@
 
 Reusable runbook for private beta deployment of Areti (web + API) on one Ubuntu server using Docker Compose and Caddy.
 
+The repo source of truth for wrapper assets is now `ops/server/`. You should no longer hand-edit `compose.yaml`, `compose.production.yaml`, or the deploy scripts directly on the host unless you are performing emergency recovery.
+
 This v3 is specific to the current Areti monorepo and updates v2 with a secure, practical secret model:
 
 - non-sensitive config in `/opt/areti/.env`
@@ -35,7 +37,7 @@ Replace these placeholders before executing commands:
 - `APP_NAME=areti`
 - `APP_DIR=/opt/areti`
 - `REPO_NAME=areti-platform`
-- `REPO_DIR=/opt/areti/areti-platform`
+- `REPO_DIR=/opt/areti/repos/areti-platform`
 - `GIT_REPO=git@github.com:sergio-pulido/areti-platform.git`
 - `GIT_BRANCH=main`
 - `PRODUCT_HOST=my.areti.app`
@@ -61,7 +63,7 @@ Follow v2 steps 1-6 for:
 As `deployer`:
 
 ```bash
-sudo mkdir -p /opt/areti/{config/caddy,data/caddy,data/sqlite,data/uploads,backups,scripts,secrets,logs,areti-platform}
+sudo mkdir -p /opt/areti/{config/caddy,data/caddy,data/sqlite,data/uploads,backups,scripts,secrets,logs,repos/areti-platform}
 sudo chown -R deployer:deployer /opt/areti
 sudo chmod 755 /opt/areti
 sudo chmod 700 /opt/areti/secrets
@@ -71,7 +73,7 @@ Expected layout:
 
 ```text
 /opt/areti/
-  areti-platform/
+  repos/areti-platform/
   compose.yaml
   compose.production.yaml
   .env
@@ -94,7 +96,7 @@ Use the same v2 steps 8-9.
 Then verify monorepo structure from `REPO_DIR`:
 
 ```bash
-cd /opt/areti/areti-platform
+cd /opt/areti/repos/areti-platform
 find . -maxdepth 2 -name 'Dockerfile*'
 find . -maxdepth 3 -name package.json
 find . -maxdepth 3 \( -name bun.lockb -o -name bun.lock -o -name pnpm-lock.yaml -o -name package-lock.json \)
@@ -106,153 +108,39 @@ For this repo, expected Dockerfiles are:
 
 ---
 
-## 4) Create `/opt/areti/compose.yaml` (v3, full file)
+## 4) Sync repo-owned wrapper files
 
-Create this file exactly:
+After cloning the repository, the wrapper files should come from the repository itself:
 
-```yaml
-version: "3.9"
-
-services:
-  api:
-    build:
-      context: ./areti-platform
-      dockerfile: Dockerfile.api
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      NODE_ENV: production
-      API_PORT: 4000
-      CORS_ORIGINS: ${CORS_ORIGINS}
-      WEB_APP_URL: ${WEB_APP_URL}
-      PASSKEY_RP_ID: ${PASSKEY_RP_ID}
-      PASSKEY_RP_NAME: ${PASSKEY_RP_NAME:-Areti}
-      PASSKEY_ORIGINS: ${PASSKEY_ORIGINS}
-      ATARAXIA_DB_PATH: /app/data/sqlite/ataraxia.prod.db
-      CHAT_PROVIDER_ORDER: ${CHAT_PROVIDER_ORDER:-openai}
-      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4.1-mini}
-      OPENAI_TRANSCRIPTION_MODEL: ${OPENAI_TRANSCRIPTION_MODEL:-gpt-4o-mini-transcribe}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      DEEPSEEK_CHAT_MODEL: ${DEEPSEEK_CHAT_MODEL:-deepseek-chat}
-      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
-      EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-resend}
-      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-1025}
-      SMTP_SECURE: ${SMTP_SECURE:-false}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
-      TZ: ${TZ:-Europe/Madrid}
-    command: >
-      sh -lc 'export OPENAI_API_KEY="$$(cat /run/secrets/openai_api_key)";
-      export RESEND_API_KEY="$$(cat /run/secrets/resend_api_key)";
-      exec npm run start:api'
-    expose:
-      - "4000"
-    volumes:
-      - ./data/sqlite:/app/data/sqlite
-      - ./data/uploads:/app/data/uploads
-    secrets:
-      - openai_api_key
-      - resend_api_key
-    networks:
-      - appnet
-
-  web:
-    build:
-      context: ./areti-platform
-      dockerfile: Dockerfile.web
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      NODE_ENV: production
-      API_BASE_URL: http://api:4000
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
-      TZ: ${TZ:-Europe/Madrid}
-    depends_on:
-      - api
-    expose:
-      - "3000"
-    networks:
-      - appnet
-
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./data/caddy:/data
-      - ./config/caddy:/config
-    depends_on:
-      - web
-      - api
-    networks:
-      - appnet
-
-secrets:
-  nextauth_secret:
-    file: ./secrets/nextauth_secret.txt
-  jwt_secret:
-    file: ./secrets/jwt_secret.txt
-  openai_api_key:
-    file: ./secrets/openai_api_key.txt
-  resend_api_key:
-    file: ./secrets/resend_api_key.txt
-
-networks:
-  appnet:
-    driver: bridge
+```bash
+cd /opt/areti/repos/areti-platform
+./ops/server/scripts/sync-layout.sh /opt/areti
 ```
 
-Notes:
-- `command` exports secret values from mounted files and then starts API.
-- This avoids putting API keys in `.env`.
-- `NEXT_PUBLIC_API_BASE_URL` is public by design and should stay in `.env`.
+This installs:
+
+- `/opt/areti/compose.yaml`
+- `/opt/areti/compose.production.yaml`
+- `/opt/areti/.env.example`
+- `/opt/areti/config/caddy/Caddyfile`
+- `/opt/areti/scripts/deploy-release.sh`
+- `/opt/areti/scripts/checkout-release.sh`
+
+The committed source of truth for those files is:
+
+- `ops/server/compose.yaml`
+- `ops/server/compose.production.yaml`
+- `ops/server/.env.example`
+- `ops/server/config/caddy/Caddyfile`
+- `ops/server/scripts/*`
 
 ---
 
-## 5) Create `/opt/areti/compose.production.yaml`
-
-```yaml
-services:
-  api:
-    environment:
-      NODE_ENV: production
-
-  web:
-    environment:
-      NODE_ENV: production
-```
+## 5) Create non-sensitive `.env`
 
 ---
 
-## 6) Create Caddy config
-
-Create `/opt/areti/config/caddy/Caddyfile`:
-
-```caddy
-my.areti.app {
-  encode gzip zstd
-  reverse_proxy web:3000
-}
-
-api.areti.app {
-  encode gzip zstd
-  reverse_proxy api:4000
-}
-```
-
----
-
-## 7) Create non-sensitive `.env`
-
-Create `/opt/areti/.env`:
+Create `/opt/areti/.env` from `/opt/areti/.env.example` and then fill the real values:
 
 ```env
 NODE_ENV=production
@@ -260,6 +148,9 @@ TZ=Europe/Madrid
 
 APP_NAME=areti
 
+PRODUCT_HOST=my.areti.app
+API_HOST=api.areti.app
+CADDY_EMAIL=ops@areti.app
 WEB_APP_URL=https://my.areti.app
 CORS_ORIGINS=https://my.areti.app
 PASSKEY_RP_ID=my.areti.app
@@ -276,6 +167,7 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 
 EMAIL_TRANSPORT=resend
 RESEND_FROM_EMAIL=Areti <no-reply@areti.app>
+SIGNUP_ENABLED=false
 
 SMTP_HOST=
 SMTP_PORT=1025
@@ -293,13 +185,15 @@ chmod 600 /opt/areti/.env
 
 ---
 
-## 8) Create sensitive secret files (`.txt`)
+## 6) Create sensitive secret files (`.txt`)
 
 Create only the secrets used by this repository:
 
 ```bash
 printf 'replace_with_openai_key' > /opt/areti/secrets/openai_api_key.txt
 printf 'replace_with_resend_key' > /opt/areti/secrets/resend_api_key.txt
+printf 'replace_with_deepseek_key' > /opt/areti/secrets/deepseek_api_key.txt
+printf 'replace_with_long_random_rate_limit_salt' > /opt/areti/secrets/rate_limit_ip_hash_salt.txt
 chmod 600 /opt/areti/secrets/*.txt
 ```
 
@@ -309,15 +203,16 @@ Validate:
 ls -l /opt/areti/secrets
 wc -c /opt/areti/secrets/openai_api_key.txt
 wc -c /opt/areti/secrets/resend_api_key.txt
+wc -c /opt/areti/secrets/deepseek_api_key.txt
+wc -c /opt/areti/secrets/rate_limit_ip_hash_salt.txt
 ```
 
 Important:
-- Do not create `nextauth_secret.txt` or `jwt_secret.txt` for this codebase unless those vars are introduced in code later.
 - Keep `.txt` values single-line; no quotes.
 
 ---
 
-## 9) Point DNS before first launch
+## 7) Point DNS before first launch
 
 Create DNS records:
 - `A my.areti.app -> SERVER_IP`
@@ -334,21 +229,17 @@ dig +short api.areti.app
 
 ---
 
-## 10) First build and start (step 15 equivalent, updated)
+## 8) First build and start (step 15 equivalent, updated)
 
 ```bash
 cd /opt/areti
-docker compose -f compose.yaml -f compose.production.yaml config > /tmp/compose.resolved.yaml
-docker compose -f compose.yaml -f compose.production.yaml up -d --build
-docker compose -f compose.yaml -f compose.production.yaml ps
+./scripts/deploy-release.sh /opt/areti
 ```
 
 Follow logs:
 
 ```bash
-docker compose -f compose.yaml -f compose.production.yaml logs -f --tail=120 api
-docker compose -f compose.yaml -f compose.production.yaml logs -f --tail=120 web
-docker compose -f compose.yaml -f compose.production.yaml logs -f --tail=120 caddy
+docker compose -f compose.yaml -f compose.production.yaml logs -f --tail=120 api web caddy
 ```
 
 Smoke checks:
@@ -368,34 +259,37 @@ docker compose -f compose.yaml -f compose.production.yaml logs --tail=250 caddy
 
 ---
 
-## 11) Deploy workflow for future changes
+## 9) Deploy workflow for future changes
 
-Manual fallback deploy:
+Automated release deploy:
+
+- push a release tag like `v0.1.0`
+- GitHub Actions runs `.github/workflows/release-deploy.yml`
+- the workflow checks out that tag on the server repo, syncs `ops/server`, and runs `/opt/areti/scripts/deploy-release.sh`
+
+Manual fallback deploy to `main`:
 
 ```bash
-cd /opt/areti/areti-platform
-git fetch origin
+cd /opt/areti/repos/areti-platform
+git fetch origin --tags
 git checkout main
-git pull --ff-only origin main
-
-cd /opt/areti
-docker compose -f compose.yaml -f compose.production.yaml up -d --build
+./ops/server/scripts/sync-layout.sh /opt/areti
+/opt/areti/scripts/deploy-release.sh /opt/areti
 ```
 
 Deploy a tag:
 
 ```bash
-cd /opt/areti/areti-platform
-git fetch --all --tags
-git checkout vX.Y.Z
-
-cd /opt/areti
-docker compose -f compose.yaml -f compose.production.yaml up -d --build
+cd /opt/areti/repos/areti-platform
+git fetch origin --tags
+./ops/server/scripts/checkout-release.sh /opt/areti vX.Y.Z
+./ops/server/scripts/sync-layout.sh /opt/areti
+/opt/areti/scripts/deploy-release.sh /opt/areti
 ```
 
 ---
 
-## 12) Secret rotation procedure
+## 10) Secret rotation procedure
 
 Rotate OpenAI key:
 
@@ -419,7 +313,7 @@ Why recreate API: secret file contents are read when the container starts.
 
 ---
 
-## 13) Backups (same baseline as v2)
+## 11) Backups (same baseline as v2)
 
 Create script:
 
@@ -427,11 +321,12 @@ Create script:
 cat > /opt/areti/scripts/backup-db.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-mkdir -p /opt/areti/backups
+mkdir -p /opt/areti/backups/sqlite
 TS=$(date +"%Y-%m-%d_%H-%M-%S")
-cp /opt/areti/data/sqlite/ataraxia.prod.db /opt/areti/backups/prod_${TS}.db
-gzip /opt/areti/backups/prod_${TS}.db
-find /opt/areti/backups -type f -mtime +14 -delete
+SNAPSHOT_DIR="/opt/areti/backups/sqlite/${TS}"
+mkdir -p "$SNAPSHOT_DIR"
+cp /opt/areti/data/sqlite/ataraxia.prod.db* "$SNAPSHOT_DIR"/
+find /opt/areti/backups/sqlite -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} +
 EOF
 chmod +x /opt/areti/scripts/backup-db.sh
 ```
@@ -451,7 +346,7 @@ Cron:
 
 ---
 
-## 14) Validation checklist (v3)
+## 12) Validation checklist (v3)
 
 - `docker compose ps` shows `api`, `web`, `caddy` as running
 - `https://my.areti.app` returns `200`/`30x`
@@ -462,7 +357,7 @@ Cron:
 
 ---
 
-## 15) Delta from v2 (quick diff)
+## 13) Delta from v2 (quick diff)
 
 1. Use `find ... -name 'Dockerfile*'` because this repo has `Dockerfile.api` and `Dockerfile.web`, not `Dockerfile`.
 2. Compose build uses `context: ./areti-platform` and root Dockerfiles.
@@ -470,4 +365,3 @@ Cron:
 4. Sensitive keys moved out of `.env` and into Docker secrets from `/opt/areti/secrets/*.txt`.
 5. API reads mounted secret files via container startup command (`sh -lc ... export ...`).
 6. `NEXTAUTH`/`JWT` secret files are intentionally not part of current Areti deployment because the code does not use them.
-

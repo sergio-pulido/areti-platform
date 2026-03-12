@@ -161,6 +161,29 @@ Services:
 - API: [http://localhost:4000](http://localhost:4000)
 - MailHog UI: [http://localhost:8025](http://localhost:8025)
 
+## Server Ops And Releases
+- Repo-owned single-server deployment assets now live under `ops/server`.
+- The production host layout assumes:
+  - wrapper root: `/opt/areti`
+  - app checkout: `/opt/areti/repos/areti-platform`
+- Sync wrapper assets onto the server from the checked-out repo with:
+
+```bash
+./ops/server/scripts/sync-layout.sh /opt/areti
+```
+
+- Redeploy the server wrapper with:
+
+```bash
+/opt/areti/scripts/deploy-release.sh /opt/areti
+```
+
+- Tag pushes (`v*`) are now intended to drive production deployment through GitHub Actions after CI and security gates pass.
+- See:
+  - `ops/README.md`
+  - `docs/infra/tag-release-cicd.md`
+  - `docs/infra/areti-beta-server-runbook-v3.md`
+
 ## Key Environment Variables
 - `API_PORT` (default: `4000`)
 - `CORS_ORIGINS` (default: `http://localhost:3000`)
