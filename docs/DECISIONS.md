@@ -1,5 +1,17 @@
 # Decisions
 
+## 2026-03-12 - Enforce progressive-profile layering across auth, activation, onboarding, and optional enrichment
+- **Context:** Initial split signup flow was functional but still mixed profile/community data too early and used legacy onboarding dimensions that no longer matched product personalization goals.
+- **Decision:** Keep existing route topology and pending-intent lifecycle, and tighten each stage to a strict progression:
+  - auth/access: email + legal only (public), invite context only (invite start)
+  - complete account: name, username, password, optional locale; legal required only for invite completion
+  - onboarding: `primaryGoal`, `preferredTopics (1-3)`, `experienceLevel`
+  - enrichment: optional avatar (preset/upload/camera) + short bio in account profile
+- **Decision:** Promote onboarding v2 columns (`primary_goal`, `preferred_topics_json`, `experience_level`) and avatar columns (`avatar_type`, `avatar_preset`, `avatar_image_key`) as current source-of-truth while keeping legacy columns for compatibility in this iteration.
+- **Decision:** Add authenticated avatar streaming endpoint (`GET /api/v1/auth/me/avatar`) and keep avatar fallback precedence deterministic (`upload -> preset -> initials`).
+- **Why:** Reduces early friction, keeps activation focused, and enables post-activation personalization/enrichment without reopening route/flow complexity.
+- **Tradeoff:** Temporary dual-model onboarding persistence remains until legacy columns are removed in a later cleanup migration.
+
 ## 2026-03-11 - Adopt hybrid rate-limit policy resolution with persisted block telemetry
 - **Context:** Critical auth/security/chat/admin endpoints needed production-grade abuse protection and operational visibility; existing route-local in-memory checks were not cross-instance safe, not extensible, and lacked auditability.
 - **Decision:** Introduce a dedicated rate-limit module in API with centralized named policies, bucket-key strategies, policy resolver precedence (`code defaults -> env overrides -> optional DB overrides`), pluggable counter store (`memory` + Redis adapter), and standardized 429 response contract.

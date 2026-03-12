@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../..");
 const testDbPath = path.join(repoRoot, "data", "ataraxia.integration.db");
+const testAvatarDir = path.join(repoRoot, "data", "ataraxia.integration.avatar");
 
 let app: import("express").Express;
 let adminToken = "";
@@ -17,6 +18,8 @@ let memberToken = "";
 let createInvitationForTest: typeof import("@areti/db")["createInvitation"];
 let promoteUserByEmailForTest: typeof import("@areti/db")["promoteUserByEmail"];
 const adminEmail = "admin@example.com";
+const tinyPngBase64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Yx3sAAAAASUVORK5CYII=";
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -51,7 +54,7 @@ async function completeSignupFlow(input: {
     .post("/api/v1/auth/signup")
     .send({
       email: input.email,
-      ...(includeStartLegal ? { acceptLegal: true } : {}),
+      ...(includeStartLegal ? { acceptTerms: true, acceptPrivacy: true } : {}),
       ...(input.inviteToken ? { inviteToken: input.inviteToken } : {}),
     });
 
@@ -83,7 +86,7 @@ async function completeSignupFlow(input: {
       name,
       username,
       password,
-      ...(includeCompletionLegal ? { acceptLegal: true } : {}),
+      ...(includeCompletionLegal ? { acceptTerms: true, acceptPrivacy: true } : {}),
     });
 
   return {
@@ -179,6 +182,7 @@ async function createAppWithRateLimitOverrides(
 beforeAll(async () => {
   mkdirSync(path.dirname(testDbPath), { recursive: true });
   rmSync(testDbPath, { force: true });
+  rmSync(testAvatarDir, { force: true, recursive: true });
 
   process.env.NODE_ENV = "test";
   process.env.ATARAXIA_DB_PATH = testDbPath;
@@ -192,6 +196,7 @@ beforeAll(async () => {
   process.env.CHAT_CONTEXT_WARNING_PERCENT = "60";
   process.env.CHAT_CONTEXT_DEGRADED_PERCENT = "80";
   process.env.SIGNUP_ENABLED = "true";
+  process.env.AVATAR_STORAGE_PATH = testAvatarDir;
   process.env.RATE_LIMIT_ENABLED = "true";
   process.env.RATE_LIMIT_STORE = "memory";
   process.env.RATE_LIMIT_TRUST_PROXY = "false";
@@ -226,6 +231,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   rmSync(testDbPath, { force: true });
+  rmSync(testAvatarDir, { force: true, recursive: true });
 });
 
 describe("API integration", () => {
@@ -248,7 +254,8 @@ describe("API integration", () => {
     try {
       const blocked = await request(disabledApp).post("/api/v1/auth/signup").send({
         email,
-        acceptLegal: true,
+        acceptTerms: true,
+        acceptPrivacy: true,
       });
 
       expect(blocked.status).toBe(403);
@@ -262,7 +269,8 @@ describe("API integration", () => {
       const enabledApp = module.createApp();
       const allowed = await request(enabledApp).post("/api/v1/auth/signup").send({
         email,
-        acceptLegal: true,
+        acceptTerms: true,
+        acceptPrivacy: true,
       });
 
       expect(allowed.status).toBe(201);
@@ -279,7 +287,8 @@ describe("API integration", () => {
   it("signs up in two phases and returns auth token pair only after completion", async () => {
     const start = await request(app).post("/api/v1/auth/signup").send({
       email: adminEmail,
-      acceptLegal: true,
+      acceptTerms: true,
+      acceptPrivacy: true,
     });
 
     expect(start.status).toBe(201);
@@ -399,14 +408,15 @@ describe("API integration", () => {
       .put("/api/v1/onboarding")
       .set("Authorization", `Bearer ${adminToken}`)
       .send({
-        primaryObjective: "Calm anxiety",
-        dailyTimeCommitment: "10 min",
-        preferredPracticeFormat: "A short practice",
-        notes: "Need focused weekday routines.",
+        primaryGoal: "reduce_stress",
+        preferredTopics: ["mindfulness", "habits"],
+        experienceLevel: "somewhat_familiar",
       });
 
     expect(saved.status).toBe(200);
-    expect(saved.body.data.profile.primaryObjective).toBe("Calm anxiety");
+    expect(saved.body.data.profile.primaryGoal).toBe("reduce_stress");
+    expect(saved.body.data.profile.preferredTopics).toEqual(["mindfulness", "habits"]);
+    expect(saved.body.data.profile.experienceLevel).toBe("somewhat_familiar");
     expect(typeof saved.body.data.onboardingCompletedAt).toBe("string");
 
     const me = await request(app)
@@ -463,6 +473,73 @@ describe("API integration", () => {
     expect(meAfterPatch.body.data.profile.username).toBe("admin_updated");
     expect(meAfterPatch.body.data.profile.city).toBe("New York");
     expect(meAfterPatch.body.data.preferences.timezone).toBe("Europe/Madrid");
+  });
+
+  it("supports avatar preset, upload, stream, and fallback", async () => {
+    const preset = await request(app)
+      .patch("/api/v1/auth/me")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        profile: {
+          summary: "Profile bio from enrichment.",
+          avatar: {
+            mode: "preset",
+            preset: "ocean_focus",
+          },
+        },
+      });
+
+    expect(preset.status).toBe(200);
+    expect(preset.body.data.profile.summary).toBe("Profile bio from enrichment.");
+    expect(preset.body.data.profile.avatarType).toBe("preset");
+    expect(preset.body.data.profile.avatarPreset).toBe("ocean_focus");
+
+    const upload = await request(app)
+      .patch("/api/v1/auth/me")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        profile: {
+          avatar: {
+            mode: "upload",
+            fileName: "avatar.png",
+            mimeType: "image/png",
+            base64Data: tinyPngBase64,
+          },
+        },
+      });
+
+    expect(upload.status).toBe(200);
+    expect(upload.body.data.profile.avatarType).toBe("upload");
+    expect(typeof upload.body.data.profile.avatarImageKey).toBe("string");
+
+    const streamed = await request(app)
+      .get("/api/v1/auth/me/avatar")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(streamed.status).toBe(200);
+    expect(streamed.headers["content-type"]).toContain("image/png");
+    expect(Buffer.isBuffer(streamed.body)).toBe(true);
+    expect(streamed.body.length).toBeGreaterThan(0);
+
+    const initials = await request(app)
+      .patch("/api/v1/auth/me")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        profile: {
+          avatar: {
+            mode: "initials",
+          },
+        },
+      });
+
+    expect(initials.status).toBe(200);
+    expect(initials.body.data.profile.avatarType).toBe("initials");
+    expect(initials.body.data.profile.avatarImageKey).toBeNull();
+
+    const missingAfterFallback = await request(app)
+      .get("/api/v1/auth/me/avatar")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(missingAfterFallback.status).toBe(404);
   });
 
   it("exposes passkey option endpoints with expected auth boundaries", async () => {
@@ -800,7 +877,8 @@ describe("API integration", () => {
       name: "Invite Legal Accepted",
       username: `invite_legal_ok_${Date.now().toString().slice(-4)}`,
       password: "StrongPass123",
-      acceptLegal: true,
+      acceptTerms: true,
+      acceptPrivacy: true,
     });
     expect(withLegal.status).toBe(200);
   });
@@ -820,7 +898,8 @@ describe("API integration", () => {
 
     const secondStart = await request(app).post("/api/v1/auth/signup").send({
       email: secondEmail,
-      acceptLegal: true,
+      acceptTerms: true,
+      acceptPrivacy: true,
     });
     expect(secondStart.status).toBe(201);
 
@@ -847,6 +926,7 @@ describe("API integration", () => {
     });
     expect(duplicateUsername.status).toBe(409);
     expect(duplicateUsername.body.code).toBe("USERNAME_UNAVAILABLE");
+    expect(typeof duplicateUsername.body.data?.suggestedUsername).toBe("string");
   });
 
   it("allows invite-token signup when SIGNUP_ENABLED=false", async () => {
@@ -882,7 +962,8 @@ describe("API integration", () => {
         name: "Disabled Invite User",
         username: `beta_${Date.now().toString().slice(-5)}`,
         password: "StrongPass123",
-        acceptLegal: true,
+        acceptTerms: true,
+        acceptPrivacy: true,
       });
       expect(complete.status).toBe(200);
     } finally {

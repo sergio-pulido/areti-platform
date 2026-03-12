@@ -127,6 +127,13 @@
       "when": 1773267999480,
       "tag": "0017_watery_shatterstar",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1773277200000,
+      "tag": "0018_sincere_progressive_profile",
+      "breakpoints": true
     }
   ]
 }

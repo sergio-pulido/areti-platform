@@ -50,13 +50,15 @@ export function CompleteSignupForm({
   const [username, setUsername] = useState(suggestedUsername);
   const [password, setPassword] = useState("");
   const [selectedLocale, setSelectedLocale] = useState(locale ?? "");
-  const [acceptLegal, setAcceptLegal] = useState(false);
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [touched, setTouched] = useState({
     name: false,
     username: false,
     password: false,
-    acceptLegal: false,
+    acceptTerms: false,
+    acceptPrivacy: false,
   });
 
   function buildLocalErrors(force: boolean): Record<string, string> {
@@ -76,8 +78,12 @@ export function CompleteSignupForm({
         `Use at least ${PASSWORD_MIN_LENGTH} characters, including upper and lower case letters and a number.`;
     }
 
-    if (requiresLegalAtCompletion && (shouldShow || touched.acceptLegal) && !acceptLegal) {
-      errors.acceptLegal = "Please agree to the Terms and Privacy Policy.";
+    if (requiresLegalAtCompletion && (shouldShow || touched.acceptTerms) && !acceptTerms) {
+      errors.acceptTerms = "Please accept the Terms of Service.";
+    }
+
+    if (requiresLegalAtCompletion && (shouldShow || touched.acceptPrivacy) && !acceptPrivacy) {
+      errors.acceptPrivacy = "Please accept the Privacy Policy.";
     }
 
     return errors;
@@ -87,7 +93,12 @@ export function CompleteSignupForm({
   const nameError = localErrors.name ?? state.fieldErrors?.name?.[0];
   const usernameError = localErrors.username ?? state.fieldErrors?.username?.[0];
   const passwordError = localErrors.password ?? state.fieldErrors?.password?.[0];
-  const legalError = localErrors.acceptLegal ?? state.fieldErrors?.acceptLegal?.[0];
+  const termsError =
+    localErrors.acceptTerms ?? state.fieldErrors?.acceptTerms?.[0] ?? state.fieldErrors?.acceptLegal?.[0];
+  const privacyError =
+    localErrors.acceptPrivacy ??
+    state.fieldErrors?.acceptPrivacy?.[0] ??
+    state.fieldErrors?.acceptLegal?.[0];
 
   return (
     <form
@@ -188,10 +199,14 @@ export function CompleteSignupForm({
 
       {requiresLegalAtCompletion ? (
         <LegalConsent
-          checked={acceptLegal}
-          onChange={setAcceptLegal}
-          onBlur={() => setTouched((current) => ({ ...current, acceptLegal: true }))}
-          error={legalError}
+          acceptTerms={acceptTerms}
+          acceptPrivacy={acceptPrivacy}
+          onTermsChange={setAcceptTerms}
+          onPrivacyChange={setAcceptPrivacy}
+          onTermsBlur={() => setTouched((current) => ({ ...current, acceptTerms: true }))}
+          onPrivacyBlur={() => setTouched((current) => ({ ...current, acceptPrivacy: true }))}
+          termsError={termsError}
+          privacyError={privacyError}
         />
       ) : null}
 

@@ -1,6 +1,7 @@
 import { integer, sqliteTable, text, uniqueIndex, index, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 export type UserRole = "user" | "admin";
+export type AvatarType = "initials" | "preset" | "upload";
 export type ContentStatus = "DRAFT" | "PUBLISHED";
 export type LegalPolicyType = "TERMS" | "PRIVACY";
 export type SignupFlowType = "self_signup" | "invite";
@@ -59,6 +60,9 @@ export const userProfiles = sqliteTable(
       .unique()
       .references(() => users.id, { onDelete: "cascade" }),
     username: text("username"),
+    avatarType: text("avatar_type").$type<AvatarType>().notNull().default("initials"),
+    avatarPreset: text("avatar_preset"),
+    avatarImageKey: text("avatar_image_key"),
     summary: text("summary").notNull().default(""),
     phone: text("phone").notNull().default(""),
     city: text("city").notNull().default(""),
@@ -157,6 +161,9 @@ export const userOnboardingProfiles = sqliteTable("user_onboarding_profiles", {
     .notNull()
     .unique()
     .references(() => users.id, { onDelete: "cascade" }),
+  primaryGoal: text("primary_goal").notNull().default("explore_philosophy"),
+  preferredTopicsJson: text("preferred_topics_json").notNull().default("[\"stoicism\"]"),
+  experienceLevel: text("experience_level").notNull().default("new_to_philosophy"),
   primaryObjective: text("primary_objective").notNull(),
   biggestDifficulty: text("biggest_difficulty").notNull(),
   mainNeed: text("main_need").notNull(),

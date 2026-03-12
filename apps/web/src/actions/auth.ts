@@ -381,9 +381,12 @@ export async function saveOnboardingAction(
   const session = await requireSession();
 
   const input = {
-    primaryObjective: getString(formData, "primaryObjective"),
-    dailyTimeCommitment: getString(formData, "dailyTimeCommitment"),
-    preferredPracticeFormat: getString(formData, "preferredPracticeFormat"),
+    primaryGoal: getString(formData, "primaryGoal"),
+    preferredTopics: formData
+      .getAll("preferredTopics")
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter((value) => value.length > 0),
+    experienceLevel: getString(formData, "experienceLevel"),
   };
 
   const parsed = onboardingSchema.safeParse(input);
@@ -417,9 +420,9 @@ export async function saveOnboardingAction(
   if (redirectTo === "/dashboard") {
     redirect(
       resolvePersonalizedOnboardingDestination({
-        primaryObjective: parsed.data.primaryObjective,
-        dailyTimeCommitment: parsed.data.dailyTimeCommitment,
-        preferredPracticeFormat: parsed.data.preferredPracticeFormat,
+        primaryGoal: parsed.data.primaryGoal,
+        preferredTopics: parsed.data.preferredTopics,
+        experienceLevel: parsed.data.experienceLevel,
       }),
     );
   }

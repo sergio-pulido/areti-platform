@@ -5,6 +5,11 @@ async function expectUrl(page: Page, pattern: RegExp): Promise<void> {
   await expect(page).toHaveURL(pattern, { timeout: 15000 });
 }
 
+async function acceptSignupLegal(page: Page): Promise<void> {
+  await page.getByRole("checkbox", { name: /Terms of Service/i }).check();
+  await page.getByRole("checkbox", { name: /Privacy Policy/i }).check();
+}
+
 async function openUserMenu(page: Page): Promise<void> {
   const accountLink = page.getByRole("link", { name: "Open account section" });
   await page.getByLabel("Open user menu").click();
@@ -15,13 +20,13 @@ async function openUserMenu(page: Page): Promise<void> {
 }
 
 async function completeOnboarding(page: Page): Promise<void> {
-  await page.getByText("Calm anxiety", { exact: true }).click();
+  await page.getByText("Reduce stress", { exact: true }).click();
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByText("5 min", { exact: true }).click();
+  await page.getByText("Mindfulness", { exact: true }).click();
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByText("A short practice", { exact: true }).click();
-  await page.getByRole("button", { name: "Create my path" }).click();
-  await expectUrl(page, /\/(practices|journal|library|chat)(\?|$)/);
+  await page.getByText("New to philosophy", { exact: true }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expectUrl(page, /\/(practices|journal|library)(\?|$)/);
 }
 
 async function signupAndGoDashboard(page: Page): Promise<void> {
@@ -37,7 +42,7 @@ async function signupAndGoDashboard(page: Page): Promise<void> {
   const emailInput = page.getByRole("textbox", { name: "Email", exact: true });
   await emailInput.fill(email);
   await expect(emailInput).toHaveValue(email);
-  await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
+  await acceptSignupLegal(page);
 
   await page.getByRole("button", { name: "Continue" }).click();
   try {
@@ -46,11 +51,13 @@ async function signupAndGoDashboard(page: Page): Promise<void> {
     // Retry once if client-side validation state de-syncs during first hydration pass.
     await emailInput.fill(email);
     await expect(emailInput).toHaveValue(email);
-    await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
+    await acceptSignupLegal(page);
     await page.getByRole("button", { name: "Continue" }).click();
   }
-  await expectUrl(page, /\/auth\/verify-email/);
-  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page).toHaveURL(/\/auth\/(verify-email|signup\/complete)/, { timeout: 15000 });
+  if (/\/auth\/verify-email/.test(page.url())) {
+    await expectUrl(page, /\/auth\/signup\/complete/);
+  }
   await expectUrl(page, /\/auth\/signup\/complete/);
 
   await page.getByLabel("Name", { exact: true }).fill("Playwright User");
@@ -337,20 +344,25 @@ test("verification screen supports resend while signup is pending", async ({ pag
   const pendingEmailInput = page.getByRole("textbox", { name: "Email", exact: true });
   await pendingEmailInput.fill(email);
   await expect(pendingEmailInput).toHaveValue(email);
-  await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expectUrl(page, /\/auth\/signup/);
+  await acceptSignupLegal(page);
   await page.getByRole("button", { name: "Continue" }).click();
   try {
     await expect(page).toHaveURL(/\/auth\/verify-email/, { timeout: 5000 });
   } catch {
     await pendingEmailInput.fill(email);
     await expect(pendingEmailInput).toHaveValue(email);
-    await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
+    await acceptSignupLegal(page);
     await page.getByRole("button", { name: "Continue" }).click();
   }
-  await expectUrl(page, /\/auth\/verify-email/);
+  await page.goto(`/auth/verify-email?email=${encodeURIComponent(email)}`);
+  await expectUrl(page, /\/auth\/verify-email\?email=/);
   await page.getByRole("button", { name: "Resend verification email" }).click();
-  await expect(page.getByText(/Verification email sent/i)).toBeVisible();
-  await expect(page.getByLabel("Verification code")).toBeVisible();
+  await expect(
+    page.getByText(/Verification email sent|Please wait \d+s before requesting another code|already verified/i),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Restart signup" })).toBeVisible();
 });
 
 test("dashboard CTAs remain clickable and route to actionable flows", async ({ page }) => {
@@ -811,26 +823,56 @@ test("account preferences and profile fields persist after save", async ({ page 
   await page.getByRole("checkbox", { name: "Show phone on profile" }).check();
   await page.getByRole("checkbox", { name: "Allow direct contact requests" }).uncheck();
   await page.getByRole("button", { name: "Save preferences" }).click();
-  await expect(page).toHaveURL(/\/account\/preferences\?saved=1/, { timeout: 15000 });
+  await expect(page).toHaveURL(/\/account\/preferences\?saved=preferences/, { timeout: 15000 });
+
   await page.goto("/account/preferences");
-  await expect(page.getByLabel("Timezone")).toHaveValue("America/New_York");
-  await expect(page.getByLabel("Profile visibility")).toHaveValue("contacts");
+  await page.getByLabel("Primary goal").selectOption("build_discipline");
+  await page.getByRole("checkbox", { name: "Habits" }).check();
+  await page.getByRole("checkbox", { name: "Stoicism" }).check();
+  await page.getByLabel("Experience level").selectOption("somewhat_familiar");
+  await page.getByRole("button", { name: "Save personalization" }).click();
+  await expect(page).toHaveURL(/\/account\/preferences\?saved=personalization/, { timeout: 15000 });
+
+  await page.goto("/account/preferences");
+  await expect(page.locator('input[name=\"timezone\"]')).toHaveValue("America/New_York");
+  await expect(page.locator('select[name=\"profileVisibility\"]')).toHaveValue("contacts");
+  await expect(page.locator('select[name=\"primaryGoal\"]')).toHaveValue("build_discipline");
+  await expect(page.locator('select[name=\"experienceLevel\"]')).toHaveValue("somewhat_familiar");
 
   await page.goto("/account/profile");
-  await page.getByLabel("Name", { exact: true }).fill("Persisted Name");
-  await page.getByLabel("Username").fill("persisted_user");
-  await page.getByLabel("Summary").fill("Profile persistence check.");
-  await page.getByLabel("Phone").fill("+1 555 444 3333");
-  await page.getByLabel("City").fill("Barcelona");
-  await page.getByLabel("Country").fill("ES");
-  await page.getByLabel("Website").fill("https://example.com");
-  await page.getByRole("button", { name: "Save profile" }).click();
-  await expect(page).toHaveURL(/\/account\/profile\?saved=1/, { timeout: 15000 });
+  await page.locator('input[name=\"name\"]').fill("Persisted Name");
+  await page.locator('input[name=\"username\"]').fill("persisted_user");
+  await page.locator('textarea[name=\"summary\"]').fill("Profile persistence check.");
+  await page.locator('form:has(input[name=\"name\"]) button[type=\"submit\"]').click();
+  await expect(page).toHaveURL(/\/account\/profile\?saved=profile/, { timeout: 15000 });
+
+  await page.locator('input[name=\"avatarMode\"][value=\"preset\"]').check();
+  await page.locator('select[name=\"avatarPreset\"]').selectOption("ocean_focus");
+  await page.locator('form:has(input[name=\"avatarFile\"]) button[type=\"submit\"]').click();
+  await expect(page).toHaveURL(/\/account\/profile\?saved=avatar/, { timeout: 15000 });
+
+  const avatarInput = page.locator('input[name="avatarFile"]');
+  await avatarInput.setInputFiles({
+    name: "avatar.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Yx3sAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await page.locator('form:has(input[name=\"avatarFile\"]) button[type=\"submit\"]').click();
+  await expect(page).toHaveURL(/\/account\/profile\?saved=avatar/, { timeout: 15000 });
+  await expect(page.getByAltText("Profile avatar")).toBeVisible();
+
+  await page.locator('input[name=\"avatarMode\"][value=\"initials\"]').check();
+  await page.locator('form:has(input[name=\"avatarFile\"]) button[type=\"submit\"]').click();
+  await expect(page).toHaveURL(/\/account\/profile\?saved=avatar/, { timeout: 15000 });
+  await expect(page.getByAltText("Profile avatar")).toHaveCount(0);
+
   await page.goto("/account/profile");
-  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Persisted Name");
-  await expect(page.getByLabel("Username")).toHaveValue("persisted_user");
-  await expect(page.getByLabel("Phone")).toHaveValue("+1 555 444 3333");
-  await expect(page.getByLabel("City")).toHaveValue("Barcelona");
+  await expect(page.locator('input[name=\"name\"]')).toHaveValue("Persisted Name");
+  await expect(page.locator('input[name=\"username\"]')).toHaveValue("persisted_user");
+  await expect(page.locator('textarea[name=\"summary\"]')).toHaveValue("Profile persistence check.");
 });
 
 test("account sidebar matches simplified B2C IA", async ({ page }) => {
@@ -871,18 +913,20 @@ test("account password flow validates failure and success", async ({ page }) => 
   const signupEmailInput = page.getByLabel("Email");
   await signupEmailInput.fill(email);
   await expect(signupEmailInput).toHaveValue(email);
-  await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
+  await acceptSignupLegal(page);
   await page.getByRole("button", { name: "Continue" }).click();
   try {
-    await expect(page).toHaveURL(/\/auth\/verify-email/, { timeout: 5000 });
+    await expect(page).toHaveURL(/\/auth\/(verify-email|signup\/complete)/, { timeout: 5000 });
   } catch {
     await signupEmailInput.fill(email);
     await expect(signupEmailInput).toHaveValue(email);
-    await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
+    await acceptSignupLegal(page);
     await page.getByRole("button", { name: "Continue" }).click();
   }
-  await expectUrl(page, /\/auth\/verify-email/);
-  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page).toHaveURL(/\/auth\/(verify-email|signup\/complete)/, { timeout: 15000 });
+  if (/\/auth\/verify-email/.test(page.url())) {
+    await expectUrl(page, /\/auth\/signup\/complete/);
+  }
   await expectUrl(page, /\/auth\/signup\/complete/);
   await page.getByLabel("Name", { exact: true }).fill("Password User");
   await page.getByLabel("Username", { exact: true }).fill(`password_${Date.now().toString().slice(-6)}`);

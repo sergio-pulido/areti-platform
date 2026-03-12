@@ -36,9 +36,10 @@ export function SignupForm({ inviteToken, inviteEmail, inviteEmailLocked = false
   const [state, formAction] = useActionState(signupAction, initialAuthActionState);
   const inviteMode = Boolean(inviteToken);
   const [email, setEmail] = useState(inviteEmail ?? "");
-  const [acceptLegal, setAcceptLegal] = useState(false);
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
-  const [touched, setTouched] = useState({ email: false, acceptLegal: false });
+  const [touched, setTouched] = useState({ email: false, acceptTerms: false, acceptPrivacy: false });
 
   function buildLocalErrors(force: boolean): Record<string, string> {
     const errors: Record<string, string> = {};
@@ -48,8 +49,12 @@ export function SignupForm({ inviteToken, inviteEmail, inviteEmailLocked = false
       errors.email = "Use a valid email address.";
     }
 
-    if (!inviteMode && (shouldShow || touched.acceptLegal) && !acceptLegal) {
-      errors.acceptLegal = "Please agree to the Terms and Privacy Policy.";
+    if (!inviteMode && (shouldShow || touched.acceptTerms) && !acceptTerms) {
+      errors.acceptTerms = "Please accept the Terms of Service.";
+    }
+
+    if (!inviteMode && (shouldShow || touched.acceptPrivacy) && !acceptPrivacy) {
+      errors.acceptPrivacy = "Please accept the Privacy Policy.";
     }
 
     return errors;
@@ -57,7 +62,14 @@ export function SignupForm({ inviteToken, inviteEmail, inviteEmailLocked = false
 
   const localFieldErrors = buildLocalErrors(false);
   const emailError = localFieldErrors.email ?? state.fieldErrors?.email?.[0];
-  const legalError = localFieldErrors.acceptLegal ?? state.fieldErrors?.acceptLegal?.[0];
+  const termsError =
+    localFieldErrors.acceptTerms ??
+    state.fieldErrors?.acceptTerms?.[0] ??
+    state.fieldErrors?.acceptLegal?.[0];
+  const privacyError =
+    localFieldErrors.acceptPrivacy ??
+    state.fieldErrors?.acceptPrivacy?.[0] ??
+    state.fieldErrors?.acceptLegal?.[0];
 
   return (
     <form
@@ -94,10 +106,14 @@ export function SignupForm({ inviteToken, inviteEmail, inviteEmailLocked = false
 
       {!inviteMode ? (
         <LegalConsent
-          checked={acceptLegal}
-          onChange={setAcceptLegal}
-          onBlur={() => setTouched((current) => ({ ...current, acceptLegal: true }))}
-          error={legalError}
+          acceptTerms={acceptTerms}
+          acceptPrivacy={acceptPrivacy}
+          onTermsChange={setAcceptTerms}
+          onPrivacyChange={setAcceptPrivacy}
+          onTermsBlur={() => setTouched((current) => ({ ...current, acceptTerms: true }))}
+          onPrivacyBlur={() => setTouched((current) => ({ ...current, acceptPrivacy: true }))}
+          termsError={termsError}
+          privacyError={privacyError}
         />
       ) : (
         <p className="rounded-xl border border-sage-300/30 bg-sage-500/10 px-3 py-2 text-sm text-sage-100">

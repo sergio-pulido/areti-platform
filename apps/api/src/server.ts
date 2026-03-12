@@ -216,6 +216,7 @@ import {
   ReflectionStorageService,
   type ReflectionCreateInput,
 } from "./reflections/index.js";
+import { AvatarStorageService } from "./avatar/avatar-storage-service.js";
 import {
   createRateLimitMiddlewareFactory,
   createRateLimitRuntimeConfig,
@@ -250,6 +251,23 @@ const DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
 const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
 const DEFAULT_REFLECTION_AUDIO_MAX_BYTES = 10 * 1024 * 1024;
 const DEFAULT_REFLECTION_STORAGE_RELATIVE_PATH = "data/reflection-audio";
+const DEFAULT_AVATAR_IMAGE_MAX_BYTES = 3 * 1024 * 1024;
+const DEFAULT_AVATAR_STORAGE_RELATIVE_PATH = "data/avatar-images";
+const AVATAR_PRESETS = [
+  "sage_horizon",
+  "amber_resolve",
+  "ocean_focus",
+  "forest_quiet",
+  "charcoal_mind",
+  "sunrise_balance",
+] as const;
+const AVATAR_ALLOWED_IMAGE_MIME_TYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+] as const;
 const REFLECTION_ALLOWED_AUDIO_MIME_TYPES = [
   "audio/webm",
   "audio/ogg",
@@ -516,6 +534,8 @@ const envSchema = z.object({
   SIGNUP_ENABLED: z.string().optional(),
   REFLECTION_STORAGE_PATH: z.string().optional(),
   REFLECTION_AUDIO_MAX_BYTES: z.string().optional(),
+  AVATAR_STORAGE_PATH: z.string().optional(),
+  AVATAR_IMAGE_MAX_BYTES: z.string().optional(),
 });
 
 type AppEnv = z.infer<typeof envSchema>;
@@ -781,10 +801,24 @@ function formatOnboardingContext(profile: OnboardingProfileRecord | null): strin
     return "";
   }
 
+  const goalLabels: Record<OnboardingProfileRecord["primaryGoal"], string> = {
+    reflect_more_clearly: "Reflect more clearly",
+    reduce_stress: "Reduce stress",
+    build_discipline: "Build discipline",
+    explore_philosophy: "Explore philosophy",
+    improve_emotional_awareness: "Improve emotional awareness",
+  };
+
+  const levelLabels: Record<OnboardingProfileRecord["experienceLevel"], string> = {
+    new_to_philosophy: "New to philosophy",
+    somewhat_familiar: "Somewhat familiar",
+    advanced: "Advanced",
+  };
+
   const lines = [
-    `Current intention: ${profile.primaryObjective}`,
-    `Daily time available: ${profile.dailyTimeCommitment}`,
-    `Preferred first step: ${profile.preferredPracticeFormat}`,
+    `Primary goal: ${goalLabels[profile.primaryGoal]}`,
+    `Preferred topics: ${profile.preferredTopics.join(", ")}`,
+    `Experience level: ${levelLabels[profile.experienceLevel]}`,
   ];
 
   if (profile.notes?.trim()) {
@@ -796,6 +830,23 @@ function formatOnboardingContext(profile: OnboardingProfileRecord | null): strin
 
 function getIpAddress(request: Request): string {
   return getClientIp(request);
+}
+
+function resolveAvatarMimeTypeFromStorageKey(storageKey: string): string {
+  const extension = path.extname(storageKey).toLowerCase();
+  if (extension === ".jpg" || extension === ".jpeg") {
+    return "image/jpeg";
+  }
+  if (extension === ".png") {
+    return "image/png";
+  }
+  if (extension === ".webp") {
+    return "image/webp";
+  }
+  if (extension === ".gif") {
+    return "image/gif";
+  }
+  return "application/octet-stream";
 }
 
 function deriveSignupDisplayName(email: string): string {
@@ -1821,6 +1872,22 @@ const inviteContextSchema = z.object({
   token: z.string().trim().min(32).max(512),
 });
 
+const avatarPatchSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("initials"),
+  }),
+  z.object({
+    mode: z.literal("preset"),
+    preset: z.enum(AVATAR_PRESETS),
+  }),
+  z.object({
+    mode: z.literal("upload"),
+    fileName: z.string().trim().min(1).max(120),
+    mimeType: z.string().trim().min(3).max(120),
+    base64Data: z.string().trim().min(1),
+  }),
+]);
+
 const signinSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(120),
   password: z.string().min(1),
@@ -1841,6 +1908,7 @@ const accountProfilePatchSchema = z.object({
     .regex(/^[a-zA-Z0-9_-]+$/)
     .nullable()
     .optional(),
+  avatar: avatarPatchSchema.optional(),
   summary: z.string().trim().max(2000).optional(),
   phone: z.string().trim().max(40).optional(),
   city: z.string().trim().max(80).optional(),
@@ -2267,21 +2335,19 @@ const chatPreferencesPatchSchema = z.object({
 const chatEventTypeSchema = z.enum(CHAT_EVENT_TYPES);
 
 const onboardingSchema = z.object({
-  primaryObjective: z.enum([
-    "Calm anxiety",
-    "Build discipline",
-    "Make better decisions",
-    "Improve relationships",
-    "Find meaning",
+  primaryGoal: z.enum([
+    "reflect_more_clearly",
+    "reduce_stress",
+    "build_discipline",
+    "explore_philosophy",
+    "improve_emotional_awareness",
   ]),
-  dailyTimeCommitment: z.enum(["2 min", "5 min", "10 min", "20+ min"]),
-  preferredPracticeFormat: z.enum([
-    "A short practice",
-    "A reflection prompt",
-    "A lesson",
-    "A conversation with the Companion",
-  ]),
-  notes: z.string().trim().max(500).optional().default(""),
+  preferredTopics: z
+    .array(z.enum(["stoicism", "epicureanism", "mindfulness", "psychology", "habits", "journaling"]))
+    .min(1)
+    .max(3)
+    .refine((topics) => new Set(topics).size === topics.length, "Preferred topics must be unique."),
+  experienceLevel: z.enum(["new_to_philosophy", "somewhat_familiar", "advanced"]),
 });
 
 const adminChatEventsQuerySchema = z.object({
@@ -2535,6 +2601,21 @@ export function createApp() {
     rootPath: reflectionStorageRoot,
     maxBytes: reflectionAudioMaxBytes,
     allowedMimeTypes: [...REFLECTION_ALLOWED_AUDIO_MIME_TYPES],
+  });
+  const avatarImageMaxBytes = parseBoundedInteger(
+    env.AVATAR_IMAGE_MAX_BYTES,
+    DEFAULT_AVATAR_IMAGE_MAX_BYTES,
+    { min: 64 * 1024, max: 10 * 1024 * 1024 },
+  );
+  const avatarStorageRoot = env.AVATAR_STORAGE_PATH
+    ? path.isAbsolute(env.AVATAR_STORAGE_PATH)
+      ? env.AVATAR_STORAGE_PATH
+      : path.resolve(repoRootPath, env.AVATAR_STORAGE_PATH)
+    : path.resolve(repoRootPath, DEFAULT_AVATAR_STORAGE_RELATIVE_PATH);
+  const avatarStorageService = new AvatarStorageService({
+    rootPath: avatarStorageRoot,
+    maxBytes: avatarImageMaxBytes,
+    allowedMimeTypes: [...AVATAR_ALLOWED_IMAGE_MIME_TYPES],
   });
   const reflectionAiService = new ReflectionAiService(
     { providers: chatConfig.providers },
@@ -4057,7 +4138,53 @@ export function createApp() {
     });
   });
 
-  app.patch("/api/v1/auth/me", requireAuthenticatedUser, (req, res) => {
+  app.get("/api/v1/auth/me/avatar", requireAuthenticatedUser, (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const currentUser = getUserById(authReq.authUser.id);
+
+    if (!currentUser) {
+      sendAuthError(res, {
+        status: 401,
+        code: "UNAUTHORIZED",
+        message: "Unauthorized",
+      });
+      return;
+    }
+
+    const profile = getUserProfileByUserId(currentUser.id);
+    if (profile.avatarType !== "upload" || !profile.avatarImageKey) {
+      res.status(404).json({ error: "Avatar image not found" });
+      return;
+    }
+
+    let filePath = "";
+    try {
+      filePath = avatarStorageService.resolveStoragePath(profile.avatarImageKey);
+    } catch {
+      res.status(404).json({ error: "Avatar image not found" });
+      return;
+    }
+
+    if (!existsSync(filePath)) {
+      res.status(404).json({ error: "Avatar image not found" });
+      return;
+    }
+
+    res.setHeader("Content-Type", resolveAvatarMimeTypeFromStorageKey(profile.avatarImageKey));
+    res.setHeader("Cache-Control", "private, max-age=60");
+
+    const stream = createReadStream(filePath);
+    stream.on("error", () => {
+      if (!res.headersSent) {
+        res.status(404).json({ error: "Avatar image not found" });
+      } else {
+        res.end();
+      }
+    });
+    stream.pipe(res);
+  });
+
+  app.patch("/api/v1/auth/me", requireAuthenticatedUser, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = authMePatchSchema.safeParse(req.body);
 
@@ -4084,7 +4211,47 @@ export function createApp() {
     }
 
     if (parsed.data.profile) {
-      upsertUserProfile(authReq.authUser.id, parsed.data.profile);
+      const avatarPatch = parsed.data.profile.avatar;
+      const profileInput: Parameters<typeof upsertUserProfile>[1] = {
+        username: parsed.data.profile.username,
+        summary: parsed.data.profile.summary,
+        phone: parsed.data.profile.phone,
+        city: parsed.data.profile.city,
+        country: parsed.data.profile.country,
+        socialLinks: parsed.data.profile.socialLinks,
+      };
+
+      if (avatarPatch) {
+        if (avatarPatch.mode === "initials") {
+          profileInput.avatarType = "initials";
+          profileInput.avatarPreset = null;
+          profileInput.avatarImageKey = null;
+        } else if (avatarPatch.mode === "preset") {
+          profileInput.avatarType = "preset";
+          profileInput.avatarPreset = avatarPatch.preset;
+          profileInput.avatarImageKey = null;
+        } else {
+          try {
+            const persistedAvatar = await avatarStorageService.persistImage({
+              base64Data: avatarPatch.base64Data,
+              fileName: avatarPatch.fileName,
+              mimeType: avatarPatch.mimeType,
+            });
+            profileInput.avatarType = "upload";
+            profileInput.avatarPreset = null;
+            profileInput.avatarImageKey = persistedAvatar.storageKey;
+          } catch (error) {
+            sendAuthError(res, {
+              status: 400,
+              code: "INVALID_AVATAR_UPLOAD",
+              message: error instanceof Error ? error.message : "Unable to process avatar image upload.",
+            });
+            return;
+          }
+        }
+      }
+
+      upsertUserProfile(authReq.authUser.id, profileInput);
     }
 
     if (parsed.data.preferences) {
@@ -4273,10 +4440,13 @@ export function createApp() {
     const updatedProfile = upsertUserOnboardingProfile({
       id: randomUUID(),
       userId: authReq.authUser.id,
-      primaryObjective: parsed.data.primaryObjective,
-      dailyTimeCommitment: parsed.data.dailyTimeCommitment,
-      preferredPracticeFormat: parsed.data.preferredPracticeFormat,
-      notes: parsed.data.notes,
+      primaryGoal: parsed.data.primaryGoal,
+      preferredTopics: parsed.data.preferredTopics,
+      experienceLevel: parsed.data.experienceLevel,
+      primaryObjective: "Deferred to progressive profiling",
+      dailyTimeCommitment: "10 min",
+      preferredPracticeFormat: "A short practice",
+      notes: null,
     });
     const updatedUser = markUserOnboardingCompleted(authReq.authUser.id);
 

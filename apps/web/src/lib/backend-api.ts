@@ -18,6 +18,9 @@ export type ApiUserProfile = {
   id: string;
   userId: string;
   username: string | null;
+  avatarType: "initials" | "preset" | "upload";
+  avatarPreset: string | null;
+  avatarImageKey: string | null;
   summary: string;
   phone: string;
   city: string;
@@ -333,6 +336,16 @@ export type ApiChatPreferences = {
 export type ApiOnboardingProfile = {
   id: string;
   userId: string;
+  primaryGoal:
+    | "reflect_more_clearly"
+    | "reduce_stress"
+    | "build_discipline"
+    | "explore_philosophy"
+    | "improve_emotional_awareness";
+  preferredTopics: Array<
+    "stoicism" | "epicureanism" | "mindfulness" | "psychology" | "habits" | "journaling"
+  >;
+  experienceLevel: "new_to_philosophy" | "somewhat_familiar" | "advanced";
   primaryObjective: string;
   dailyTimeCommitment: string;
   preferredPracticeFormat: string;
@@ -1099,6 +1112,20 @@ export async function apiPatchMe(
     name?: string;
     profile?: {
       username?: string | null;
+      avatar?:
+        | {
+            mode: "initials";
+          }
+        | {
+            mode: "preset";
+            preset: string;
+          }
+        | {
+            mode: "upload";
+            fileName: string;
+            mimeType: string;
+            base64Data: string;
+          };
       summary?: string;
       phone?: string;
       city?: string;
@@ -2554,10 +2581,16 @@ export async function apiOnboarding(token: string): Promise<ApiOnboardingRespons
 export async function apiUpsertOnboarding(
   token: string,
   input: {
-    primaryObjective: string;
-    dailyTimeCommitment: string;
-    preferredPracticeFormat: string;
-    notes?: string;
+    primaryGoal:
+      | "reflect_more_clearly"
+      | "reduce_stress"
+      | "build_discipline"
+      | "explore_philosophy"
+      | "improve_emotional_awareness";
+    preferredTopics: Array<
+      "stoicism" | "epicureanism" | "mindfulness" | "psychology" | "habits" | "journaling"
+    >;
+    experienceLevel: "new_to_philosophy" | "somewhat_familiar" | "advanced";
   },
 ): Promise<ApiOnboardingResponse> {
   return requestJson<ApiOnboardingResponse>(

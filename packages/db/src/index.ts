@@ -283,6 +283,7 @@ export type {
   UserContentCompletionSummary,
 } from "./client.js";
 export type {
+  AvatarType,
   ContentCompletionKind,
   ContentStatus,
   LegalPolicyType,
