@@ -6,6 +6,8 @@
 - Web app now ships as an installable Progressive Web App (manifest, install metadata, icons, service worker, and offline fallback page).
 - PWA release hygiene now includes a dedicated checklist (`docs/PWA_RELEASE_CHECKLIST.md`) and an e2e smoke test for manifest/service-worker/offline route availability.
 - Canonical section routing is active (`/dashboard` overview, standalone personal tools at `/chat`, `/journal`, `/library`, `/practices`, plus `/academy/*`, `/community/*`, `/creator/*`, `/account/*`) with contextual sidebars and topbar section entry.
+- Mobile topbar navigation is now context-aware: section resolution is centralized in a typed navigation domain model (`apps/web/src/lib/navigation.ts`), and mobile now opens a full-screen sheet under the topbar that shows only the active section tabs (shared with sidenav), removing mixed utility clutter.
+- Mobile contextual IA now includes dedicated routes for `New chat` (`/chat/new`), Academy `Saved` (`/academy/saved`), and Admin `Audit` (`/admin/audit`) so contextual actions resolve to real pages without dead links.
 - Academy now exists as a dedicated editorial knowledge area under `/academy` (separate from `/community`), with structured browsing for traditions, thinkers, works, concepts, guided paths, and cross-entity search.
 - Dashboard home (`/dashboard`) is now action-first: dominant "next step" hero, "Today for you" shortcut actions, continuity resume list, structured reflections, contextual Companion panel, lightweight progress signals, and conditional-only account nudges.
 - Dashboard summary API now computes real progress signals (`streakDays`, `reflectionsThisWeek`, `daysSinceLastEntry`) from persisted journal data and feeds dashboard recency/progress behavior.
@@ -40,6 +42,9 @@
 - Preview analytics events are now captured for guest journeys (page views, preview signup clicks, signup views, preview chat prompt/response events) and summarized via admin endpoint `/api/v1/admin/preview/analytics`.
 - Signup availability is now runtime-controlled by `SIGNUP_ENABLED`, with invite-only mode hiding signup CTAs in web auth/preview surfaces and replacing `/auth/signup` with a private-beta message.
 - API now enforces invite-only mode for signup attempts (`POST /api/v1/auth/signup` -> `403`, `code: SIGNUP_DISABLED`) so direct client calls cannot bypass UI gating.
+- Signup onboarding is now two-phase and server-backed: `start (email claim + verification intent)` then `complete account`; active users are created only at completion after verified email.
+- Invite onboarding now shares the same completion screen and consumes invitations only after successful completion (not at invite start).
+- Admin/security foundation now uses explicit lowercase roles (`user`/`admin`), explicit CLI promotion (`npm run admin:promote -- --email=...`), and invitation-backed onboarding with hashed single-use invite tokens, admin-only invite issuance/revocation APIs, and protected `/admin` web routes (`/admin`, `/admin/users`, `/admin/invitations`).
 - Auth endpoints now return standardized error envelopes (`code` + `message`, plus backward-compatible `error`) for stronger client-side error handling consistency.
 - CI now includes a dedicated private-beta signup-gate Playwright check (`SIGNUP_ENABLED=false`) to prevent invite-only regressions.
 - CMS now surfaces a preview-conversion panel (last 30 days) so admins can monitor preview-to-signup funnel metrics without external dashboards.
@@ -62,7 +67,7 @@
 - Job summary now also reports stale-lock state and 7-day success-rate metrics; CMS supports threshold tuning via URL query filters.
 - Added admin-safe stale-lock remediation endpoint (`POST /api/v1/admin/system/jobs/unlock`) with audit-log recording.
 - Added scheduled GitHub workflow monitor (`.github/workflows/notification-digest-monitor.yml`) for periodic digest + healthcheck execution.
-- Signup now requires mandatory Terms/Privacy acceptance, stores auditable legal consent records, and defers session creation until email verification.
+- Signup now uses a pending-intent lifecycle: self-signup captures legal acceptance at start, invite flow captures legal acceptance at completion, and auditable legal consent is stored only when account creation succeeds.
 - Auth pages are now conversion-optimized with simplified auth-only topbar nav, clearer value-focused hero copy, stronger field/CTA hierarchy, and premium high-contrast form states.
 - Signup now removes `name` and `confirmPassword` from first step, uses a single required legal consent checkbox, and keeps passkey as a first-class secondary path.
 - Auth now supports verification-link + 6-digit-code flows via Resend (`/api/v1/auth/verify-email`, `/api/v1/auth/resend-verification`) with first-verified-user admin promotion.
@@ -103,6 +108,7 @@
   - Added `email_verified_at` and `onboarding_completed_at` user lifecycle columns.
   - Added `deleted_at` and `anonymized_at` user lifecycle columns.
   - Added `user_legal_consents`, `email_verification_challenges`, and `user_onboarding_profiles` tables.
+  - Added `signup_intents` table for two-phase onboarding (`self_signup`/`invite` flow type, verification/completion token state, legal capture state, invite linkage, expiration/completion timestamps).
   - Added `user_profiles`, `user_preferences`, `user_notification_preferences`, and `user_deletion_audit` for account-domain persistence.
   - Added full Academy persistence tables (`academy_domains`, `academy_traditions`, `academy_persons`, `academy_works`, `academy_concepts`, `academy_person_relationships`) plus explicit concept-link tables (`academy_concept_traditions`, `academy_concept_persons`, `academy_concept_works`) and guided-path tables (`academy_paths`, `academy_path_items`) with progression/recommendation metadata.
   - Added startup Academy seed ingestion from canonical knowledge JSON plus editorial concept-link/path seeds so Academy data is queryable as first-party DB state (not UI-only seed files).
@@ -120,6 +126,9 @@
   - Added auth verification/compliance endpoints:
     - `POST /api/v1/auth/verify-email`
     - `POST /api/v1/auth/resend-verification`
+    - `GET /api/v1/auth/signup/invite-context`
+    - `GET /api/v1/auth/signup/completion-context`
+    - `POST /api/v1/auth/signup/complete`
     - `GET /api/v1/onboarding`
     - `PUT /api/v1/onboarding`
   - Added runtime signup gate enforcement on `POST /api/v1/auth/signup` via `SIGNUP_ENABLED` with controlled private-beta `403` payloads.

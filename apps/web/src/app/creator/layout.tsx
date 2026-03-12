@@ -11,7 +11,7 @@ export default async function CreatorLayout({ children }: CreatorLayoutProps) {
   const session = await requireOnboardedSession();
   const user = session.user;
 
-  if (user.role !== "ADMIN") {
+  if (user.role !== "admin") {
     redirect("/dashboard");
   }
 

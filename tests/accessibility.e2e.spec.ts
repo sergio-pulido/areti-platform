@@ -13,20 +13,24 @@ async function signup(page: import("@playwright/test").Page): Promise<void> {
   const emailInput = page.getByRole("textbox", { name: "Email", exact: true });
   await emailInput.fill(email);
   await expect(emailInput).toHaveValue(email);
-  await page.getByLabel("Password", { exact: true }).fill("StrongPass123");
   await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
-  await page.getByRole("button", { name: "Create free account" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
   try {
     await expect(page).toHaveURL(/\/auth\/verify-email/, { timeout: 5000 });
   } catch {
     await emailInput.fill(email);
     await expect(emailInput).toHaveValue(email);
-    await page.getByLabel("Password", { exact: true }).fill("StrongPass123");
     await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
-    await page.getByRole("button", { name: "Create free account" }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
   }
   await expect(page).toHaveURL(/\/auth\/verify-email/, { timeout: 15000 });
-  await page.getByRole("button", { name: "Verify Email" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page).toHaveURL(/\/auth\/signup\/complete/, { timeout: 15000 });
+
+  await page.getByLabel("Name", { exact: true }).fill("A11y User");
+  await page.getByLabel("Username", { exact: true }).fill(`a11y_${Date.now().toString().slice(-6)}`);
+  await page.getByLabel("Password", { exact: true }).fill("StrongPass123");
+  await page.getByRole("button", { name: "Create account" }).click();
   await expect(page).toHaveURL(/\/onboarding/, { timeout: 15000 });
 
   await page.getByText("Calm anxiety", { exact: true }).click();

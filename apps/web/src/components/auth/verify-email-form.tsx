@@ -18,7 +18,7 @@ function VerifyButton() {
       disabled={pending}
       className="w-full rounded-xl border border-sand-100 bg-sand-100 px-4 py-3 text-sm font-semibold tracking-wide text-night-950 transition hover:bg-sand-50 disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {pending ? "Verifying..." : "Verify Email"}
+      {pending ? "Verifying..." : "Continue"}
     </button>
   );
 }

@@ -5,8 +5,9 @@ import { redirect } from "next/navigation";
 import type { AuthActionState } from "@/actions/auth-state";
 import { createSession, deleteCurrentSession, requireSession } from "@/lib/auth/session";
 import { onboardingSchema, resolvePersonalizedOnboardingDestination } from "@/lib/onboarding";
-import { signinSchema, signupSchema } from "@/lib/auth/validation";
+import { completeSignupSchema, signinSchema, signupSchema } from "@/lib/auth/validation";
 import {
+  apiCompleteSignup,
   apiResendVerification,
   apiSignin,
   apiSignup,
@@ -26,6 +27,12 @@ export type EmailVerificationActionState = {
 export type OnboardingActionState = {
   error?: string;
   fieldErrors?: Record<string, string[]>;
+};
+
+export type CompleteSignupActionState = {
+  error?: string;
+  fieldErrors?: Record<string, string[]>;
+  suggestedUsername?: string;
 };
 
 function getString(formData: FormData, key: string): string {
@@ -89,8 +96,11 @@ export async function signupAction(
 ): Promise<AuthActionState> {
   const input = {
     email: getString(formData, "email").trim().toLowerCase(),
-    password: getString(formData, "password"),
     acceptLegal: getBoolean(formData, "acceptLegal"),
+    acceptTerms: getBoolean(formData, "acceptTerms"),
+    acceptPrivacy: getBoolean(formData, "acceptPrivacy"),
+    inviteToken: getString(formData, "inviteToken").trim() || undefined,
+    locale: getString(formData, "locale").trim() || undefined,
   };
 
   const parsed = signupSchema.safeParse(input);
@@ -148,10 +158,7 @@ export async function verifyEmailAction(
     const result = await apiVerifyEmail(
       hasCodePayload ? { email, code } : { token, email: email || undefined },
     );
-    await createSession({
-      accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
-    });
+    redirect(`/auth/signup/complete?token=${encodeURIComponent(result.completionToken)}`);
   } catch (error) {
     if (error instanceof Error) {
       return {
@@ -163,10 +170,6 @@ export async function verifyEmailAction(
 
     throw error;
   }
-
-  revalidatePath("/");
-  revalidatePath("/dashboard");
-  redirect("/onboarding");
 }
 
 export async function resendVerificationAction(
@@ -189,7 +192,7 @@ export async function resendVerificationAction(
 
     if (result.alreadyVerified) {
       return {
-        info: "This account is already verified. You can sign in now.",
+        info: "Email already verified. Continue with account setup from your last verification link.",
         email,
       };
     }
@@ -205,6 +208,78 @@ export async function resendVerificationAction(
 
     throw error;
   }
+}
+
+export async function completeSignupAction(
+  _prevState: CompleteSignupActionState,
+  formData: FormData,
+): Promise<CompleteSignupActionState> {
+  const input = {
+    completionToken: getString(formData, "completionToken").trim(),
+    name: getString(formData, "name").trim(),
+    username: getString(formData, "username").trim().toLowerCase(),
+    password: getString(formData, "password"),
+    locale: getString(formData, "locale").trim() || undefined,
+    acceptLegal: getBoolean(formData, "acceptLegal"),
+    acceptTerms: getBoolean(formData, "acceptTerms"),
+    acceptPrivacy: getBoolean(formData, "acceptPrivacy"),
+    requiresLegalAtCompletion: getBoolean(formData, "requiresLegalAtCompletion"),
+  };
+
+  const parsed = completeSignupSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      error: "Please fix the highlighted fields.",
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    };
+  }
+
+  try {
+    const result = await apiCompleteSignup({
+      completionToken: parsed.data.completionToken,
+      name: parsed.data.name,
+      username: parsed.data.username,
+      password: parsed.data.password,
+      locale: parsed.data.locale,
+      acceptLegal: parsed.data.acceptLegal,
+      acceptTerms: parsed.data.acceptTerms,
+      acceptPrivacy: parsed.data.acceptPrivacy,
+    });
+
+    await createSession({
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    });
+  } catch (error) {
+    if (isApiHttpError(error) && error.code === "USERNAME_UNAVAILABLE") {
+      const suggestedUsername =
+        typeof error.data === "object" &&
+        error.data !== null &&
+        "suggestedUsername" in error.data &&
+        typeof (error.data as { suggestedUsername?: unknown }).suggestedUsername === "string"
+          ? (error.data as { suggestedUsername: string }).suggestedUsername
+          : undefined;
+
+      return {
+        error: error.message,
+        suggestedUsername,
+        fieldErrors: {
+          username: [error.message],
+        },
+      };
+    }
+
+    if (error instanceof Error) {
+      return { error: error.message };
+    }
+
+    throw error;
+  }
+
+  revalidatePath("/");
+  revalidatePath("/dashboard");
+  redirect("/onboarding");
 }
 
 export async function signinAction(

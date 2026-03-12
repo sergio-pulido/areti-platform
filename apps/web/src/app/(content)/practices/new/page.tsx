@@ -8,7 +8,7 @@ import { requireSession } from "@/lib/auth/session";
 export default async function NewPracticeProtocolPage() {
   const session = await requireSession();
 
-  if (session.user.role !== "ADMIN") {
+  if (session.user.role !== "admin") {
     return (
       <div>
         <PageHeader

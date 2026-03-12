@@ -58,7 +58,7 @@ export default async function LibraryPage({ searchParams }: LibraryPageProps) {
     apiProgressCompletions(session.accessToken, 500),
   ]);
   const visibleLessons = filteredLessons.filter((lesson) => matchesLibraryPath(activePath, lesson.level));
-  const isAdmin = session.user.role === "ADMIN";
+  const isAdmin = session.user.role === "admin";
   const lessonCompletions = completions.filter((item) => item.contentKind === "lesson");
   const completedLessonSlugs = new Set(lessonCompletions.map((item) => item.contentSlug));
 

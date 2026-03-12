@@ -4,7 +4,7 @@ export type ApiUser = {
   id: string;
   name: string;
   email: string;
-  role: "MEMBER" | "ADMIN";
+  role: "user" | "admin";
   emailVerifiedAt: string | null;
   onboardingCompletedAt: string | null;
 };
@@ -74,11 +74,33 @@ export type ApiMePayload = {
 export type ApiSignupResult = {
   verificationRequired: true;
   email: string;
+  flowType: "self_signup" | "invite";
   debugVerificationCode?: string;
   debugVerificationToken?: string;
 };
 
-export type ApiVerifyEmailResult = ApiAuthPayload;
+export type ApiVerifyEmailResult = {
+  verified: true;
+  completionRequired: true;
+  completionToken: string;
+  email: string;
+  flowType: "self_signup" | "invite";
+};
+
+export type ApiSignupCompletionContext = {
+  email: string;
+  flowType: "self_signup" | "invite";
+  requiresLegalAtCompletion: boolean;
+  suggestedUsername: string;
+  locale: string | null;
+};
+
+export type ApiInviteSignupContext = {
+  flowType: "invite";
+  email: string | null;
+  emailLocked: boolean;
+  expiresAt: string;
+};
 
 export type ApiResendVerificationResult = {
   sent: boolean;
@@ -86,6 +108,8 @@ export type ApiResendVerificationResult = {
   debugVerificationCode?: string;
   debugVerificationToken?: string;
 };
+
+export type ApiCompleteSignupResult = ApiAuthPayload;
 
 export type ApiSigninResult =
   | ({ mfaRequired: false } & ApiAuthPayload)
@@ -584,6 +608,84 @@ export type ApiAdminAuditLog = {
   createdAt: string;
 };
 
+export type ApiAdminUserListItem = {
+  id: string;
+  name: string;
+  email: string;
+  username: string | null;
+  role: "user" | "admin";
+  emailVerifiedAt: string | null;
+  emailVerified: boolean;
+  createdAt: string;
+  plan: string | null;
+};
+
+export type ApiAdminUsersResponse = {
+  items: ApiAdminUserListItem[];
+  pagination: {
+    limit: number;
+    offset: number;
+    total: number;
+  };
+};
+
+export type ApiAdminOverview = {
+  users: {
+    total: number;
+    admins: number;
+    nonAdmins: number;
+    verified: number;
+    unverified: number;
+    createdLast7Days: number;
+  };
+  invitations: {
+    total: number;
+    active: number;
+    used: number;
+    revoked: number;
+    expired: number;
+    expiringSoon: number;
+    createdLast7Days: number;
+    redeemedLast7Days: number;
+  };
+};
+
+export type ApiAdminInvitation = {
+  id: string;
+  email: string | null;
+  roleToGrant: "user" | "admin";
+  expiresAt: string;
+  maxUses: number;
+  usedCount: number;
+  createdByUserId: string;
+  createdAt: string;
+  usedAt: string | null;
+  usedByUserId: string | null;
+  revokedAt: string | null;
+};
+
+export type ApiAdminInvitationsResponse = {
+  items: ApiAdminInvitation[];
+  pagination: {
+    limit: number;
+    offset: number;
+    total: number;
+  };
+};
+
+export type ApiAdminCreateInvitationPayload = {
+  email?: string;
+  expiresAt?: string;
+  maxUses?: number;
+  roleToGrant?: "user" | "admin";
+};
+
+export type ApiAdminCreateInvitationResult = {
+  invitation: ApiAdminInvitation;
+  token: string;
+  inviteUrl: string;
+};
+
 export type ApiAdminPreviewAnalytics = {
   days: number;
   totals: {
@@ -772,6 +874,10 @@ export function getApiBaseUrl(): string {
   return process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 }
 
+const ACADEMY_LIST_LIMIT_MAX = 200;
+const ACADEMY_PATHS_LIMIT_MAX = 80;
+const ACADEMY_SEARCH_LIMIT_MAX = 120;
+
 async function parseErrorPayload(response: Response): Promise<{
   message: string;
   code?: string;
@@ -838,10 +944,25 @@ function withAuth(token: string, init?: RequestInit): RequestInit {
   };
 }
 
+function appendBoundedLimitParam(
+  params: URLSearchParams,
+  limit: number | undefined,
+  max: number,
+): void {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) {
+    return;
+  }
+
+  params.set("limit", String(Math.max(1, Math.min(Math.trunc(limit), max))));
+}
+
 export async function apiSignup(input: {
   email: string;
-  password: string;
-  acceptLegal: boolean;
+  acceptLegal?: boolean;
+  acceptTerms?: boolean;
+  acceptPrivacy?: boolean;
+  inviteToken?: string;
+  locale?: string;
 }): Promise<ApiSignupResult> {
   return requestJson<ApiSignupResult>("/api/v1/auth/signup", {
     method: "POST",
@@ -864,6 +985,39 @@ export async function apiResendVerification(email: string): Promise<ApiResendVer
   return requestJson<ApiResendVerificationResult>("/api/v1/auth/resend-verification", {
     method: "POST",
     body: JSON.stringify({ email }),
+  });
+}
+
+export async function apiGetInviteSignupContext(token: string): Promise<ApiInviteSignupContext> {
+  const search = new URLSearchParams({ token });
+  return requestJson<ApiInviteSignupContext>(`/api/v1/auth/signup/invite-context?${search.toString()}`, {
+    method: "GET",
+  });
+}
+
+export async function apiGetSignupCompletionContext(
+  completionToken: string,
+): Promise<ApiSignupCompletionContext> {
+  const search = new URLSearchParams({ token: completionToken });
+  return requestJson<ApiSignupCompletionContext>(
+    `/api/v1/auth/signup/completion-context?${search.toString()}`,
+    { method: "GET" },
+  );
+}
+
+export async function apiCompleteSignup(input: {
+  completionToken: string;
+  name: string;
+  username: string;
+  password: string;
+  locale?: string;
+  acceptLegal?: boolean;
+  acceptTerms?: boolean;
+  acceptPrivacy?: boolean;
+}): Promise<ApiCompleteSignupResult> {
+  return requestJson<ApiCompleteSignupResult>("/api/v1/auth/signup/complete", {
+    method: "POST",
+    body: JSON.stringify(input),
   });
 }
 
@@ -1255,9 +1409,7 @@ export async function apiAcademyDomains(input?: {
   if (input?.q) {
     params.set("q", input.q);
   }
-  if (typeof input?.limit === "number") {
-    params.set("limit", String(input.limit));
-  }
+  appendBoundedLimitParam(params, input?.limit, ACADEMY_LIST_LIMIT_MAX);
   const qs = params.toString();
   return requestJson<ApiAcademyDomain[]>(`/api/v1/academy/domains${qs ? `?${qs}` : ""}`);
 }
@@ -1281,9 +1433,7 @@ export async function apiAcademyTraditions(input?: {
   if (input?.q) {
     params.set("q", input.q);
   }
-  if (typeof input?.limit === "number") {
-    params.set("limit", String(input.limit));
-  }
+  appendBoundedLimitParam(params, input?.limit, ACADEMY_LIST_LIMIT_MAX);
   if (typeof input?.domainId === "number") {
     params.set("domainId", String(input.domainId));
   }
@@ -1322,9 +1472,7 @@ export async function apiAcademyPersons(input?: {
   if (input?.q) {
     params.set("q", input.q);
   }
-  if (typeof input?.limit === "number") {
-    params.set("limit", String(input.limit));
-  }
+  appendBoundedLimitParam(params, input?.limit, ACADEMY_LIST_LIMIT_MAX);
   if (typeof input?.domainId === "number") {
     params.set("domainId", String(input.domainId));
   }
@@ -1363,9 +1511,7 @@ export async function apiAcademyWorks(input?: {
   if (input?.q) {
     params.set("q", input.q);
   }
-  if (typeof input?.limit === "number") {
-    params.set("limit", String(input.limit));
-  }
+  appendBoundedLimitParam(params, input?.limit, ACADEMY_LIST_LIMIT_MAX);
   if (typeof input?.personId === "number") {
     params.set("personId", String(input.personId));
   }
@@ -1407,9 +1553,7 @@ export async function apiAcademyConcepts(input?: {
   if (input?.q) {
     params.set("q", input.q);
   }
-  if (typeof input?.limit === "number") {
-    params.set("limit", String(input.limit));
-  }
+  appendBoundedLimitParam(params, input?.limit, ACADEMY_LIST_LIMIT_MAX);
   if (input?.family) {
     params.set("family", input.family);
   }
@@ -1449,9 +1593,7 @@ export async function apiAcademyPaths(input?: {
   if (input?.q) {
     params.set("q", input.q);
   }
-  if (typeof input?.limit === "number") {
-    params.set("limit", String(input.limit));
-  }
+  appendBoundedLimitParam(params, input?.limit, ACADEMY_PATHS_LIMIT_MAX);
   if (typeof input?.featured === "boolean") {
     params.set("featured", String(input.featured));
   }
@@ -1470,10 +1612,8 @@ export async function apiAcademySearch(
   q: string,
   limit = 40,
 ): Promise<ApiAcademySearchResult[]> {
-  const params = new URLSearchParams({
-    q,
-    limit: String(limit),
-  });
+  const params = new URLSearchParams({ q });
+  appendBoundedLimitParam(params, limit, ACADEMY_SEARCH_LIMIT_MAX);
 
   return requestJson<ApiAcademySearchResult[]>(`/api/v1/academy/search?${params.toString()}`);
 }
@@ -1630,6 +1770,82 @@ export async function apiAdminDeleteAcademyConceptRelation(
 
 export async function apiAdminContent(token: string): Promise<AdminContentBundle> {
   return requestJson<AdminContentBundle>("/api/v1/admin/content", withAuth(token));
+}
+
+export async function apiAdminUsers(
+  token: string,
+  input?: {
+    limit?: number;
+    offset?: number;
+    q?: string;
+  },
+): Promise<ApiAdminUsersResponse> {
+  const params = new URLSearchParams();
+  if (typeof input?.limit === "number") {
+    params.set("limit", String(input.limit));
+  }
+  if (typeof input?.offset === "number") {
+    params.set("offset", String(input.offset));
+  }
+  if (input?.q) {
+    params.set("q", input.q);
+  }
+  const qs = params.toString();
+  return requestJson<ApiAdminUsersResponse>(
+    `/api/v1/admin/users${qs ? `?${qs}` : ""}`,
+    withAuth(token),
+  );
+}
+
+export async function apiAdminOverview(token: string): Promise<ApiAdminOverview> {
+  return requestJson<ApiAdminOverview>("/api/v1/admin/overview", withAuth(token));
+}
+
+export async function apiAdminInvitations(
+  token: string,
+  input?: {
+    limit?: number;
+    offset?: number;
+  },
+): Promise<ApiAdminInvitationsResponse> {
+  const params = new URLSearchParams();
+  if (typeof input?.limit === "number") {
+    params.set("limit", String(input.limit));
+  }
+  if (typeof input?.offset === "number") {
+    params.set("offset", String(input.offset));
+  }
+  const qs = params.toString();
+  return requestJson<ApiAdminInvitationsResponse>(
+    `/api/v1/admin/invitations${qs ? `?${qs}` : ""}`,
+    withAuth(token),
+  );
+}
+
+export async function apiAdminCreateInvitation(
+  token: string,
+  payload: ApiAdminCreateInvitationPayload,
+): Promise<ApiAdminCreateInvitationResult> {
+  return requestJson<ApiAdminCreateInvitationResult>(
+    "/api/v1/admin/invitations",
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+export async function apiAdminRevokeInvitation(
+  token: string,
+  invitationId: string,
+): Promise<ApiAdminInvitation> {
+  return requestJson<ApiAdminInvitation>(
+    `/api/v1/admin/invitations/${invitationId}/revoke`,
+    withAuth(token, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
 }
 
 export async function apiAdminAudit(token: string, limit = 40): Promise<ApiAdminAuditLog[]> {

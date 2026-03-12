@@ -32,6 +32,8 @@ import {
   academyTraditions,
   academyWorks,
   adminAuditLogs,
+  invitations,
+  signupIntents,
   chatEvents,
   chatMessages,
   chatThreadBranches,
@@ -84,6 +86,7 @@ import {
   type ReflectionProcessingStep,
   type ReflectionSourceType,
   type ReflectionStatus,
+  type SignupFlowType,
   type UserRole,
 } from "./schema.js";
 import {
@@ -112,6 +115,76 @@ export type CurrentUser = {
   role: UserRole;
   emailVerifiedAt: string | null;
   onboardingCompletedAt: string | null;
+};
+
+export type AdminUserListItemRecord = {
+  id: string;
+  name: string;
+  email: string;
+  username: string | null;
+  role: UserRole;
+  emailVerifiedAt: string | null;
+  createdAt: string;
+};
+
+export type AdminOverviewStatsRecord = {
+  users: {
+    total: number;
+    admins: number;
+    nonAdmins: number;
+    verified: number;
+    unverified: number;
+    createdLast7Days: number;
+  };
+  invitations: {
+    total: number;
+    active: number;
+    used: number;
+    revoked: number;
+    expired: number;
+    expiringSoon: number;
+    createdLast7Days: number;
+    redeemedLast7Days: number;
+  };
+};
+
+export type InvitationRecord = {
+  id: string;
+  tokenHash: string;
+  email: string | null;
+  roleToGrant: UserRole;
+  maxUses: number;
+  usedCount: number;
+  expiresAt: string;
+  createdByUserId: string;
+  createdAt: string;
+  usedAt: string | null;
+  usedByUserId: string | null;
+  revokedAt: string | null;
+};
+
+export type SignupIntentRecord = {
+  id: string;
+  email: string;
+  flowType: SignupFlowType;
+  inviteId: string | null;
+  inviteTokenHash: string | null;
+  verificationTokenHash: string;
+  verificationCodeHash: string;
+  verificationExpiresAt: string;
+  verificationSentAt: string;
+  verificationSendCount: number;
+  emailVerifiedAt: string | null;
+  completionTokenHash: string | null;
+  completionExpiresAt: string | null;
+  legalAcceptedAt: string | null;
+  legalTermsVersion: string | null;
+  privacyVersion: string | null;
+  locale: string | null;
+  expiresAt: string;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type EmailVerificationChallengeRecord = {
@@ -954,6 +1027,19 @@ function sanitizeLikeValue(input: string): string {
   return `%${collapsed}%`;
 }
 
+function normalizeUsernameValue(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
 function scoreMatch(query: string, ...haystacks: Array<string | null | undefined>): number {
   const normalizedQuery = normalizeLikeQuery(query).toLowerCase();
   if (!normalizedQuery) {
@@ -1256,6 +1342,8 @@ const db = drizzle(sqlite, {
     userTotpSecrets,
     passkeyCredentials,
     adminAuditLogs,
+    invitations,
+    signupIntents,
     userNotifications,
     chatThreads,
     chatMessages,
@@ -1939,6 +2027,155 @@ export function countVerifiedUsers(): number {
   return row?.count ?? 0;
 }
 
+function buildAdminUserListWhereClause(searchQuery?: string): SQL<unknown> {
+  const trimmedQuery = searchQuery?.trim() ?? "";
+  const conditions: SQL<unknown>[] = [isNull(users.deletedAt)];
+
+  if (trimmedQuery.length > 0) {
+    const likeValue = `%${trimmedQuery}%`;
+    conditions.push(
+      or(
+        like(users.email, likeValue),
+        like(users.name, likeValue),
+        like(userProfiles.username, likeValue),
+      ) as SQL<unknown>,
+    );
+  }
+
+  let whereClause = conditions[0] as SQL<unknown>;
+  for (const condition of conditions.slice(1)) {
+    whereClause = and(whereClause, condition) as SQL<unknown>;
+  }
+
+  return whereClause;
+}
+
+export function listAdminUsers(input: {
+  limit: number;
+  offset: number;
+  query?: string;
+}): {
+  items: AdminUserListItemRecord[];
+  total: number;
+} {
+  const safeLimit = Math.max(1, Math.min(200, Math.trunc(input.limit)));
+  const safeOffset = Math.max(0, Math.trunc(input.offset));
+  const whereClause = buildAdminUserListWhereClause(input.query);
+
+  const rows = db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      username: userProfiles.username,
+      role: users.role,
+      emailVerifiedAt: users.emailVerifiedAt,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+    .where(whereClause)
+    .orderBy(desc(users.createdAt))
+    .limit(safeLimit)
+    .offset(safeOffset)
+    .all();
+
+  const totalRow = db
+    .select({ count: count() })
+    .from(users)
+    .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+    .where(whereClause)
+    .get();
+
+  return {
+    items: rows,
+    total: totalRow?.count ?? 0,
+  };
+}
+
+function countInvitationsWhere(whereClause?: SQL<unknown>): number {
+  const query = db.select({ count: count() }).from(invitations);
+  if (!whereClause) {
+    return query.get()?.count ?? 0;
+  }
+
+  return query.where(whereClause).get()?.count ?? 0;
+}
+
+export function getAdminOverviewStats(): AdminOverviewStatsRecord {
+  const now = nowIso();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const soon = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+  const activeUsersWhere = isNull(users.deletedAt);
+  const totalUsers = db.select({ count: count() }).from(users).where(activeUsersWhere).get()?.count ?? 0;
+  const adminUsers =
+    db
+      .select({ count: count() })
+      .from(users)
+      .where(and(activeUsersWhere, eq(users.role, "admin")))
+      .get()?.count ?? 0;
+  const verifiedUsers =
+    db
+      .select({ count: count() })
+      .from(users)
+      .where(and(activeUsersWhere, isNotNull(users.emailVerifiedAt)))
+      .get()?.count ?? 0;
+  const usersCreatedLast7Days =
+    db
+      .select({ count: count() })
+      .from(users)
+      .where(and(activeUsersWhere, gt(users.createdAt, sevenDaysAgo)))
+      .get()?.count ?? 0;
+
+  const activeInvitationsWhere = and(
+    isNull(invitations.revokedAt),
+    isNull(invitations.usedAt),
+    gt(invitations.expiresAt, now),
+  );
+  const expiredInvitationsWhere = and(
+    isNull(invitations.revokedAt),
+    isNull(invitations.usedAt),
+    lt(invitations.expiresAt, now),
+  );
+  const expiringSoonInvitationsWhere = and(
+    isNull(invitations.revokedAt),
+    isNull(invitations.usedAt),
+    gt(invitations.expiresAt, now),
+    lt(invitations.expiresAt, soon),
+  );
+
+  const totalInvitations = countInvitationsWhere();
+  const activeInvitations = countInvitationsWhere(activeInvitationsWhere);
+  const usedInvitations = countInvitationsWhere(isNotNull(invitations.usedAt));
+  const revokedInvitations = countInvitationsWhere(isNotNull(invitations.revokedAt));
+  const expiredInvitations = countInvitationsWhere(expiredInvitationsWhere);
+  const expiringSoonInvitations = countInvitationsWhere(expiringSoonInvitationsWhere);
+  const invitesCreatedLast7Days = countInvitationsWhere(gt(invitations.createdAt, sevenDaysAgo));
+  const invitesRedeemedLast7Days = countInvitationsWhere(gt(invitations.usedAt, sevenDaysAgo));
+
+  return {
+    users: {
+      total: totalUsers,
+      admins: adminUsers,
+      nonAdmins: Math.max(0, totalUsers - adminUsers),
+      verified: verifiedUsers,
+      unverified: Math.max(0, totalUsers - verifiedUsers),
+      createdLast7Days: usersCreatedLast7Days,
+    },
+    invitations: {
+      total: totalInvitations,
+      active: activeInvitations,
+      used: usedInvitations,
+      revoked: revokedInvitations,
+      expired: expiredInvitations,
+      expiringSoon: expiringSoonInvitations,
+      createdLast7Days: invitesCreatedLast7Days,
+      redeemedLast7Days: invitesRedeemedLast7Days,
+    },
+  };
+}
+
 export function getUserByEmail(email: string) {
   return db.select().from(users).where(eq(users.email, email)).limit(1).get() ?? null;
 }
@@ -1961,15 +2198,14 @@ export function getUserById(userId: string): CurrentUser | null {
   return user ?? null;
 }
 
-export function createUser(input: {
+function insertUserWithDefaults(input: {
   id: string;
   name: string;
   email: string;
   passwordHash: string;
   role: UserRole;
-}) {
-  const timestamp = nowIso();
-
+  timestamp: string;
+}): void {
   db.insert(users)
     .values({
       id: input.id,
@@ -1983,8 +2219,8 @@ export function createUser(input: {
       onboardingCompletedAt: null,
       deletedAt: null,
       anonymizedAt: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
+      createdAt: input.timestamp,
+      updatedAt: input.timestamp,
     })
     .run();
 
@@ -1998,8 +2234,8 @@ export function createUser(input: {
       city: "",
       country: "",
       socialLinksJson: "[]",
-      createdAt: timestamp,
-      updatedAt: timestamp,
+      createdAt: input.timestamp,
+      updatedAt: input.timestamp,
     })
     .run();
 
@@ -2013,8 +2249,8 @@ export function createUser(input: {
       showEmail: defaultUserPreferences.showEmail,
       showPhone: defaultUserPreferences.showPhone,
       allowContact: defaultUserPreferences.allowContact,
-      createdAt: timestamp,
-      updatedAt: timestamp,
+      createdAt: input.timestamp,
+      updatedAt: input.timestamp,
     })
     .run();
 
@@ -2030,14 +2266,146 @@ export function createUser(input: {
       pushEvents: defaultNotificationPreferences.pushEvents,
       pushUpdates: defaultNotificationPreferences.pushUpdates,
       digest: defaultNotificationPreferences.digest,
-      createdAt: timestamp,
-      updatedAt: timestamp,
+      createdAt: input.timestamp,
+      updatedAt: input.timestamp,
     })
     .run();
 
   seedWelcomeNotifications(input.id);
+}
+
+export function createUser(input: {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  role: UserRole;
+}) {
+  const timestamp = nowIso();
+  insertUserWithDefaults({
+    id: input.id,
+    name: input.name,
+    email: input.email,
+    passwordHash: input.passwordHash,
+    role: input.role,
+    timestamp,
+  });
 
   return getUserById(input.id);
+}
+
+export type InvitationRedemptionFailureReason =
+  | "invalid_token"
+  | "expired"
+  | "revoked"
+  | "already_used"
+  | "email_mismatch";
+
+export type CreateUserWithInvitationResult =
+  | {
+      ok: true;
+      user: CurrentUser;
+      invitation: InvitationRecord;
+    }
+  | {
+      ok: false;
+      reason: InvitationRedemptionFailureReason;
+    };
+
+const INVITE_CONSUME_CONFLICT_ERROR = "INVITE_CONSUME_CONFLICT";
+
+export function createUserWithInvitation(input: {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  inviteTokenHash: string;
+}): CreateUserWithInvitationResult {
+  try {
+    return db.transaction(() => {
+      const timestamp = nowIso();
+      const normalizedEmail = input.email.trim().toLowerCase();
+      const invitation =
+        db
+          .select()
+          .from(invitations)
+          .where(eq(invitations.tokenHash, input.inviteTokenHash))
+          .limit(1)
+          .get() ?? null;
+
+      if (!invitation) {
+        return { ok: false, reason: "invalid_token" } as const;
+      }
+
+      if (invitation.revokedAt) {
+        return { ok: false, reason: "revoked" } as const;
+      }
+
+      if (invitation.expiresAt <= timestamp) {
+        return { ok: false, reason: "expired" } as const;
+      }
+
+      if (invitation.usedCount >= invitation.maxUses) {
+        return { ok: false, reason: "already_used" } as const;
+      }
+
+      const inviteEmail = invitation.email?.trim().toLowerCase() ?? null;
+      if (inviteEmail && inviteEmail !== normalizedEmail) {
+        return { ok: false, reason: "email_mismatch" } as const;
+      }
+
+      insertUserWithDefaults({
+        id: input.id,
+        name: input.name,
+        email: normalizedEmail,
+        passwordHash: input.passwordHash,
+        role: invitation.roleToGrant,
+        timestamp,
+      });
+
+      const nextUsedCount = invitation.usedCount + 1;
+      const consumed = db
+        .update(invitations)
+        .set({
+          usedCount: nextUsedCount,
+          usedAt: nextUsedCount >= invitation.maxUses ? timestamp : invitation.usedAt,
+          usedByUserId: input.id,
+        })
+        .where(
+          and(
+            eq(invitations.id, invitation.id),
+            eq(invitations.usedCount, invitation.usedCount),
+            isNull(invitations.revokedAt),
+            gt(invitations.expiresAt, timestamp),
+            lt(invitations.usedCount, invitation.maxUses),
+          ),
+        )
+        .run();
+
+      if (consumed.changes <= 0) {
+        throw new Error(INVITE_CONSUME_CONFLICT_ERROR);
+      }
+
+      const createdUser = getUserById(input.id);
+      const refreshedInvitation =
+        db.select().from(invitations).where(eq(invitations.id, invitation.id)).limit(1).get() ?? null;
+
+      if (!createdUser || !refreshedInvitation) {
+        throw new Error("Failed to complete invitation signup transaction.");
+      }
+
+      return {
+        ok: true,
+        user: createdUser,
+        invitation: refreshedInvitation,
+      } as const;
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === INVITE_CONSUME_CONFLICT_ERROR) {
+      return { ok: false, reason: "already_used" };
+    }
+    throw error;
+  }
 }
 
 export function setUserRole(userId: string, role: UserRole): void {
@@ -2048,6 +2416,42 @@ export function setUserRole(userId: string, role: UserRole): void {
     })
     .where(eq(users.id, userId))
     .run();
+}
+
+export function promoteUserByEmail(email: string): {
+  status: "not_found" | "already_admin" | "promoted";
+  user: CurrentUser | null;
+} {
+  const normalizedEmail = email.trim().toLowerCase();
+  const existing = getUserByEmail(normalizedEmail);
+
+  if (!existing || existing.deletedAt) {
+    return {
+      status: "not_found",
+      user: null,
+    };
+  }
+
+  const currentUser = getUserById(existing.id);
+  if (!currentUser) {
+    return {
+      status: "not_found",
+      user: null,
+    };
+  }
+
+  if (currentUser.role === "admin") {
+    return {
+      status: "already_admin",
+      user: currentUser,
+    };
+  }
+
+  setUserRole(currentUser.id, "admin");
+  return {
+    status: "promoted",
+    user: getUserById(currentUser.id),
+  };
 }
 
 export function markUserEmailVerified(userId: string): CurrentUser | null {
@@ -2159,6 +2563,33 @@ export function getUserProfileByUserId(userId: string): UserProfileRecord {
   };
 }
 
+export function isUsernameTaken(username: string, excludeUserId?: string): boolean {
+  const normalized = username.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const existing =
+    db
+      .select({
+        userId: userProfiles.userId,
+      })
+      .from(userProfiles)
+      .where(eq(userProfiles.username, normalized))
+      .limit(1)
+      .get() ?? null;
+
+  if (!existing) {
+    return false;
+  }
+
+  if (excludeUserId && existing.userId === excludeUserId) {
+    return false;
+  }
+
+  return true;
+}
+
 export function upsertUserProfile(
   userId: string,
   input: {
@@ -2172,10 +2603,11 @@ export function upsertUserProfile(
 ): UserProfileRecord {
   const current = getUserProfileByUserId(userId);
   const timestamp = nowIso();
+  const normalizedUsername = normalizeUsernameValue(input.username);
 
   db.update(userProfiles)
     .set({
-      username: input.username === undefined ? current.username : input.username,
+      username: normalizedUsername === undefined ? current.username : normalizedUsername,
       summary: input.summary ?? current.summary,
       phone: input.phone ?? current.phone,
       city: input.city ?? current.city,
@@ -7164,6 +7596,365 @@ export function listSystemJobRuns(input: {
         .all();
 
   return rows;
+}
+
+export function createInvitation(input: {
+  id: string;
+  tokenHash: string;
+  email?: string | null;
+  roleToGrant?: UserRole;
+  maxUses?: number;
+  expiresAt: string;
+  createdByUserId: string;
+}): InvitationRecord {
+  const timestamp = nowIso();
+  const normalizedEmail = input.email ? input.email.trim().toLowerCase() : null;
+
+  db.insert(invitations)
+    .values({
+      id: input.id,
+      tokenHash: input.tokenHash,
+      email: normalizedEmail,
+      roleToGrant: input.roleToGrant ?? "user",
+      maxUses: input.maxUses ?? 1,
+      usedCount: 0,
+      expiresAt: input.expiresAt,
+      createdByUserId: input.createdByUserId,
+      createdAt: timestamp,
+      usedAt: null,
+      usedByUserId: null,
+      revokedAt: null,
+    })
+    .run();
+
+  const created = db.select().from(invitations).where(eq(invitations.id, input.id)).limit(1).get();
+  if (!created) {
+    throw new Error("Failed to create invitation.");
+  }
+
+  return created;
+}
+
+export function getInvitationByTokenHash(tokenHash: string): InvitationRecord | null {
+  const invitation =
+    db.select().from(invitations).where(eq(invitations.tokenHash, tokenHash)).limit(1).get() ?? null;
+  return invitation;
+}
+
+export function createSignupIntent(input: {
+  id: string;
+  email: string;
+  flowType: SignupFlowType;
+  inviteId?: string | null;
+  inviteTokenHash?: string | null;
+  verificationTokenHash: string;
+  verificationCodeHash: string;
+  verificationExpiresAt: string;
+  expiresAt: string;
+  legalAcceptedAt?: string | null;
+  legalTermsVersion?: string | null;
+  privacyVersion?: string | null;
+  locale?: string | null;
+}): SignupIntentRecord {
+  const timestamp = nowIso();
+  const normalizedEmail = input.email.trim().toLowerCase();
+
+  db.delete(signupIntents)
+    .where(and(eq(signupIntents.email, normalizedEmail), isNull(signupIntents.completedAt)))
+    .run();
+
+  db.insert(signupIntents)
+    .values({
+      id: input.id,
+      email: normalizedEmail,
+      flowType: input.flowType,
+      inviteId: input.inviteId ?? null,
+      inviteTokenHash: input.inviteTokenHash ?? null,
+      verificationTokenHash: input.verificationTokenHash,
+      verificationCodeHash: input.verificationCodeHash,
+      verificationExpiresAt: input.verificationExpiresAt,
+      verificationSentAt: timestamp,
+      verificationSendCount: 1,
+      emailVerifiedAt: null,
+      completionTokenHash: null,
+      completionExpiresAt: null,
+      legalAcceptedAt: input.legalAcceptedAt ?? null,
+      legalTermsVersion: input.legalTermsVersion ?? null,
+      privacyVersion: input.privacyVersion ?? null,
+      locale: input.locale ?? null,
+      expiresAt: input.expiresAt,
+      completedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .run();
+
+  const created = db.select().from(signupIntents).where(eq(signupIntents.id, input.id)).limit(1).get();
+  if (!created) {
+    throw new Error("Failed to create signup intent.");
+  }
+
+  return created;
+}
+
+export function getLatestActiveSignupIntentByEmail(email: string): SignupIntentRecord | null {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const intent =
+    db
+      .select()
+      .from(signupIntents)
+      .where(
+        and(
+          eq(signupIntents.email, normalizedEmail),
+          isNull(signupIntents.completedAt),
+          gt(signupIntents.expiresAt, nowIso()),
+        ),
+      )
+      .orderBy(desc(signupIntents.createdAt))
+      .limit(1)
+      .get() ?? null;
+
+  return intent;
+}
+
+export function getActiveSignupIntentByVerificationTokenHash(tokenHash: string): SignupIntentRecord | null {
+  const intent =
+    db
+      .select()
+      .from(signupIntents)
+      .where(
+        and(
+          eq(signupIntents.verificationTokenHash, tokenHash),
+          isNull(signupIntents.completedAt),
+          gt(signupIntents.expiresAt, nowIso()),
+          gt(signupIntents.verificationExpiresAt, nowIso()),
+        ),
+      )
+      .limit(1)
+      .get() ?? null;
+
+  return intent;
+}
+
+export function getActiveSignupIntentByEmailAndVerificationCodeHash(
+  email: string,
+  codeHash: string,
+): SignupIntentRecord | null {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const intent =
+    db
+      .select()
+      .from(signupIntents)
+      .where(
+        and(
+          eq(signupIntents.email, normalizedEmail),
+          eq(signupIntents.verificationCodeHash, codeHash),
+          isNull(signupIntents.completedAt),
+          gt(signupIntents.expiresAt, nowIso()),
+          gt(signupIntents.verificationExpiresAt, nowIso()),
+        ),
+      )
+      .orderBy(desc(signupIntents.createdAt))
+      .limit(1)
+      .get() ?? null;
+
+  return intent;
+}
+
+export function replaceSignupIntentVerificationChallenge(input: {
+  intentId: string;
+  verificationTokenHash: string;
+  verificationCodeHash: string;
+  verificationExpiresAt: string;
+}): SignupIntentRecord | null {
+  const existing =
+    db
+      .select({
+        verificationSendCount: signupIntents.verificationSendCount,
+      })
+      .from(signupIntents)
+      .where(eq(signupIntents.id, input.intentId))
+      .limit(1)
+      .get() ?? null;
+
+  if (!existing) {
+    return null;
+  }
+
+  const timestamp = nowIso();
+  db.update(signupIntents)
+    .set({
+      verificationTokenHash: input.verificationTokenHash,
+      verificationCodeHash: input.verificationCodeHash,
+      verificationExpiresAt: input.verificationExpiresAt,
+      verificationSentAt: timestamp,
+      verificationSendCount: existing.verificationSendCount + 1,
+      updatedAt: timestamp,
+    })
+    .where(eq(signupIntents.id, input.intentId))
+    .run();
+
+  return db.select().from(signupIntents).where(eq(signupIntents.id, input.intentId)).limit(1).get() ?? null;
+}
+
+export function markSignupIntentEmailVerified(input: {
+  intentId: string;
+  completionTokenHash: string;
+  completionExpiresAt: string;
+}): SignupIntentRecord | null {
+  const timestamp = nowIso();
+  const updated = db
+    .update(signupIntents)
+    .set({
+      emailVerifiedAt: timestamp,
+      completionTokenHash: input.completionTokenHash,
+      completionExpiresAt: input.completionExpiresAt,
+      updatedAt: timestamp,
+    })
+    .where(
+      and(
+        eq(signupIntents.id, input.intentId),
+        isNull(signupIntents.completedAt),
+        gt(signupIntents.expiresAt, timestamp),
+      ),
+    )
+    .run();
+
+  if (updated.changes <= 0) {
+    return null;
+  }
+
+  return db.select().from(signupIntents).where(eq(signupIntents.id, input.intentId)).limit(1).get() ?? null;
+}
+
+export function getActiveSignupIntentByCompletionTokenHash(tokenHash: string): SignupIntentRecord | null {
+  const now = nowIso();
+  const intent =
+    db
+      .select()
+      .from(signupIntents)
+      .where(
+        and(
+          eq(signupIntents.completionTokenHash, tokenHash),
+          isNull(signupIntents.completedAt),
+          isNotNull(signupIntents.emailVerifiedAt),
+          gt(signupIntents.expiresAt, now),
+          gt(signupIntents.completionExpiresAt, now),
+        ),
+      )
+      .limit(1)
+      .get() ?? null;
+
+  return intent;
+}
+
+export function setSignupIntentLocale(intentId: string, locale: string | null): SignupIntentRecord | null {
+  const timestamp = nowIso();
+  const updated = db
+    .update(signupIntents)
+    .set({
+      locale,
+      updatedAt: timestamp,
+    })
+    .where(eq(signupIntents.id, intentId))
+    .run();
+
+  if (updated.changes <= 0) {
+    return null;
+  }
+
+  return db.select().from(signupIntents).where(eq(signupIntents.id, intentId)).limit(1).get() ?? null;
+}
+
+export function setSignupIntentLegalAcceptance(input: {
+  intentId: string;
+  acceptedAt: string;
+  legalTermsVersion: string;
+  privacyVersion: string;
+}): SignupIntentRecord | null {
+  const updated = db
+    .update(signupIntents)
+    .set({
+      legalAcceptedAt: input.acceptedAt,
+      legalTermsVersion: input.legalTermsVersion,
+      privacyVersion: input.privacyVersion,
+      updatedAt: nowIso(),
+    })
+    .where(eq(signupIntents.id, input.intentId))
+    .run();
+
+  if (updated.changes <= 0) {
+    return null;
+  }
+
+  return db.select().from(signupIntents).where(eq(signupIntents.id, input.intentId)).limit(1).get() ?? null;
+}
+
+export function markSignupIntentCompleted(intentId: string): SignupIntentRecord | null {
+  const timestamp = nowIso();
+  const updated = db
+    .update(signupIntents)
+    .set({
+      completedAt: timestamp,
+      updatedAt: timestamp,
+    })
+    .where(and(eq(signupIntents.id, intentId), isNull(signupIntents.completedAt)))
+    .run();
+
+  if (updated.changes <= 0) {
+    return null;
+  }
+
+  return db.select().from(signupIntents).where(eq(signupIntents.id, intentId)).limit(1).get() ?? null;
+}
+
+export function listInvitations(input: {
+  limit: number;
+  offset: number;
+}): {
+  items: InvitationRecord[];
+  total: number;
+} {
+  const safeLimit = Math.max(1, Math.min(200, Math.trunc(input.limit)));
+  const safeOffset = Math.max(0, Math.trunc(input.offset));
+
+  const items = db
+    .select()
+    .from(invitations)
+    .orderBy(desc(invitations.createdAt))
+    .limit(safeLimit)
+    .offset(safeOffset)
+    .all();
+
+  const totalRow = db.select({ count: count() }).from(invitations).get();
+
+  return {
+    items,
+    total: totalRow?.count ?? 0,
+  };
+}
+
+export function revokeInvitationById(invitationId: string): {
+  invitation: InvitationRecord | null;
+  revoked: boolean;
+} {
+  const timestamp = nowIso();
+  const updated = db
+    .update(invitations)
+    .set({
+      revokedAt: timestamp,
+    })
+    .where(and(eq(invitations.id, invitationId), isNull(invitations.revokedAt)))
+    .run();
+
+  const invitation = db.select().from(invitations).where(eq(invitations.id, invitationId)).limit(1).get() ?? null;
+
+  return {
+    invitation,
+    revoked: updated.changes > 0,
+  };
 }
 
 export function createAdminAuditLog(input: {

@@ -47,14 +47,11 @@ import {
   updateAcademyPersonEditorialMetadata,
   upsertAcademyConceptRelation,
   upsertAcademyPersonRelationship,
-  consumeEmailVerificationChallenge,
-  countVerifiedUsers,
   countJournalEntriesByUser,
   createAdminAuditLog,
   createChatEvent,
   createChatMessage,
   createChatThreadBranch,
-  createEmailVerificationChallenge,
   createChatThread,
   createCommunity,
   createCommunityChallenge,
@@ -62,6 +59,8 @@ import {
   createCommunityExpert,
   createCommunityResource,
   createCreatorVideo,
+  createInvitation,
+  createSignupIntent,
   createHighlight,
   createJournalEntry,
   createLesson,
@@ -76,6 +75,7 @@ import {
   createSession,
   createUserLegalConsent,
   createUser,
+  createUserWithInvitation,
   deleteChatThread,
   deleteCommunity,
   deleteCommunityChallenge,
@@ -102,10 +102,12 @@ import {
   getCommunityResources,
   getCreatorVideos,
   getUserContentCompletionSummary,
-  getActiveEmailVerificationChallengeByCodeHash,
-  getActiveEmailVerificationChallengeByTokenHash,
+  getActiveSignupIntentByCompletionTokenHash,
+  getActiveSignupIntentByEmailAndVerificationCodeHash,
+  getActiveSignupIntentByVerificationTokenHash,
+  getInvitationByTokenHash,
   getLandingContent,
-  getLatestEmailVerificationChallengeByUserId,
+  getLatestActiveSignupIntentByEmail,
   getLibraryLessonBySlug,
   getLibraryLessons,
   getPasskeyCredentialByCredentialId,
@@ -124,6 +126,9 @@ import {
   getUserTotpSecret,
   getUserByEmail,
   getUserById,
+  getAdminOverviewStats,
+  listAdminUsers,
+  listInvitations,
   listChatMessagesForThread,
   listChatThreadsByUser,
   listChatEvents,
@@ -137,14 +142,17 @@ import {
   listPreviewEventsByDays,
   listSystemJobRuns,
   listUserDevicesByUserId,
+  markSignupIntentCompleted,
+  markSignupIntentEmailVerified,
   markAllNotificationsRead,
   markNotificationRead,
   markUserEmailVerified,
   markUserOnboardingCompleted,
   markUserTotpVerified,
   finishSystemJobRun,
-  replaceEmailVerificationChallenge,
+  replaceSignupIntentVerificationChallenge,
   renamePasskeyCredentialById,
+  revokeInvitationById,
   revokeUserDevice,
   rotateRefreshSessionByTokenHash,
   setCommunityChallengeStatus,
@@ -157,7 +165,6 @@ import {
   setLessonStatus,
   setPillarStatus,
   setPracticeStatus,
-  setUserRole,
   setUserMfaEnabled,
   setUserPasskeyEnabled,
   softDeleteUserAndAnonymize,
@@ -175,9 +182,12 @@ import {
   updatePasskeyCredentialCounter,
   updatePillar,
   updatePractice,
+  isUsernameTaken,
   updateUserName,
   updateUserPasswordHash,
   upsertChatThreadContext,
+  setSignupIntentLegalAcceptance,
+  setSignupIntentLocale,
   upsertUserNotificationPreferences,
   upsertUserDevice,
   upsertUserCompanionPreferences,
@@ -191,8 +201,10 @@ import {
   type AcademyConceptRelationEntityType,
   type ContentStatus,
   type CurrentUser,
+  type InvitationRecord,
   type OnboardingProfileRecord,
   type ReflectionStatus,
+  type SignupFlowType,
 } from "@ataraxia/db";
 import {
   ReflectionAiService,
@@ -278,8 +290,15 @@ const TOTP_WINDOW_STEPS = 1;
 const EMAIL_VERIFICATION_CODE_DIGITS = 6;
 const EMAIL_VERIFICATION_TTL_MINUTES = 30;
 const EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS = 45;
+const SIGNUP_INTENT_TTL_HOURS = 24;
+const SIGNUP_COMPLETION_TTL_MINUTES = 60;
+const INVITATION_DEFAULT_TTL_DAYS = 7;
+const INVITATION_TOKEN_BYTES = 32;
+const INVITATION_MAX_USES = 1;
 const TERMS_POLICY_VERSION = "2026-03-01";
 const PRIVACY_POLICY_VERSION = "2026-03-01";
+const USERNAME_MIN_LENGTH = 3;
+const USERNAME_MAX_LENGTH = 40;
 const DEFAULT_CHAT_CONTEXT_CAPACITY = 24000;
 const DEFAULT_CHAT_CONTEXT_SUMMARIZE_PERCENT = 70;
 const DEFAULT_CHAT_CONTEXT_WARNING_PERCENT = 85;
@@ -411,6 +430,53 @@ function sendAuthError(
   };
 
   res.status(input.status).json(payload);
+}
+
+function sendInviteRedemptionError(
+  res: Response,
+  reason: "invalid_token" | "expired" | "revoked" | "already_used" | "email_mismatch",
+): void {
+  if (reason === "email_mismatch") {
+    sendAuthError(res, {
+      status: 403,
+      code: "INVITATION_EMAIL_MISMATCH",
+      message: "Invitation is not valid for this email.",
+    });
+    return;
+  }
+
+  if (reason === "expired") {
+    sendAuthError(res, {
+      status: 403,
+      code: "INVITATION_EXPIRED",
+      message: "Invitation is expired or no longer valid.",
+    });
+    return;
+  }
+
+  if (reason === "revoked") {
+    sendAuthError(res, {
+      status: 403,
+      code: "INVITATION_REVOKED",
+      message: "Invitation is expired or no longer valid.",
+    });
+    return;
+  }
+
+  if (reason === "already_used") {
+    sendAuthError(res, {
+      status: 403,
+      code: "INVITATION_ALREADY_USED",
+      message: "Invitation is expired or no longer valid.",
+    });
+    return;
+  }
+
+  sendAuthError(res, {
+    status: 401,
+    code: "INVITATION_INVALID",
+    message: "Invitation is invalid.",
+  });
 }
 
 const envSchema = z.object({
@@ -736,12 +802,26 @@ function nowPlusDaysIso(days: number): string {
   return expires.toISOString();
 }
 
+function nowPlusHoursIso(hours: number): string {
+  const expires = new Date();
+  expires.setHours(expires.getHours() + hours);
+  return expires.toISOString();
+}
+
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
 function createOpaqueToken(): string {
   return randomBytes(32).toString("hex");
+}
+
+function createInvitationToken(): string {
+  return randomBytes(INVITATION_TOKEN_BYTES).toString("hex");
+}
+
+function defaultInvitationExpiryIso(): string {
+  return nowPlusDaysIso(INVITATION_DEFAULT_TTL_DAYS);
 }
 
 function createEmailVerificationCode(): string {
@@ -818,6 +898,65 @@ function deriveSignupDisplayName(email: string): string {
   return titleCase.slice(0, 80);
 }
 
+function normalizeUsernameCandidate(input: string): string {
+  const normalized = input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/_{2,}/g, "_")
+    .replace(/^[-_]+|[-_]+$/g, "")
+    .slice(0, USERNAME_MAX_LENGTH);
+
+  if (!normalized) {
+    return "member";
+  }
+
+  if (normalized.length >= USERNAME_MIN_LENGTH) {
+    return normalized;
+  }
+
+  return `${normalized}${"member".slice(0, USERNAME_MIN_LENGTH - normalized.length)}`;
+}
+
+function deriveUsernameFromEmail(email: string): string {
+  const localPart = email.split("@")[0] ?? "";
+  return normalizeUsernameCandidate(localPart || "member");
+}
+
+function isValidUsernameFormat(username: string): boolean {
+  return /^[a-z0-9_-]+$/.test(username) &&
+    username.length >= USERNAME_MIN_LENGTH &&
+    username.length <= USERNAME_MAX_LENGTH;
+}
+
+function resolveAvailableUsernameSuggestion(base: string): string {
+  const normalizedBase = normalizeUsernameCandidate(base);
+  if (!isUsernameTaken(normalizedBase)) {
+    return normalizedBase;
+  }
+
+  for (let suffix = 2; suffix <= 200; suffix += 1) {
+    const suffixValue = String(suffix);
+    const trimmedBase = normalizedBase.slice(0, USERNAME_MAX_LENGTH - suffixValue.length);
+    const candidate = `${trimmedBase}${suffixValue}`;
+    if (!isUsernameTaken(candidate)) {
+      return candidate;
+    }
+  }
+
+  return normalizedBase;
+}
+
+function resolveLegalAcceptanceFlags(input: {
+  acceptLegal?: boolean;
+  acceptTerms?: boolean;
+  acceptPrivacy?: boolean;
+}): boolean {
+  const hasUnifiedConsent = input.acceptLegal === true;
+  const hasLegacyConsent = input.acceptTerms === true && input.acceptPrivacy === true;
+  return hasUnifiedConsent || hasLegacyConsent;
+}
+
 function getBearerToken(request: Request): string | null {
   const authHeader = request.header("authorization") ?? "";
 
@@ -829,7 +968,7 @@ function getBearerToken(request: Request): string | null {
   return token.length > 0 ? token : null;
 }
 
-function requireAuth(request: Request, response: Response, next: NextFunction): void {
+function requireAuthenticatedUser(request: Request, response: Response, next: NextFunction): void {
   const accessToken = getBearerToken(request);
 
   if (!accessToken) {
@@ -852,7 +991,7 @@ function requireAuth(request: Request, response: Response, next: NextFunction): 
 function requireAdmin(request: Request, response: Response, next: NextFunction): void {
   const authRequest = request as AuthenticatedRequest;
 
-  if (authRequest.authUser.role !== "ADMIN") {
+  if (authRequest.authUser.role !== "admin") {
     response.status(403).json({ error: "Admin access required" });
     return;
   }
@@ -1663,28 +1802,65 @@ async function resolveChatThreadTitle(
   return fallback;
 }
 
-const signupSchema = z
+const signupStartSchema = z
   .object({
-    email: z.string().trim().toLowerCase().email().max(120),
+    email: z.string().trim().toLowerCase().email().max(120).optional(),
+    acceptLegal: z.boolean().optional(),
+    acceptTerms: z.boolean().optional(),
+    acceptPrivacy: z.boolean().optional(),
+    inviteToken: z.string().trim().min(32).max(512).optional(),
+    locale: z.string().trim().min(2).max(20).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasInviteToken = Boolean(data.inviteToken);
+    const hasEmail = Boolean(data.email);
+    const acceptedLegal = resolveLegalAcceptanceFlags(data);
+
+    if (!hasInviteToken && !hasEmail) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Email is required.",
+        path: ["email"],
+      });
+    }
+
+    if (!hasInviteToken && !acceptedLegal) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Legal consent is required.",
+        path: ["acceptLegal"],
+      });
+    }
+
+    if (hasInviteToken && !hasEmail) {
+      // Email may be omitted only for invites that are bound to an email.
+      // Validation continues in the route after invitation lookup.
+      return;
+    }
+  });
+
+const signupCompleteSchema = z
+  .object({
+    completionToken: z.string().trim().min(16).max(512),
+    name: z.string().trim().min(2).max(80),
+    username: z.string().trim().toLowerCase().min(USERNAME_MIN_LENGTH).max(USERNAME_MAX_LENGTH),
     password: z
       .string()
       .min(PASSWORD_MIN_LENGTH)
       .regex(/[a-z]/)
       .regex(/[A-Z]/)
       .regex(/\d/),
+    locale: z.string().trim().min(2).max(20).optional(),
     acceptLegal: z.boolean().optional(),
     acceptTerms: z.boolean().optional(),
     acceptPrivacy: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
-    const hasUnifiedConsent = data.acceptLegal === true;
-    const hasLegacyConsent = data.acceptTerms === true && data.acceptPrivacy === true;
-
-    if (!hasUnifiedConsent && !hasLegacyConsent) {
+    if (!isValidUsernameFormat(data.username)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Legal consent is required.",
-        path: ["acceptLegal"],
+        message: "Username must use 3-40 lowercase letters, numbers, underscores, or hyphens.",
+        path: ["username"],
       });
     }
   });
@@ -1709,6 +1885,14 @@ const verifyEmailSchema = z
 
 const resendVerificationSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(120),
+});
+
+const signupCompletionContextSchema = z.object({
+  token: z.string().trim().min(16).max(512),
+});
+
+const inviteContextSchema = z.object({
+  token: z.string().trim().min(32).max(512),
 });
 
 const signinSchema = z.object({
@@ -2219,6 +2403,30 @@ const adminSystemJobUnlockSchema = z.object({
   minAgeMinutes: z.coerce.number().int().positive().max(24 * 60).default(30),
 });
 
+const adminUsersQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  q: z.string().trim().max(120).optional(),
+});
+
+const adminInvitationsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+const adminCreateInvitationSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email().max(120).optional(),
+    expiresAt: z.string().datetime().optional(),
+    maxUses: z.coerce.number().int().min(1).max(1).optional(),
+    roleToGrant: z.enum(["user", "admin"]).optional(),
+  })
+  .strict();
+
+const adminInvitationIdParamSchema = z.object({
+  id: z.string().uuid(),
+});
+
 function parseIdOrFail(request: Request, response: Response): number | null {
   const parsed = integerIdSchema.safeParse(request.params);
 
@@ -2387,6 +2595,60 @@ export function createApp() {
     reflectionProcessingService,
   );
   let blockedSignupAttempts = 0;
+
+  type SignupInvitationResolution =
+    | {
+        ok: true;
+        invitation: InvitationRecord;
+        email: string;
+      }
+    | {
+        ok: false;
+        reason: "invalid_token" | "expired" | "revoked" | "already_used" | "email_mismatch" | "email_required";
+      };
+
+  function resolveSignupInvitation(input: {
+    inviteToken: string;
+    email?: string;
+  }): SignupInvitationResolution {
+    const invitation = getInvitationByTokenHash(hashToken(input.inviteToken));
+
+    if (!invitation) {
+      return { ok: false, reason: "invalid_token" };
+    }
+
+    if (invitation.revokedAt) {
+      return { ok: false, reason: "revoked" };
+    }
+
+    const now = new Date().toISOString();
+    if (invitation.expiresAt <= now) {
+      return { ok: false, reason: "expired" };
+    }
+
+    if (invitation.usedCount >= invitation.maxUses) {
+      return { ok: false, reason: "already_used" };
+    }
+
+    const invitationEmail = invitation.email?.trim().toLowerCase() ?? null;
+    const providedEmail = input.email?.trim().toLowerCase() ?? "";
+
+    if (invitationEmail && providedEmail && invitationEmail !== providedEmail) {
+      return { ok: false, reason: "email_mismatch" };
+    }
+
+    const resolvedEmail = invitationEmail ?? providedEmail;
+
+    if (!resolvedEmail) {
+      return { ok: false, reason: "email_required" };
+    }
+
+    return {
+      ok: true,
+      invitation,
+      email: resolvedEmail,
+    };
+  }
 
   async function resolveEffectiveSystemPromptForUser(userId: string): Promise<string> {
     const onboardingProfile = getUserOnboardingProfile(userId);
@@ -2840,22 +3102,54 @@ export function createApp() {
     res.json({ status: "ok" });
   });
 
-  app.post("/api/v1/auth/signup", async (req, res) => {
-    if (!signupEnabled) {
-      blockedSignupAttempts += 1;
-      console.warn(
-        `[auth] Blocked signup attempt because SIGNUP_ENABLED=false (count=${blockedSignupAttempts}).`,
-      );
+  app.get("/api/v1/auth/signup/invite-context", (req, res) => {
+    const parsed = inviteContextSchema.safeParse(req.query);
 
+    if (!parsed.success) {
       sendAuthError(res, {
-        status: 403,
-        code: SIGNUP_DISABLED_CODE,
-        message: SIGNUP_DISABLED_MESSAGE,
+        status: 400,
+        code: "INVALID_INVITE_CONTEXT_QUERY",
+        message: "Invalid invite query payload.",
       });
       return;
     }
 
-    const parsed = signupSchema.safeParse(req.body);
+    const invitation = getInvitationByTokenHash(hashToken(parsed.data.token));
+
+    if (!invitation) {
+      sendInviteRedemptionError(res, "invalid_token");
+      return;
+    }
+
+    if (invitation.revokedAt) {
+      sendInviteRedemptionError(res, "revoked");
+      return;
+    }
+
+    if (invitation.expiresAt <= new Date().toISOString()) {
+      sendInviteRedemptionError(res, "expired");
+      return;
+    }
+
+    if (invitation.usedCount >= invitation.maxUses) {
+      sendInviteRedemptionError(res, "already_used");
+      return;
+    }
+
+    const invitationEmail = invitation.email?.trim().toLowerCase() ?? null;
+
+    res.json({
+      data: {
+        flowType: "invite" as const,
+        email: invitationEmail,
+        emailLocked: Boolean(invitationEmail),
+        expiresAt: invitation.expiresAt,
+      },
+    });
+  });
+
+  app.post("/api/v1/auth/signup", async (req, res) => {
+    const parsed = signupStartSchema.safeParse(req.body);
 
     if (!parsed.success) {
       sendAuthError(res, {
@@ -2866,8 +3160,73 @@ export function createApp() {
       return;
     }
 
+    const inviteToken = parsed.data.inviteToken?.trim() ?? "";
+    const hasInviteToken = inviteToken.length > 0;
+    const acceptedLegal = resolveLegalAcceptanceFlags(parsed.data);
+
+    let flowType: SignupFlowType = hasInviteToken ? "invite" : "self_signup";
+    let signupEmail = parsed.data.email?.trim().toLowerCase() ?? "";
+    let invitation: InvitationRecord | null = null;
+
+    if (hasInviteToken) {
+      const resolvedInvite = resolveSignupInvitation({
+        inviteToken,
+        email: signupEmail,
+      });
+
+      if (!resolvedInvite.ok) {
+        if (resolvedInvite.reason === "email_required") {
+          sendAuthError(res, {
+            status: 400,
+            code: "INVITATION_EMAIL_REQUIRED",
+            message: "Email is required for this invitation.",
+          });
+          return;
+        }
+
+        sendInviteRedemptionError(res, resolvedInvite.reason);
+        return;
+      }
+
+      invitation = resolvedInvite.invitation;
+      signupEmail = resolvedInvite.email;
+      flowType = "invite";
+    } else {
+      if (!signupEnabled) {
+        blockedSignupAttempts += 1;
+        console.warn(
+          `[auth] Blocked signup attempt because SIGNUP_ENABLED=false (count=${blockedSignupAttempts}).`,
+        );
+
+        sendAuthError(res, {
+          status: 403,
+          code: SIGNUP_DISABLED_CODE,
+          message: SIGNUP_DISABLED_MESSAGE,
+        });
+        return;
+      }
+
+      if (!signupEmail || !acceptedLegal) {
+        sendAuthError(res, {
+          status: 400,
+          code: "LEGAL_CONSENT_REQUIRED",
+          message: "Terms and Privacy acceptance is required.",
+        });
+        return;
+      }
+    }
+
+    if (!signupEmail) {
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_SIGNUP_EMAIL",
+        message: "Email is required.",
+      });
+      return;
+    }
+
     try {
-      assertWithinAuthRateLimit(authKey("signup", req, parsed.data.email));
+      assertWithinAuthRateLimit(authKey("signup", req, signupEmail));
     } catch (error) {
       if (error instanceof Error) {
         sendAuthError(res, {
@@ -2880,7 +3239,7 @@ export function createApp() {
       throw error;
     }
 
-    const existing = getUserByEmail(parsed.data.email);
+    const existing = getUserByEmail(signupEmail);
 
     if (existing) {
       sendAuthError(res, {
@@ -2891,65 +3250,30 @@ export function createApp() {
       return;
     }
 
-    const created = createUser({
-      id: randomUUID(),
-      name: deriveSignupDisplayName(parsed.data.email),
-      email: parsed.data.email,
-      passwordHash: await argon2.hash(parsed.data.password, {
-        type: argon2.argon2id,
-        memoryCost: 19456,
-        timeCost: 3,
-        parallelism: 1,
-      }),
-      role: "MEMBER",
-    });
-
-    if (!created) {
-      sendAuthError(res, {
-        status: 500,
-        code: "SIGNUP_CREATE_FAILED",
-        message: "Failed to create user",
-      });
-      return;
-    }
-
-    const acceptedAt = new Date().toISOString();
-    const consentContext = buildDeviceContext(req);
-
-    createUserLegalConsent({
-      id: randomUUID(),
-      userId: created.id,
-      policyType: "TERMS",
-      policyVersion: TERMS_POLICY_VERSION,
-      acceptedAt,
-      ipAddress: consentContext.ipAddress,
-      userAgent: consentContext.userAgent,
-    });
-
-    createUserLegalConsent({
-      id: randomUUID(),
-      userId: created.id,
-      policyType: "PRIVACY",
-      policyVersion: PRIVACY_POLICY_VERSION,
-      acceptedAt,
-      ipAddress: consentContext.ipAddress,
-      userAgent: consentContext.userAgent,
-    });
-
     const verificationToken = createOpaqueToken();
     const verificationCode = createEmailVerificationCode();
-    createEmailVerificationChallenge({
+    const legalAcceptedAt = flowType === "self_signup" && acceptedLegal ? new Date().toISOString() : null;
+
+    createSignupIntent({
       id: randomUUID(),
-      userId: created.id,
-      tokenHash: hashToken(verificationToken),
-      codeHash: hashToken(verificationCode),
-      expiresAt: nowPlusMinutesIso(EMAIL_VERIFICATION_TTL_MINUTES),
+      email: signupEmail,
+      flowType,
+      inviteId: invitation?.id ?? null,
+      inviteTokenHash: hasInviteToken ? hashToken(inviteToken) : null,
+      verificationTokenHash: hashToken(verificationToken),
+      verificationCodeHash: hashToken(verificationCode),
+      verificationExpiresAt: nowPlusMinutesIso(EMAIL_VERIFICATION_TTL_MINUTES),
+      expiresAt: nowPlusHoursIso(SIGNUP_INTENT_TTL_HOURS),
+      legalAcceptedAt,
+      legalTermsVersion: legalAcceptedAt ? TERMS_POLICY_VERSION : null,
+      privacyVersion: legalAcceptedAt ? PRIVACY_POLICY_VERSION : null,
+      locale: parsed.data.locale ?? null,
     });
 
     try {
       await sendVerificationEmail({
-        email: created.email,
-        name: created.name,
+        email: signupEmail,
+        name: deriveSignupDisplayName(signupEmail),
         token: verificationToken,
         code: verificationCode,
       });
@@ -2969,7 +3293,8 @@ export function createApp() {
     res.status(201).json({
       data: {
         verificationRequired: true,
-        email: created.email,
+        email: signupEmail,
+        flowType,
         ...(process.env.NODE_ENV !== "production"
           ? {
               debugVerificationCode: verificationCode,
@@ -2992,64 +3317,33 @@ export function createApp() {
       return;
     }
 
-    let user = null as CurrentUser | null;
-    let challengeId = "";
     const email = parsed.data.email ?? "";
     const code = parsed.data.code ?? "";
     const hasCodePayload = Boolean(email && code);
 
-    if (hasCodePayload) {
-      const existing = getUserByEmail(email);
+    const intent = hasCodePayload
+      ? getActiveSignupIntentByEmailAndVerificationCodeHash(email, hashToken(code))
+      : getActiveSignupIntentByVerificationTokenHash(hashToken(parsed.data.token ?? ""));
 
-      if (!existing) {
-        sendAuthError(res, {
-          status: 401,
-          code: "INVALID_VERIFICATION_CODE",
-          message: "Invalid verification code.",
-        });
-        return;
-      }
-
-      const challenge = getActiveEmailVerificationChallengeByCodeHash(existing.id, hashToken(code));
-
-      if (!challenge) {
-        sendAuthError(res, {
-          status: 401,
-          code: "INVALID_VERIFICATION_CODE",
-          message: "Invalid verification code.",
-        });
-        return;
-      }
-
-      user = getUserById(existing.id);
-      challengeId = challenge.id;
-    } else {
-      const token = parsed.data.token ?? "";
-      const challenge = getActiveEmailVerificationChallengeByTokenHash(hashToken(token));
-
-      if (!challenge) {
-        sendAuthError(res, {
-          status: 401,
-          code: "INVALID_VERIFICATION_TOKEN",
-          message: "Invalid or expired verification token.",
-        });
-        return;
-      }
-
-      user = getUserById(challenge.userId);
-      challengeId = challenge.id;
-    }
-
-    if (!user) {
+    if (!intent) {
       sendAuthError(res, {
-        status: 404,
-        code: "USER_NOT_FOUND",
-        message: "User not found.",
+        status: 401,
+        code: hasCodePayload ? "INVALID_VERIFICATION_CODE" : "INVALID_VERIFICATION_TOKEN",
+        message: hasCodePayload
+          ? "Invalid verification code."
+          : "Invalid or expired verification token.",
       });
       return;
     }
 
-    if (!consumeEmailVerificationChallenge(challengeId)) {
+    const completionToken = createOpaqueToken();
+    const updatedIntent = markSignupIntentEmailVerified({
+      intentId: intent.id,
+      completionTokenHash: hashToken(completionToken),
+      completionExpiresAt: nowPlusMinutesIso(SIGNUP_COMPLETION_TTL_MINUTES),
+    });
+
+    if (!updatedIntent) {
       sendAuthError(res, {
         status: 401,
         code: "VERIFICATION_CHALLENGE_INVALID",
@@ -3058,54 +3352,13 @@ export function createApp() {
       return;
     }
 
-    const wasAlreadyVerified = Boolean(user.emailVerifiedAt);
-
-    if (!wasAlreadyVerified) {
-      const verifiedCountBefore = countVerifiedUsers();
-      const verifiedUser = markUserEmailVerified(user.id);
-
-      if (!verifiedUser) {
-        sendAuthError(res, {
-          status: 500,
-          code: "EMAIL_VERIFICATION_FAILED",
-          message: "Unable to verify account email.",
-        });
-        return;
-      }
-
-      if (verifiedCountBefore === 0) {
-        setUserRole(verifiedUser.id, "ADMIN");
-      }
-    }
-
-    const refreshedUser = getUserById(user.id);
-
-    if (!refreshedUser) {
-      sendAuthError(res, {
-        status: 404,
-        code: "USER_NOT_FOUND",
-        message: "User not found.",
-      });
-      return;
-    }
-
-    const deviceContext = buildDeviceContext(req);
-    const deviceId = upsertUserDevice({
-      id: randomUUID(),
-      userId: refreshedUser.id,
-      fingerprint: deviceContext.fingerprint,
-      label: deviceContext.label,
-      ipAddress: deviceContext.ipAddress,
-      userAgent: deviceContext.userAgent,
-    });
-
-    const tokens = await createAuthTokenPair(refreshedUser.id, deviceId);
-
     res.json({
       data: {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        user: refreshedUser,
+        verified: true,
+        completionRequired: true,
+        completionToken,
+        email: updatedIntent.email,
+        flowType: updatedIntent.flowType,
       },
     });
   });
@@ -3136,71 +3389,52 @@ export function createApp() {
       throw error;
     }
 
-    const user = getUserByEmail(parsed.data.email);
+    const intent = getLatestActiveSignupIntentByEmail(parsed.data.email);
 
-    if (!user) {
+    if (!intent) {
       res.json({ data: { sent: true } });
       return;
     }
 
-    if (user.emailVerifiedAt) {
+    if (intent.emailVerifiedAt) {
       res.json({ data: { sent: false, alreadyVerified: true } });
       return;
     }
 
-    const latestChallenge = getLatestEmailVerificationChallengeByUserId(user.id);
     const now = new Date();
+    const elapsedSeconds = Math.floor((now.getTime() - new Date(intent.verificationSentAt).getTime()) / 1000);
 
-    if (latestChallenge) {
-      const elapsedSeconds = Math.floor(
-        (now.getTime() - new Date(latestChallenge.lastSentAt).getTime()) / 1000,
-      );
-
-      if (elapsedSeconds < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS) {
-        sendAuthError(res, {
-          status: 429,
-          code: "VERIFICATION_RESEND_COOLDOWN",
-          message: `Please wait ${EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS - elapsedSeconds}s before requesting another code.`,
-        });
-        return;
-      }
+    if (elapsedSeconds < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS) {
+      sendAuthError(res, {
+        status: 429,
+        code: "VERIFICATION_RESEND_COOLDOWN",
+        message: `Please wait ${EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS - elapsedSeconds}s before requesting another code.`,
+      });
+      return;
     }
 
     const verificationToken = createOpaqueToken();
     const verificationCode = createEmailVerificationCode();
-    const expiresAt = nowPlusMinutesIso(EMAIL_VERIFICATION_TTL_MINUTES);
+    const replaced = replaceSignupIntentVerificationChallenge({
+      intentId: intent.id,
+      verificationTokenHash: hashToken(verificationToken),
+      verificationCodeHash: hashToken(verificationCode),
+      verificationExpiresAt: nowPlusMinutesIso(EMAIL_VERIFICATION_TTL_MINUTES),
+    });
 
-    if (latestChallenge) {
-      const replaced = replaceEmailVerificationChallenge({
-        challengeId: latestChallenge.id,
-        tokenHash: hashToken(verificationToken),
-        codeHash: hashToken(verificationCode),
-        expiresAt,
+    if (!replaced) {
+      sendAuthError(res, {
+        status: 404,
+        code: "SIGNUP_INTENT_NOT_FOUND",
+        message: "Signup session expired. Please start again.",
       });
-
-      if (!replaced) {
-        createEmailVerificationChallenge({
-          id: randomUUID(),
-          userId: user.id,
-          tokenHash: hashToken(verificationToken),
-          codeHash: hashToken(verificationCode),
-          expiresAt,
-        });
-      }
-    } else {
-      createEmailVerificationChallenge({
-        id: randomUUID(),
-        userId: user.id,
-        tokenHash: hashToken(verificationToken),
-        codeHash: hashToken(verificationCode),
-        expiresAt,
-      });
+      return;
     }
 
     try {
       await sendVerificationEmail({
-        email: user.email,
-        name: user.name,
+        email: replaced.email,
+        name: deriveSignupDisplayName(replaced.email),
         token: verificationToken,
         code: verificationCode,
       });
@@ -3225,6 +3459,273 @@ export function createApp() {
               debugVerificationToken: verificationToken,
             }
           : {}),
+      },
+    });
+  });
+
+  app.get("/api/v1/auth/signup/completion-context", (req, res) => {
+    const parsed = signupCompletionContextSchema.safeParse(req.query);
+
+    if (!parsed.success) {
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_COMPLETION_QUERY",
+        message: "Invalid completion query payload.",
+      });
+      return;
+    }
+
+    const intent = getActiveSignupIntentByCompletionTokenHash(hashToken(parsed.data.token));
+
+    if (!intent) {
+      sendAuthError(res, {
+        status: 401,
+        code: "INVALID_COMPLETION_TOKEN",
+        message: "Signup completion session is invalid or expired.",
+      });
+      return;
+    }
+
+    const suggestedUsername = resolveAvailableUsernameSuggestion(deriveUsernameFromEmail(intent.email));
+
+    res.json({
+      data: {
+        email: intent.email,
+        flowType: intent.flowType,
+        requiresLegalAtCompletion: intent.flowType === "invite",
+        suggestedUsername,
+        locale: intent.locale,
+      },
+    });
+  });
+
+  app.post("/api/v1/auth/signup/complete", async (req, res) => {
+    const parsed = signupCompleteSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_SIGNUP_COMPLETION_PAYLOAD",
+        message: "Invalid signup completion payload.",
+      });
+      return;
+    }
+
+    const intent = getActiveSignupIntentByCompletionTokenHash(hashToken(parsed.data.completionToken));
+
+    if (!intent) {
+      sendAuthError(res, {
+        status: 401,
+        code: "INVALID_COMPLETION_TOKEN",
+        message: "Signup completion session is invalid or expired.",
+      });
+      return;
+    }
+
+    if (!intent.emailVerifiedAt) {
+      sendAuthError(res, {
+        status: 403,
+        code: "EMAIL_NOT_VERIFIED",
+        message: "Email must be verified before completing signup.",
+      });
+      return;
+    }
+
+    const username = normalizeUsernameCandidate(parsed.data.username);
+    if (!isValidUsernameFormat(username)) {
+      sendAuthError(res, {
+        status: 400,
+        code: "INVALID_USERNAME",
+        message: "Username format is invalid.",
+      });
+      return;
+    }
+
+    if (isUsernameTaken(username)) {
+      sendAuthError(res, {
+        status: 409,
+        code: "USERNAME_UNAVAILABLE",
+        message: "Username is already taken.",
+        data: {
+          suggestedUsername: resolveAvailableUsernameSuggestion(username),
+        },
+      });
+      return;
+    }
+
+    const existing = getUserByEmail(intent.email);
+    if (existing) {
+      sendAuthError(res, {
+        status: 409,
+        code: "EMAIL_ALREADY_EXISTS",
+        message: "An account with this email already exists.",
+      });
+      return;
+    }
+
+    const acceptedLegalAtCompletion = resolveLegalAcceptanceFlags(parsed.data);
+    if (intent.flowType === "invite" && !acceptedLegalAtCompletion) {
+      sendAuthError(res, {
+        status: 400,
+        code: "LEGAL_CONSENT_REQUIRED",
+        message: "Terms and Privacy acceptance is required to complete invitation signup.",
+      });
+      return;
+    }
+
+    const passwordHash = await argon2.hash(parsed.data.password, {
+      type: argon2.argon2id,
+      memoryCost: 19456,
+      timeCost: 3,
+      parallelism: 1,
+    });
+
+    const userId = randomUUID();
+    const normalizedName = parsed.data.name.trim();
+    if (intent.flowType === "invite" && !intent.inviteTokenHash) {
+      sendAuthError(res, {
+        status: 500,
+        code: "INVITATION_LINK_STATE_INVALID",
+        message: "Invitation state is invalid. Request a new invite link.",
+      });
+      return;
+    }
+
+    const createResult =
+      intent.flowType === "invite"
+        ? createUserWithInvitation({
+            id: userId,
+            name: normalizedName,
+            email: intent.email,
+            passwordHash,
+            inviteTokenHash: intent.inviteTokenHash as string,
+          })
+        : ({
+            ok: true,
+            user: createUser({
+              id: userId,
+              name: normalizedName,
+              email: intent.email,
+              passwordHash,
+              role: "user",
+            }),
+            invitation: null,
+          } as const);
+
+    if (!createResult.ok) {
+      sendInviteRedemptionError(res, createResult.reason);
+      return;
+    }
+
+    const createdUser = createResult.user;
+    if (!createdUser) {
+      sendAuthError(res, {
+        status: 500,
+        code: "SIGNUP_CREATE_FAILED",
+        message: "Unable to create account.",
+      });
+      return;
+    }
+
+    upsertUserProfile(createdUser.id, {
+      username,
+    });
+
+    const selectedLocale = parsed.data.locale?.trim() || intent.locale || null;
+    if (selectedLocale) {
+      setSignupIntentLocale(intent.id, selectedLocale);
+      upsertUserPreferences(createdUser.id, { language: selectedLocale });
+    }
+
+    const legalAcceptedAt =
+      intent.flowType === "invite"
+        ? new Date().toISOString()
+        : (intent.legalAcceptedAt ?? new Date().toISOString());
+    const termsVersion = intent.legalTermsVersion ?? TERMS_POLICY_VERSION;
+    const privacyVersion = intent.privacyVersion ?? PRIVACY_POLICY_VERSION;
+
+    if (intent.flowType === "invite") {
+      setSignupIntentLegalAcceptance({
+        intentId: intent.id,
+        acceptedAt: legalAcceptedAt,
+        legalTermsVersion: TERMS_POLICY_VERSION,
+        privacyVersion: PRIVACY_POLICY_VERSION,
+      });
+    }
+
+    const consentContext = buildDeviceContext(req);
+    createUserLegalConsent({
+      id: randomUUID(),
+      userId: createdUser.id,
+      policyType: "TERMS",
+      policyVersion: termsVersion,
+      acceptedAt: legalAcceptedAt,
+      ipAddress: consentContext.ipAddress,
+      userAgent: consentContext.userAgent,
+    });
+
+    createUserLegalConsent({
+      id: randomUUID(),
+      userId: createdUser.id,
+      policyType: "PRIVACY",
+      policyVersion: privacyVersion,
+      acceptedAt: legalAcceptedAt,
+      ipAddress: consentContext.ipAddress,
+      userAgent: consentContext.userAgent,
+    });
+
+    const verifiedUser = markUserEmailVerified(createdUser.id);
+    if (!verifiedUser) {
+      sendAuthError(res, {
+        status: 500,
+        code: "EMAIL_VERIFICATION_FAILED",
+        message: "Unable to finalize verified account.",
+      });
+      return;
+    }
+
+    const completedIntent = markSignupIntentCompleted(intent.id);
+    if (!completedIntent) {
+      sendAuthError(res, {
+        status: 500,
+        code: "SIGNUP_COMPLETION_STATE_FAILED",
+        message: "Unable to finalize signup session.",
+      });
+      return;
+    }
+
+    if (createResult.invitation) {
+      createAdminAuditLog({
+        id: randomUUID(),
+        adminUserId: createResult.invitation.createdByUserId,
+        action: "invite_redeemed",
+        entityType: "invitation",
+        entityId: createResult.invitation.id,
+        payloadJson: JSON.stringify({
+          usedByUserId: createdUser.id,
+          usedByEmail: createdUser.email,
+          roleGranted: createResult.invitation.roleToGrant,
+        }),
+      });
+    }
+
+    const deviceContext = buildDeviceContext(req);
+    const deviceId = upsertUserDevice({
+      id: randomUUID(),
+      userId: verifiedUser.id,
+      fingerprint: deviceContext.fingerprint,
+      label: deviceContext.label,
+      ipAddress: deviceContext.ipAddress,
+      userAgent: deviceContext.userAgent,
+    });
+
+    const tokens = await createAuthTokenPair(verifiedUser.id, deviceId);
+
+    res.json({
+      data: {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        user: verifiedUser,
       },
     });
   });
@@ -3596,7 +4097,7 @@ export function createApp() {
     });
   });
 
-  app.get("/api/v1/auth/me", requireAuth, (req, res) => {
+  app.get("/api/v1/auth/me", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const currentUser = getUserById(authReq.authUser.id);
 
@@ -3622,7 +4123,7 @@ export function createApp() {
     });
   });
 
-  app.patch("/api/v1/auth/me", requireAuth, (req, res) => {
+  app.patch("/api/v1/auth/me", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = authMePatchSchema.safeParse(req.body);
 
@@ -3679,7 +4180,7 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/auth/change-password", requireAuth, async (req, res) => {
+  app.post("/api/v1/auth/change-password", requireAuthenticatedUser, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = changePasswordSchema.safeParse(req.body);
 
@@ -3743,7 +4244,7 @@ export function createApp() {
     res.json({ data: { updated: true } });
   });
 
-  app.post("/api/v1/auth/delete", requireAuth, async (req, res) => {
+  app.post("/api/v1/auth/delete", requireAuthenticatedUser, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = deleteAccountSchema.safeParse(req.body);
 
@@ -3804,7 +4305,7 @@ export function createApp() {
     res.json({ data: { deleted: true } });
   });
 
-  app.get("/api/v1/onboarding", requireAuth, (req, res) => {
+  app.get("/api/v1/onboarding", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const profile = getUserOnboardingProfile(authReq.authUser.id);
 
@@ -3816,7 +4317,7 @@ export function createApp() {
     });
   });
 
-  app.put("/api/v1/onboarding", requireAuth, (req, res) => {
+  app.put("/api/v1/onboarding", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = onboardingSchema.safeParse(req.body);
 
@@ -3848,7 +4349,7 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/auth/logout", requireAuth, (req, res) => {
+  app.post("/api/v1/auth/logout", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z
       .object({
@@ -3865,7 +4366,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.get("/api/v1/security/settings", requireAuth, (req, res) => {
+  app.get("/api/v1/security/settings", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const settings = getSecuritySettingsByUserId(authReq.authUser.id);
 
@@ -3877,7 +4378,7 @@ export function createApp() {
     res.json({ data: settings });
   });
 
-  app.post("/api/v1/security/mfa", requireAuth, (req, res) => {
+  app.post("/api/v1/security/mfa", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = securityToggleSchema.safeParse(req.body);
 
@@ -3901,7 +4402,7 @@ export function createApp() {
     res.json({ data: { mfaEnabled: parsed.data.enabled } });
   });
 
-  app.post("/api/v1/security/passkeys", requireAuth, (req, res) => {
+  app.post("/api/v1/security/passkeys", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = securityToggleSchema.safeParse(req.body);
 
@@ -3915,7 +4416,7 @@ export function createApp() {
     res.json({ data: { passkeyEnabled: parsed.data.enabled } });
   });
 
-  app.post("/api/v1/security/passkeys/register/options", requireAuth, async (req, res) => {
+  app.post("/api/v1/security/passkeys/register/options", requireAuthenticatedUser, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const credentials = listPasskeyCredentialsByUserId(authReq.authUser.id);
 
@@ -3950,7 +4451,7 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/security/passkeys/register/verify", requireAuth, async (req, res) => {
+  app.post("/api/v1/security/passkeys/register/verify", requireAuthenticatedUser, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = passkeyVerifySchema.safeParse(req.body);
 
@@ -4028,7 +4529,7 @@ export function createApp() {
     }
   });
 
-  app.get("/api/v1/security/passkeys", requireAuth, (req, res) => {
+  app.get("/api/v1/security/passkeys", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const passkeys = listPasskeyCredentialsByUserId(authReq.authUser.id).map((item) => ({
       id: item.id,
@@ -4040,7 +4541,7 @@ export function createApp() {
     res.json({ data: passkeys });
   });
 
-  app.patch("/api/v1/security/passkeys/:id", requireAuth, (req, res) => {
+  app.patch("/api/v1/security/passkeys/:id", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = passkeyRenameSchema.safeParse(req.body);
 
@@ -4063,7 +4564,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.delete("/api/v1/security/passkeys/:id", requireAuth, (req, res) => {
+  app.delete("/api/v1/security/passkeys/:id", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const deleted = deletePasskeyCredentialById(authReq.authUser.id, req.params.id);
 
@@ -4080,7 +4581,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.post("/api/v1/security/mfa/totp/setup", requireAuth, (req, res) => {
+  app.post("/api/v1/security/mfa/totp/setup", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const secret = generateTotpSecret();
     const issuer = encodeURIComponent("Areti");
@@ -4101,7 +4602,7 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/security/mfa/totp/verify", requireAuth, (req, res) => {
+  app.post("/api/v1/security/mfa/totp/verify", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = totpVerifySchema.safeParse(req.body);
 
@@ -4130,14 +4631,14 @@ export function createApp() {
     res.json({ data: { mfaEnabled: true } });
   });
 
-  app.delete("/api/v1/security/mfa/totp", requireAuth, (req, res) => {
+  app.delete("/api/v1/security/mfa/totp", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     deleteUserTotpSecret(authReq.authUser.id);
     setUserMfaEnabled(authReq.authUser.id, false);
     res.status(204).send();
   });
 
-  app.get("/api/v1/security/devices", requireAuth, (req, res) => {
+  app.get("/api/v1/security/devices", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const currentSession = getSessionDeviceByTokenHash(hashToken(authReq.authAccessToken));
     const devices = listUserDevicesByUserId(authReq.authUser.id).map((device) => ({
@@ -4148,7 +4649,7 @@ export function createApp() {
     res.json({ data: devices });
   });
 
-  app.delete("/api/v1/security/devices/:id", requireAuth, (req, res) => {
+  app.delete("/api/v1/security/devices/:id", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const revoked = revokeUserDevice(authReq.authUser.id, req.params.id);
 
@@ -4160,7 +4661,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.get("/api/v1/notifications", requireAuth, (req, res) => {
+  app.get("/api/v1/notifications", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z
       .object({
@@ -4176,13 +4677,13 @@ export function createApp() {
     res.json({ data: listNotificationsByUser(authReq.authUser.id, parsed.data.limit) });
   });
 
-  app.get("/api/v1/notifications/preferences", requireAuth, (req, res) => {
+  app.get("/api/v1/notifications/preferences", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const preferences = getUserNotificationPreferencesByUserId(authReq.authUser.id);
     res.json({ data: preferences });
   });
 
-  app.patch("/api/v1/notifications/preferences", requireAuth, (req, res) => {
+  app.patch("/api/v1/notifications/preferences", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = notificationPreferencesPatchSchema.safeParse(req.body);
 
@@ -4195,7 +4696,7 @@ export function createApp() {
     res.json({ data: preferences });
   });
 
-  app.patch("/api/v1/notifications/:id/read", requireAuth, (req, res) => {
+  app.patch("/api/v1/notifications/:id/read", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const updated = markNotificationRead(authReq.authUser.id, req.params.id);
 
@@ -4207,7 +4708,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.post("/api/v1/notifications/read-all", requireAuth, (req, res) => {
+  app.post("/api/v1/notifications/read-all", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const updatedCount = markAllNotificationsRead(authReq.authUser.id);
     res.json({ data: { updatedCount } });
@@ -4326,7 +4827,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.post("/api/v1/chat", requireAuth, async (req, res) => {
+  app.post("/api/v1/chat", requireAuthenticatedUser, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatSchema.safeParse(req.body);
 
@@ -4392,7 +4893,7 @@ export function createApp() {
     res.json({ data: { answer } });
   });
 
-  app.get("/api/v1/chat/threads", requireAuth, (req, res) => {
+  app.get("/api/v1/chat/threads", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatThreadListQuerySchema.safeParse(req.query);
 
@@ -4409,7 +4910,7 @@ export function createApp() {
     res.json({ data: threads });
   });
 
-  app.post("/api/v1/chat/threads", requireAuth, (req, res) => {
+  app.post("/api/v1/chat/threads", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatThreadCreateSchema.safeParse(req.body ?? {});
 
@@ -4448,7 +4949,7 @@ export function createApp() {
     });
   });
 
-  app.patch("/api/v1/chat/threads/:id", requireAuth, (req, res) => {
+  app.patch("/api/v1/chat/threads/:id", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatThreadPatchSchema.safeParse(req.body);
 
@@ -4507,7 +5008,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.delete("/api/v1/chat/threads/:id", requireAuth, (req, res) => {
+  app.delete("/api/v1/chat/threads/:id", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const existing = getChatThreadByIdForUser(authReq.authUser.id, req.params.id);
     if (!existing) {
@@ -4531,7 +5032,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.get("/api/v1/chat/preferences", requireAuth, (req, res) => {
+  app.get("/api/v1/chat/preferences", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const preferences = getUserCompanionPreferences(authReq.authUser.id);
     res.json({
@@ -4541,7 +5042,7 @@ export function createApp() {
     });
   });
 
-  app.patch("/api/v1/chat/preferences", requireAuth, (req, res) => {
+  app.patch("/api/v1/chat/preferences", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatPreferencesPatchSchema.safeParse(req.body);
 
@@ -4555,7 +5056,7 @@ export function createApp() {
     res.json({ data: { customInstructions: updated.customInstructions } });
   });
 
-  app.get("/api/v1/chat/threads/:id/messages", requireAuth, (req, res) => {
+  app.get("/api/v1/chat/threads/:id/messages", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const messages = listChatMessagesForThread(authReq.authUser.id, req.params.id);
 
@@ -4567,7 +5068,7 @@ export function createApp() {
     res.json({ data: messages });
   });
 
-  app.post("/api/v1/chat/threads/:id/branch", requireAuth, async (req, res) => {
+  app.post("/api/v1/chat/threads/:id/branch", requireAuthenticatedUser, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatThreadBranchSchema.safeParse(req.body ?? {});
 
@@ -4686,7 +5187,7 @@ export function createApp() {
     }
   });
 
-  app.post("/api/v1/chat/threads/:id/events", requireAuth, (req, res) => {
+  app.post("/api/v1/chat/threads/:id/events", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatThreadClientEventSchema.safeParse(req.body ?? {});
 
@@ -4720,7 +5221,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.post("/api/v1/chat/threads/:id/context/summarize", requireAuth, async (req, res) => {
+  app.post("/api/v1/chat/threads/:id/context/summarize", requireAuthenticatedUser, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const thread = getChatThreadByIdForUser(authReq.authUser.id, req.params.id);
 
@@ -4862,7 +5363,7 @@ export function createApp() {
     }
   });
 
-  app.post("/api/v1/chat/threads/:id/messages", requireAuth, async (req, res) => {
+  app.post("/api/v1/chat/threads/:id/messages", requireAuthenticatedUser, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = chatSchema.safeParse(req.body);
 
@@ -5128,7 +5629,7 @@ export function createApp() {
     })();
   });
 
-  app.post("/api/v1/progress/complete", requireAuth, (req, res) => {
+  app.post("/api/v1/progress/complete", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = contentCompletionSchema.safeParse(req.body);
 
@@ -5200,7 +5701,7 @@ export function createApp() {
     });
   });
 
-  app.get("/api/v1/progress/completions", requireAuth, (req, res) => {
+  app.get("/api/v1/progress/completions", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z
       .object({
@@ -5224,7 +5725,7 @@ export function createApp() {
     res.json({ data: completions });
   });
 
-  app.get("/api/v1/progress/rewards", requireAuth, (req, res) => {
+  app.get("/api/v1/progress/rewards", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const entriesCount = countJournalEntriesByUser(authReq.authUser.id);
     const progressEntries = listJournalEntriesByUser(authReq.authUser.id, 365);
@@ -5242,7 +5743,7 @@ export function createApp() {
     res.json({ data: rewards });
   });
 
-  app.get("/api/v1/dashboard/summary", requireAuth, (req, res) => {
+  app.get("/api/v1/dashboard/summary", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const entriesCount = countJournalEntriesByUser(authReq.authUser.id);
     const latestEntries = listJournalEntriesByUser(authReq.authUser.id, 3);
@@ -5307,7 +5808,7 @@ export function createApp() {
     });
   });
 
-  app.get("/api/v1/journal", requireAuth, (req, res) => {
+  app.get("/api/v1/journal", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
 
     const querySchema = z.object({
@@ -5325,7 +5826,7 @@ export function createApp() {
     res.json({ data: entries });
   });
 
-  app.post("/api/v1/journal", requireAuth, (req, res) => {
+  app.post("/api/v1/journal", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = journalSchema.safeParse(req.body);
 
@@ -5345,7 +5846,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.get("/api/v1/reflections", requireAuth, (req, res) => {
+  app.get("/api/v1/reflections", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const querySchema = z.object({
       page: z.coerce.number().int().positive().max(10_000).default(1),
@@ -5375,7 +5876,7 @@ export function createApp() {
     res.json({ data });
   });
 
-  app.post("/api/v1/reflections", requireAuth, async (req, res) => {
+  app.post("/api/v1/reflections", requireAuthenticatedUser, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = reflectionCreateSchema.safeParse(req.body);
 
@@ -5401,7 +5902,7 @@ export function createApp() {
     }
   });
 
-  app.get("/api/v1/reflections/:id", requireAuth, (req, res) => {
+  app.get("/api/v1/reflections/:id", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
 
@@ -5419,7 +5920,7 @@ export function createApp() {
     res.json({ data: reflection });
   });
 
-  app.patch("/api/v1/reflections/:id", requireAuth, (req, res) => {
+  app.patch("/api/v1/reflections/:id", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const params = z.object({ id: z.string().uuid() }).safeParse(req.params);
     const parsed = reflectionPatchSchema.safeParse(req.body);
@@ -5443,7 +5944,7 @@ export function createApp() {
     res.json({ data: updated });
   });
 
-  app.delete("/api/v1/reflections/:id", requireAuth, (req, res) => {
+  app.delete("/api/v1/reflections/:id", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
 
@@ -5461,7 +5962,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.post("/api/v1/reflections/:id/commentary/regenerate", requireAuth, async (req, res) => {
+  app.post("/api/v1/reflections/:id/commentary/regenerate", requireAuthenticatedUser, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
 
@@ -5486,7 +5987,7 @@ export function createApp() {
     }
   });
 
-  app.post("/api/v1/reflections/:id/retry", requireAuth, (req, res) => {
+  app.post("/api/v1/reflections/:id/retry", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
 
@@ -5504,7 +6005,7 @@ export function createApp() {
     res.json({ data: reflection });
   });
 
-  app.post("/api/v1/reflections/:id/send-to-companion", requireAuth, async (req, res) => {
+  app.post("/api/v1/reflections/:id/send-to-companion", requireAuthenticatedUser, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
 
@@ -5540,7 +6041,7 @@ export function createApp() {
     }
   });
 
-  app.get("/api/v1/reflections/:id/audio", requireAuth, (req, res) => {
+  app.get("/api/v1/reflections/:id/audio", requireAuthenticatedUser, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = z.object({ id: z.string().uuid() }).safeParse(req.params);
 
@@ -5964,7 +6465,7 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/academy/query", requireAuth, (req, res) => {
+  app.post("/api/v1/academy/query", requireAuthenticatedUser, (req, res) => {
     const parsed = academyInternalQuerySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid query payload" });
@@ -5974,7 +6475,194 @@ export function createApp() {
     res.json({ data: queryAcademyKnowledge(parsed.data) });
   });
 
-  app.get("/api/v1/admin/academy/curation", requireAuth, requireAdmin, (req, res) => {
+  app.use("/api/v1/admin", requireAuthenticatedUser, requireAdmin);
+
+  app.get("/api/v1/admin/overview", (_req, res) => {
+    const stats = getAdminOverviewStats();
+
+    res.json({
+      data: stats,
+    });
+  });
+
+  app.get("/api/v1/admin/users", (req, res) => {
+    const parsed = adminUsersQuerySchema.safeParse(req.query);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    const result = listAdminUsers({
+      limit: parsed.data.limit,
+      offset: parsed.data.offset,
+      query: parsed.data.q,
+    });
+
+    res.json({
+      data: {
+        items: result.items.map((user) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+          emailVerifiedAt: user.emailVerifiedAt,
+          emailVerified: Boolean(user.emailVerifiedAt),
+          createdAt: user.createdAt,
+          plan: null,
+        })),
+        pagination: {
+          limit: parsed.data.limit,
+          offset: parsed.data.offset,
+          total: result.total,
+        },
+      },
+    });
+  });
+
+  app.get("/api/v1/admin/invitations", (req, res) => {
+    const parsed = adminInvitationsQuerySchema.safeParse(req.query);
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+
+    const result = listInvitations({
+      limit: parsed.data.limit,
+      offset: parsed.data.offset,
+    });
+
+    res.json({
+      data: {
+        items: result.items.map((invitation) => ({
+          id: invitation.id,
+          email: invitation.email,
+          roleToGrant: invitation.roleToGrant,
+          expiresAt: invitation.expiresAt,
+          maxUses: invitation.maxUses,
+          usedCount: invitation.usedCount,
+          createdByUserId: invitation.createdByUserId,
+          createdAt: invitation.createdAt,
+          usedAt: invitation.usedAt,
+          usedByUserId: invitation.usedByUserId,
+          revokedAt: invitation.revokedAt,
+        })),
+        pagination: {
+          limit: parsed.data.limit,
+          offset: parsed.data.offset,
+          total: result.total,
+        },
+      },
+    });
+  });
+
+  app.post("/api/v1/admin/invitations", (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const parsed = adminCreateInvitationSchema.safeParse(req.body ?? {});
+
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid invitation payload" });
+      return;
+    }
+
+    if (parsed.data.roleToGrant === "admin") {
+      res.status(400).json({ error: "Admin invitations are not supported." });
+      return;
+    }
+
+    const maxUses = parsed.data.maxUses ?? INVITATION_MAX_USES;
+    if (maxUses !== INVITATION_MAX_USES) {
+      res.status(400).json({ error: "Only single-use invitations are supported." });
+      return;
+    }
+
+    const expiresAt = parsed.data.expiresAt ?? defaultInvitationExpiryIso();
+    const expiresDate = new Date(expiresAt);
+    if (Number.isNaN(expiresDate.getTime()) || expiresDate.toISOString() <= new Date().toISOString()) {
+      res.status(400).json({ error: "Invitation expiration must be in the future." });
+      return;
+    }
+
+    const rawToken = createInvitationToken();
+    const created = createInvitation({
+      id: randomUUID(),
+      tokenHash: hashToken(rawToken),
+      email: parsed.data.email ?? null,
+      roleToGrant: parsed.data.roleToGrant ?? "user",
+      maxUses,
+      expiresAt: expiresDate.toISOString(),
+      createdByUserId: authReq.authUser.id,
+    });
+
+    auditAdminAction(authReq, "invite_created", "invitation", created.id, {
+      email: created.email,
+      roleToGrant: created.roleToGrant,
+      maxUses: created.maxUses,
+      expiresAt: created.expiresAt,
+    });
+
+    res.status(201).json({
+      data: {
+        invitation: {
+          id: created.id,
+          email: created.email,
+          roleToGrant: created.roleToGrant,
+          expiresAt: created.expiresAt,
+          maxUses: created.maxUses,
+          usedCount: created.usedCount,
+          createdByUserId: created.createdByUserId,
+          createdAt: created.createdAt,
+          usedAt: created.usedAt,
+          usedByUserId: created.usedByUserId,
+          revokedAt: created.revokedAt,
+        },
+        token: rawToken,
+        inviteUrl: `${webAppUrl}/auth/signup?invite=${encodeURIComponent(rawToken)}`,
+      },
+    });
+  });
+
+  app.post("/api/v1/admin/invitations/:id/revoke", (req, res) => {
+    const authReq = req as unknown as AuthenticatedRequest;
+    const params = adminInvitationIdParamSchema.safeParse(req.params);
+
+    if (!params.success) {
+      res.status(400).json({ error: "Invalid invitation id" });
+      return;
+    }
+
+    const result = revokeInvitationById(params.data.id);
+    if (!result.invitation) {
+      res.status(404).json({ error: "Invitation not found" });
+      return;
+    }
+
+    if (result.revoked) {
+      auditAdminAction(authReq, "invite_revoked", "invitation", result.invitation.id, {
+        revokedAt: result.invitation.revokedAt,
+      });
+    }
+
+    res.json({
+      data: {
+        id: result.invitation.id,
+        email: result.invitation.email,
+        roleToGrant: result.invitation.roleToGrant,
+        expiresAt: result.invitation.expiresAt,
+        maxUses: result.invitation.maxUses,
+        usedCount: result.invitation.usedCount,
+        createdByUserId: result.invitation.createdByUserId,
+        createdAt: result.invitation.createdAt,
+        usedAt: result.invitation.usedAt,
+        usedByUserId: result.invitation.usedByUserId,
+        revokedAt: result.invitation.revokedAt,
+      },
+    });
+  });
+
+  app.get("/api/v1/admin/academy/curation", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const parsed = academyAdminCurationQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid query params" });
@@ -5988,7 +6676,7 @@ export function createApp() {
     });
   });
 
-  app.patch("/api/v1/admin/academy/paths/:id", requireAuth, requireAdmin, (req, res) => {
+  app.patch("/api/v1/admin/academy/paths/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const params = academyAdminIdParamSchema.safeParse(req.params);
     const parsed = academyAdminPathPatchSchema.safeParse(req.body);
@@ -6020,7 +6708,7 @@ export function createApp() {
     res.json({ data: updated });
   });
 
-  app.put("/api/v1/admin/academy/paths/:id/items", requireAuth, requireAdmin, (req, res) => {
+  app.put("/api/v1/admin/academy/paths/:id/items", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const params = academyAdminIdParamSchema.safeParse(req.params);
     const parsed = academyAdminPathItemsSchema.safeParse(req.body);
@@ -6054,7 +6742,7 @@ export function createApp() {
     res.json({ data: updated });
   });
 
-  app.patch("/api/v1/admin/academy/persons/:id/editorial", requireAuth, requireAdmin, (req, res) => {
+  app.patch("/api/v1/admin/academy/persons/:id/editorial", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const params = academyAdminIdParamSchema.safeParse(req.params);
     const parsed = academyAdminPersonEditorialSchema.safeParse(req.body);
@@ -6086,7 +6774,7 @@ export function createApp() {
     res.json({ data: updated });
   });
 
-  app.post("/api/v1/admin/academy/relationships/persons", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/academy/relationships/persons", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = academyAdminPersonRelationshipSchema.safeParse(req.body);
 
@@ -6124,7 +6812,7 @@ export function createApp() {
     res.json({ data: relationship });
   });
 
-  app.delete("/api/v1/admin/academy/relationships/persons/:id", requireAuth, requireAdmin, (req, res) => {
+  app.delete("/api/v1/admin/academy/relationships/persons/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const params = academyAdminIdParamSchema.safeParse(req.params);
 
@@ -6150,7 +6838,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.post("/api/v1/admin/academy/relationships/concepts", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/academy/relationships/concepts", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = academyAdminConceptRelationSchema.safeParse(req.body);
 
@@ -6202,7 +6890,7 @@ export function createApp() {
     });
   });
 
-  app.delete("/api/v1/admin/academy/relationships/concepts", requireAuth, requireAdmin, (req, res) => {
+  app.delete("/api/v1/admin/academy/relationships/concepts", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = academyAdminConceptRelationSchema.safeParse(req.body);
 
@@ -6233,11 +6921,11 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.get("/api/v1/admin/content", requireAuth, requireAdmin, (_req, res) => {
+  app.get("/api/v1/admin/content", requireAuthenticatedUser, requireAdmin, (_req, res) => {
     res.json({ data: listAllContentAdmin() });
   });
 
-  app.get("/api/v1/admin/audit", requireAuth, requireAdmin, (req, res) => {
+  app.get("/api/v1/admin/audit", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const parsed = z
       .object({
         limit: z.coerce.number().int().positive().max(200).default(40),
@@ -6252,7 +6940,7 @@ export function createApp() {
     res.json({ data: listAdminAuditLogs(parsed.data.limit) });
   });
 
-  app.get("/api/v1/admin/chat/events", requireAuth, requireAdmin, (req, res) => {
+  app.get("/api/v1/admin/chat/events", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const parsed = adminChatEventsQuerySchema.safeParse(req.query);
 
     if (!parsed.success) {
@@ -6295,7 +6983,7 @@ export function createApp() {
     });
   });
 
-  app.get("/api/v1/admin/preview/analytics", requireAuth, requireAdmin, (req, res) => {
+  app.get("/api/v1/admin/preview/analytics", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const parsed = adminPreviewAnalyticsQuerySchema.safeParse(req.query);
 
     if (!parsed.success) {
@@ -6339,7 +7027,7 @@ export function createApp() {
     });
   });
 
-  app.get("/api/v1/admin/system/jobs/runs", requireAuth, requireAdmin, (req, res) => {
+  app.get("/api/v1/admin/system/jobs/runs", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const parsed = adminSystemJobRunsQuerySchema.safeParse(req.query);
 
     if (!parsed.success) {
@@ -6357,7 +7045,7 @@ export function createApp() {
     });
   });
 
-  app.get("/api/v1/admin/system/jobs/summary", requireAuth, requireAdmin, (req, res) => {
+  app.get("/api/v1/admin/system/jobs/summary", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const parsed = adminSystemJobSummaryQuerySchema.safeParse(req.query);
 
     if (!parsed.success) {
@@ -6442,7 +7130,7 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/admin/system/jobs/unlock", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/system/jobs/unlock", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = adminSystemJobUnlockSchema.safeParse(req.body ?? {});
 
@@ -6485,7 +7173,7 @@ export function createApp() {
     });
   });
 
-  app.post("/api/v1/admin/content/lessons", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/content/lessons", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = lessonSchema.safeParse(req.body);
 
@@ -6499,7 +7187,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.put("/api/v1/admin/content/lessons/:id", requireAuth, requireAdmin, (req, res) => {
+  app.put("/api/v1/admin/content/lessons/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6518,7 +7206,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.patch("/api/v1/admin/content/lessons/:id/status", requireAuth, requireAdmin, (req, res) => {
+  app.patch("/api/v1/admin/content/lessons/:id/status", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6535,7 +7223,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.delete("/api/v1/admin/content/lessons/:id", requireAuth, requireAdmin, (req, res) => {
+  app.delete("/api/v1/admin/content/lessons/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6547,7 +7235,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.post("/api/v1/admin/content/practices", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/content/practices", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = practiceSchema.safeParse(req.body);
 
@@ -6561,7 +7249,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.put("/api/v1/admin/content/practices/:id", requireAuth, requireAdmin, (req, res) => {
+  app.put("/api/v1/admin/content/practices/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6580,7 +7268,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.patch("/api/v1/admin/content/practices/:id/status", requireAuth, requireAdmin, (req, res) => {
+  app.patch("/api/v1/admin/content/practices/:id/status", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6597,7 +7285,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.delete("/api/v1/admin/content/practices/:id", requireAuth, requireAdmin, (req, res) => {
+  app.delete("/api/v1/admin/content/practices/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6609,7 +7297,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.post("/api/v1/admin/content/community", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/content/community", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = communitySchema.safeParse(req.body);
 
@@ -6623,7 +7311,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.put("/api/v1/admin/content/community/:id", requireAuth, requireAdmin, (req, res) => {
+  app.put("/api/v1/admin/content/community/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6642,7 +7330,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.patch("/api/v1/admin/content/community/:id/status", requireAuth, requireAdmin, (req, res) => {
+  app.patch("/api/v1/admin/content/community/:id/status", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6659,7 +7347,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.delete("/api/v1/admin/content/community/:id", requireAuth, requireAdmin, (req, res) => {
+  app.delete("/api/v1/admin/content/community/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6671,7 +7359,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.post("/api/v1/admin/content/challenges", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/content/challenges", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = challengeSchema.safeParse(req.body);
 
@@ -6685,7 +7373,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.put("/api/v1/admin/content/challenges/:id", requireAuth, requireAdmin, (req, res) => {
+  app.put("/api/v1/admin/content/challenges/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6704,7 +7392,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.patch("/api/v1/admin/content/challenges/:id/status", requireAuth, requireAdmin, (req, res) => {
+  app.patch("/api/v1/admin/content/challenges/:id/status", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6721,7 +7409,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.delete("/api/v1/admin/content/challenges/:id", requireAuth, requireAdmin, (req, res) => {
+  app.delete("/api/v1/admin/content/challenges/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6733,7 +7421,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.post("/api/v1/admin/content/resources", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/content/resources", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = resourceSchema.safeParse(req.body);
 
@@ -6747,7 +7435,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.put("/api/v1/admin/content/resources/:id", requireAuth, requireAdmin, (req, res) => {
+  app.put("/api/v1/admin/content/resources/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6766,7 +7454,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.patch("/api/v1/admin/content/resources/:id/status", requireAuth, requireAdmin, (req, res) => {
+  app.patch("/api/v1/admin/content/resources/:id/status", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6783,7 +7471,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.delete("/api/v1/admin/content/resources/:id", requireAuth, requireAdmin, (req, res) => {
+  app.delete("/api/v1/admin/content/resources/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6795,7 +7483,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.post("/api/v1/admin/content/experts", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/content/experts", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = expertSchema.safeParse(req.body);
 
@@ -6809,7 +7497,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.put("/api/v1/admin/content/experts/:id", requireAuth, requireAdmin, (req, res) => {
+  app.put("/api/v1/admin/content/experts/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6828,7 +7516,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.patch("/api/v1/admin/content/experts/:id/status", requireAuth, requireAdmin, (req, res) => {
+  app.patch("/api/v1/admin/content/experts/:id/status", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6845,7 +7533,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.delete("/api/v1/admin/content/experts/:id", requireAuth, requireAdmin, (req, res) => {
+  app.delete("/api/v1/admin/content/experts/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6857,7 +7545,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.post("/api/v1/admin/content/events", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/content/events", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = eventSchema.safeParse(req.body);
 
@@ -6871,7 +7559,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.put("/api/v1/admin/content/events/:id", requireAuth, requireAdmin, (req, res) => {
+  app.put("/api/v1/admin/content/events/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6890,7 +7578,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.patch("/api/v1/admin/content/events/:id/status", requireAuth, requireAdmin, (req, res) => {
+  app.patch("/api/v1/admin/content/events/:id/status", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6907,7 +7595,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.delete("/api/v1/admin/content/events/:id", requireAuth, requireAdmin, (req, res) => {
+  app.delete("/api/v1/admin/content/events/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6919,7 +7607,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.post("/api/v1/admin/content/videos", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/content/videos", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = videoSchema.safeParse(req.body);
 
@@ -6933,7 +7621,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.put("/api/v1/admin/content/videos/:id", requireAuth, requireAdmin, (req, res) => {
+  app.put("/api/v1/admin/content/videos/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6952,7 +7640,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.patch("/api/v1/admin/content/videos/:id/status", requireAuth, requireAdmin, (req, res) => {
+  app.patch("/api/v1/admin/content/videos/:id/status", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6969,7 +7657,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.delete("/api/v1/admin/content/videos/:id", requireAuth, requireAdmin, (req, res) => {
+  app.delete("/api/v1/admin/content/videos/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -6981,7 +7669,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.post("/api/v1/admin/content/pillars", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/content/pillars", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = pillarSchema.safeParse(req.body);
 
@@ -6995,7 +7683,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.put("/api/v1/admin/content/pillars/:id", requireAuth, requireAdmin, (req, res) => {
+  app.put("/api/v1/admin/content/pillars/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -7014,7 +7702,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.patch("/api/v1/admin/content/pillars/:id/status", requireAuth, requireAdmin, (req, res) => {
+  app.patch("/api/v1/admin/content/pillars/:id/status", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -7031,7 +7719,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.delete("/api/v1/admin/content/pillars/:id", requireAuth, requireAdmin, (req, res) => {
+  app.delete("/api/v1/admin/content/pillars/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -7043,7 +7731,7 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.post("/api/v1/admin/content/highlights", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/v1/admin/content/highlights", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const parsed = highlightSchema.safeParse(req.body);
 
@@ -7057,7 +7745,7 @@ export function createApp() {
     res.status(201).json({ data: { ok: true } });
   });
 
-  app.put("/api/v1/admin/content/highlights/:id", requireAuth, requireAdmin, (req, res) => {
+  app.put("/api/v1/admin/content/highlights/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -7076,7 +7764,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.patch("/api/v1/admin/content/highlights/:id/status", requireAuth, requireAdmin, (req, res) => {
+  app.patch("/api/v1/admin/content/highlights/:id/status", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {
@@ -7093,7 +7781,7 @@ export function createApp() {
     res.json({ data: { ok: true } });
   });
 
-  app.delete("/api/v1/admin/content/highlights/:id", requireAuth, requireAdmin, (req, res) => {
+  app.delete("/api/v1/admin/content/highlights/:id", requireAuthenticatedUser, requireAdmin, (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const id = parseIdOrFail(req, res);
     if (!id) {

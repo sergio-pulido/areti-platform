@@ -39,7 +39,7 @@ function summarizePathItem(item: {
 export default async function AcademyCmsPage() {
   const session = await requireSession();
 
-  if (session.user.role !== "ADMIN") {
+  if (session.user.role !== "admin") {
     return (
       <div className="space-y-4">
         <PageHeader

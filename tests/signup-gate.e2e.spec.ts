@@ -32,7 +32,7 @@ test.describe("signup gate in private beta mode", () => {
       page.getByText("Areti is currently available by invitation only.").first(),
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "Sign in" }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Create free account" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
     await expect(page.getByRole("textbox", { name: "Email", exact: true })).toHaveCount(0);
 
     const blocked = await page.request.post("http://localhost:43101/api/v1/auth/signup", {

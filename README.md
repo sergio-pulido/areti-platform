@@ -202,5 +202,15 @@ Companion prompt behavior:
 
 Private beta signup gate:
 - Set `SIGNUP_ENABLED=false` to run invite-only mode.
-- This hides signup UI entry points and blocks `POST /api/v1/auth/signup` with `403` (`code: SIGNUP_DISABLED`).
+- This hides public signup UI entry points and blocks public `POST /api/v1/auth/signup` starts with `403` (`code: SIGNUP_DISABLED`).
+- Invitation-based signup remains available when `inviteToken` is valid.
+- Signup now runs in two server-enforced phases: `email claim + verification` then `account completion`; no active user is created before completion.
 - UI hiding is convenience only; API enforcement is the security boundary.
+- For local Next dev, set it in `apps/web/.env.local` (or repo `.env`) and restart web/api processes after env changes.
+
+Admin bootstrap:
+- Promote an existing user explicitly:
+```bash
+npm run admin:promote -- --email=you@example.com
+```
+- The command is idempotent and fails when the user does not exist.

@@ -17,7 +17,7 @@ export type CurrentUser = {
   id: string;
   name: string;
   email: string;
-  role: "MEMBER" | "ADMIN";
+  role: "user" | "admin";
   emailVerifiedAt: string | null;
   onboardingCompletedAt: string | null;
 };
