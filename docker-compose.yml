@@ -9,9 +9,12 @@ services:
       - mailhog
     environment:
       API_PORT: 4000
-      CORS_ORIGINS: http://localhost:3000,http://web:3000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://web:3000}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
       ATARAXIA_DB_PATH: /app/data/ataraxia.docker.db
+      PASSKEY_RP_ID: ${PASSKEY_RP_ID:-localhost}
+      PASSKEY_RP_NAME: ${PASSKEY_RP_NAME:-Areti}
+      PASSKEY_ORIGINS: ${PASSKEY_ORIGINS:-http://localhost:3000}
       CHAT_PROVIDER_ORDER: ${CHAT_PROVIDER_ORDER:-deepseek,openai}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_CHAT_MODEL: ${DEEPSEEK_CHAT_MODEL:-deepseek-chat}
@@ -19,7 +22,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4.1-mini}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-disabled}
+      EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-smtp}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
       SMTP_HOST: ${SMTP_HOST:-mailhog}
@@ -42,7 +45,7 @@ services:
       - api
     environment:
       API_BASE_URL: http://api:4000
-      NEXT_PUBLIC_API_BASE_URL: http://api:4000
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000}
       SIGNUP_ENABLED: ${SIGNUP_ENABLED:-false}
     ports:
       - "3000:3000"
