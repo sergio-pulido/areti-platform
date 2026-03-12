@@ -60,6 +60,8 @@ import {
   mfaChallenges,
   passkeyCredentials,
   previewEvents,
+  rateLimitBlockEvents,
+  rateLimitPolicyOverrides,
   practiceRoutines,
   refreshSessions,
   sessions,
@@ -74,6 +76,7 @@ import {
   userOnboardingProfiles,
   userTotpSecrets,
   users,
+  type AvatarType,
   type AcademyPathDifficulty,
   type AcademyPathEntityType,
   type AcademyPathTone,
@@ -86,6 +89,7 @@ import {
   type ReflectionProcessingStep,
   type ReflectionSourceType,
   type ReflectionStatus,
+  type RateLimitOverrideScopeType,
   type SignupFlowType,
   type UserRole,
 } from "./schema.js";
@@ -202,6 +206,9 @@ export type EmailVerificationChallengeRecord = {
 export type OnboardingProfileRecord = {
   id: string;
   userId: string;
+  primaryGoal: "reflect_more_clearly" | "reduce_stress" | "build_discipline" | "explore_philosophy" | "improve_emotional_awareness";
+  preferredTopics: Array<"stoicism" | "epicureanism" | "mindfulness" | "psychology" | "habits" | "journaling">;
+  experienceLevel: "new_to_philosophy" | "somewhat_familiar" | "advanced";
   primaryObjective: string;
   biggestDifficulty: string;
   mainNeed: string;
@@ -404,6 +411,46 @@ export type PreviewEventRecord = {
   createdAt: string;
 };
 
+export type RateLimitBlockEventRecord = {
+  id: string;
+  policyKey: string;
+  route: string;
+  method: string;
+  ipHash: string;
+  ipMasked: string | null;
+  userId: string | null;
+  country: string | null;
+  plan: string | null;
+  trustLevel: string | null;
+  blocked: boolean;
+  retryAfterSeconds: number;
+  requestCount: number;
+  limitValue: number;
+  windowSeconds: number;
+  scopeType: string;
+  userAgent: string | null;
+  requestId: string | null;
+  createdAt: string;
+};
+
+export type RateLimitPolicyOverrideRecord = {
+  id: string;
+  policyKey: string;
+  scopeType: RateLimitOverrideScopeType;
+  scopeValue: string | null;
+  windowSeconds: number | null;
+  maxRequests: number | null;
+  anonymousMaxRequests: number | null;
+  authenticatedMaxRequests: number | null;
+  burstRequests: number | null;
+  costWeight: number | null;
+  enabled: boolean | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type SystemJobRunRecord = {
   id: string;
   jobName: string;
@@ -454,6 +501,9 @@ export type UserProfileRecord = {
   id: string;
   userId: string;
   username: string | null;
+  avatarType: AvatarType;
+  avatarPreset: string | null;
+  avatarImageKey: string | null;
   summary: string;
   phone: string;
   city: string;
@@ -896,6 +946,58 @@ function parseSocialLinks(socialLinksJson: string): Array<{ label: string; url: 
   }
 }
 
+const validAvatarTypes = new Set<AvatarType>(["initials", "preset", "upload"]);
+const validOnboardingTopics = new Set([
+  "stoicism",
+  "epicureanism",
+  "mindfulness",
+  "psychology",
+  "habits",
+  "journaling",
+]);
+
+function normalizeAvatarType(value: string | null | undefined): AvatarType {
+  if (value && validAvatarTypes.has(value as AvatarType)) {
+    return value as AvatarType;
+  }
+
+  return "initials";
+}
+
+function parsePreferredTopics(
+  preferredTopicsJson: string,
+): Array<"stoicism" | "epicureanism" | "mindfulness" | "psychology" | "habits" | "journaling"> {
+  try {
+    const parsed = JSON.parse(preferredTopicsJson) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    const normalized = parsed
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim().toLowerCase())
+      .filter((item): item is "stoicism" | "epicureanism" | "mindfulness" | "psychology" | "habits" | "journaling" =>
+        validOnboardingTopics.has(item),
+      );
+
+    return [...new Set(normalized)];
+  } catch {
+    return [];
+  }
+}
+
+function stringifyPreferredTopics(
+  preferredTopics: Array<"stoicism" | "epicureanism" | "mindfulness" | "psychology" | "habits" | "journaling">,
+): string {
+  const normalized = preferredTopics
+    .map((item) => item.trim().toLowerCase())
+    .filter((item): item is "stoicism" | "epicureanism" | "mindfulness" | "psychology" | "habits" | "journaling" =>
+      validOnboardingTopics.has(item),
+    );
+
+  return JSON.stringify([...new Set(normalized)].slice(0, 3));
+}
+
 function normalizeSocialLinks(
   socialLinks: Array<{ label: string; url: string }>,
 ): Array<{ label: string; url: string }> {
@@ -1185,6 +1287,9 @@ const defaultNotificationPreferences: Omit<
 
 const defaultUserProfile: Omit<UserProfileRecord, "id" | "userId" | "createdAt" | "updatedAt"> = {
   username: null,
+  avatarType: "initials",
+  avatarPreset: null,
+  avatarImageKey: null,
   summary: "",
   phone: "",
   city: "",
@@ -1357,6 +1462,9 @@ const db = drizzle(sqlite, {
     reflectionTags,
     reflectionProcessingJobs,
     reflectionEvents,
+    previewEvents,
+    rateLimitBlockEvents,
+    rateLimitPolicyOverrides,
     userContentCompletions,
     contentPillars,
     contentHighlights,
@@ -2527,6 +2635,9 @@ export function getUserProfileByUserId(userId: string): UserProfileRecord {
         id: cryptoRandomId(),
         userId,
         username: defaultUserProfile.username,
+        avatarType: defaultUserProfile.avatarType,
+        avatarPreset: defaultUserProfile.avatarPreset,
+        avatarImageKey: defaultUserProfile.avatarImageKey,
         summary: defaultUserProfile.summary,
         phone: defaultUserProfile.phone,
         city: defaultUserProfile.city,
@@ -2553,6 +2664,9 @@ export function getUserProfileByUserId(userId: string): UserProfileRecord {
     id: profile.id,
     userId: profile.userId,
     username: profile.username,
+    avatarType: normalizeAvatarType(profile.avatarType),
+    avatarPreset: profile.avatarPreset,
+    avatarImageKey: profile.avatarImageKey,
     summary: profile.summary,
     phone: profile.phone,
     city: profile.city,
@@ -2594,6 +2708,9 @@ export function upsertUserProfile(
   userId: string,
   input: {
     username?: string | null;
+    avatarType?: AvatarType;
+    avatarPreset?: string | null;
+    avatarImageKey?: string | null;
     summary?: string;
     phone?: string;
     city?: string;
@@ -2608,6 +2725,10 @@ export function upsertUserProfile(
   db.update(userProfiles)
     .set({
       username: normalizedUsername === undefined ? current.username : normalizedUsername,
+      avatarType: input.avatarType ?? current.avatarType,
+      avatarPreset: input.avatarPreset === undefined ? current.avatarPreset : toNullableString(input.avatarPreset),
+      avatarImageKey:
+        input.avatarImageKey === undefined ? current.avatarImageKey : toNullableString(input.avatarImageKey),
       summary: input.summary ?? current.summary,
       phone: input.phone ?? current.phone,
       city: input.city ?? current.city,
@@ -3063,6 +3184,45 @@ export function consumeEmailVerificationChallenge(challengeId: string): boolean 
   return updated.changes > 0;
 }
 
+function toOnboardingProfileRecord(profile: typeof userOnboardingProfiles.$inferSelect): OnboardingProfileRecord {
+  const normalizedGoal =
+    profile.primaryGoal === "reflect_more_clearly" ||
+    profile.primaryGoal === "reduce_stress" ||
+    profile.primaryGoal === "build_discipline" ||
+    profile.primaryGoal === "explore_philosophy" ||
+    profile.primaryGoal === "improve_emotional_awareness"
+      ? profile.primaryGoal
+      : "explore_philosophy";
+
+  const normalizedLevel =
+    profile.experienceLevel === "new_to_philosophy" ||
+    profile.experienceLevel === "somewhat_familiar" ||
+    profile.experienceLevel === "advanced"
+      ? profile.experienceLevel
+      : "new_to_philosophy";
+
+  const preferredTopics = parsePreferredTopics(profile.preferredTopicsJson);
+
+  return {
+    id: profile.id,
+    userId: profile.userId,
+    primaryGoal: normalizedGoal,
+    preferredTopics: preferredTopics.length > 0 ? preferredTopics : ["stoicism"],
+    experienceLevel: normalizedLevel,
+    primaryObjective: profile.primaryObjective,
+    biggestDifficulty: profile.biggestDifficulty,
+    mainNeed: profile.mainNeed,
+    dailyTimeCommitment: profile.dailyTimeCommitment,
+    coachingStyle: profile.coachingStyle,
+    contemplativeExperience: profile.contemplativeExperience,
+    preferredPracticeFormat: profile.preferredPracticeFormat,
+    successDefinition30d: profile.successDefinition30d,
+    notes: profile.notes,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt,
+  };
+}
+
 export function getUserOnboardingProfile(userId: string): OnboardingProfileRecord | null {
   const existing = db
     .select()
@@ -3071,12 +3231,15 @@ export function getUserOnboardingProfile(userId: string): OnboardingProfileRecor
     .limit(1)
     .get();
 
-  return existing ?? null;
+  return existing ? toOnboardingProfileRecord(existing) : null;
 }
 
 export function upsertUserOnboardingProfile(input: {
   id: string;
   userId: string;
+  primaryGoal: "reflect_more_clearly" | "reduce_stress" | "build_discipline" | "explore_philosophy" | "improve_emotional_awareness";
+  preferredTopics: Array<"stoicism" | "epicureanism" | "mindfulness" | "psychology" | "habits" | "journaling">;
+  experienceLevel: "new_to_philosophy" | "somewhat_familiar" | "advanced";
   primaryObjective: string;
   biggestDifficulty?: string | null;
   mainNeed?: string | null;
@@ -3088,11 +3251,17 @@ export function upsertUserOnboardingProfile(input: {
   notes?: string | null;
 }): OnboardingProfileRecord {
   const defaultDeferredValue = "Deferred to progressive profiling";
+  const defaultDailyTimeCommitment = "10 min";
+  const defaultPreferredPracticeFormat = "A short practice";
   const biggestDifficulty = input.biggestDifficulty ?? defaultDeferredValue;
   const mainNeed = input.mainNeed ?? defaultDeferredValue;
   const coachingStyle = input.coachingStyle ?? defaultDeferredValue;
   const contemplativeExperience = input.contemplativeExperience ?? defaultDeferredValue;
   const successDefinition30d = input.successDefinition30d ?? defaultDeferredValue;
+  const primaryObjective = input.primaryObjective || "Find meaning";
+  const dailyTimeCommitment = input.dailyTimeCommitment || defaultDailyTimeCommitment;
+  const preferredPracticeFormat = input.preferredPracticeFormat || defaultPreferredPracticeFormat;
+  const preferredTopicsJson = stringifyPreferredTopics(input.preferredTopics);
 
   const existing = db
     .select({ id: userOnboardingProfiles.id })
@@ -3106,13 +3275,16 @@ export function upsertUserOnboardingProfile(input: {
   if (existing) {
     db.update(userOnboardingProfiles)
       .set({
-        primaryObjective: input.primaryObjective,
+        primaryGoal: input.primaryGoal,
+        preferredTopicsJson,
+        experienceLevel: input.experienceLevel,
+        primaryObjective,
         biggestDifficulty,
         mainNeed,
-        dailyTimeCommitment: input.dailyTimeCommitment,
+        dailyTimeCommitment,
         coachingStyle,
         contemplativeExperience,
-        preferredPracticeFormat: input.preferredPracticeFormat,
+        preferredPracticeFormat,
         successDefinition30d,
         notes: input.notes ?? null,
         updatedAt: timestamp,
@@ -3124,13 +3296,16 @@ export function upsertUserOnboardingProfile(input: {
       .values({
         id: input.id,
         userId: input.userId,
-        primaryObjective: input.primaryObjective,
+        primaryGoal: input.primaryGoal,
+        preferredTopicsJson,
+        experienceLevel: input.experienceLevel,
+        primaryObjective,
         biggestDifficulty,
         mainNeed,
-        dailyTimeCommitment: input.dailyTimeCommitment,
+        dailyTimeCommitment,
         coachingStyle,
         contemplativeExperience,
-        preferredPracticeFormat: input.preferredPracticeFormat,
+        preferredPracticeFormat,
         successDefinition30d,
         notes: input.notes ?? null,
         createdAt: timestamp,
@@ -3150,7 +3325,7 @@ export function upsertUserOnboardingProfile(input: {
     throw new Error("Failed to upsert user onboarding profile.");
   }
 
-  return profile;
+  return toOnboardingProfileRecord(profile);
 }
 
 export function createSession(input: {
@@ -7481,6 +7656,158 @@ export function listPreviewEventsByDays(days: number): PreviewEventRecord[] {
       ...row,
       eventType: row.eventType as PreviewEventType,
     }));
+}
+
+export function createRateLimitBlockEvent(input: {
+  id: string;
+  policyKey: string;
+  route: string;
+  method: string;
+  ipHash: string;
+  ipMasked?: string | null;
+  userId?: string | null;
+  country?: string | null;
+  plan?: string | null;
+  trustLevel?: string | null;
+  blocked?: boolean;
+  retryAfterSeconds: number;
+  requestCount: number;
+  limitValue: number;
+  windowSeconds: number;
+  scopeType: string;
+  userAgent?: string | null;
+  requestId?: string | null;
+}): void {
+  db.insert(rateLimitBlockEvents)
+    .values({
+      id: input.id,
+      policyKey: input.policyKey,
+      route: input.route,
+      method: input.method,
+      ipHash: input.ipHash,
+      ipMasked: input.ipMasked ?? null,
+      userId: input.userId ?? null,
+      country: input.country ?? null,
+      plan: input.plan ?? null,
+      trustLevel: input.trustLevel ?? null,
+      blocked: input.blocked ?? true,
+      retryAfterSeconds: input.retryAfterSeconds,
+      requestCount: input.requestCount,
+      limitValue: input.limitValue,
+      windowSeconds: input.windowSeconds,
+      scopeType: input.scopeType,
+      userAgent: input.userAgent ?? null,
+      requestId: input.requestId ?? null,
+      createdAt: nowIso(),
+    })
+    .run();
+}
+
+export function listRateLimitBlockEvents(input: {
+  limit: number;
+  policyKey?: string;
+  route?: string;
+  userId?: string;
+  ipHash?: string;
+  method?: string;
+  fromCreatedAt?: string;
+  toCreatedAt?: string;
+  blocked?: boolean;
+}): RateLimitBlockEventRecord[] {
+  const safeLimit = Math.max(1, Math.min(input.limit, 500));
+  const filters: SQL[] = [];
+
+  if (input.policyKey) {
+    filters.push(eq(rateLimitBlockEvents.policyKey, input.policyKey));
+  }
+
+  if (input.route) {
+    filters.push(eq(rateLimitBlockEvents.route, input.route));
+  }
+
+  if (input.userId) {
+    filters.push(eq(rateLimitBlockEvents.userId, input.userId));
+  }
+
+  if (input.ipHash) {
+    filters.push(eq(rateLimitBlockEvents.ipHash, input.ipHash));
+  }
+
+  if (input.method) {
+    filters.push(eq(rateLimitBlockEvents.method, input.method.toUpperCase()));
+  }
+
+  if (typeof input.blocked === "boolean") {
+    filters.push(eq(rateLimitBlockEvents.blocked, input.blocked));
+  }
+
+  if (input.fromCreatedAt) {
+    const fromClause = or(
+      eq(rateLimitBlockEvents.createdAt, input.fromCreatedAt),
+      gt(rateLimitBlockEvents.createdAt, input.fromCreatedAt),
+    );
+    if (fromClause) {
+      filters.push(fromClause);
+    }
+  }
+
+  if (input.toCreatedAt) {
+    const toClause = or(
+      eq(rateLimitBlockEvents.createdAt, input.toCreatedAt),
+      lt(rateLimitBlockEvents.createdAt, input.toCreatedAt),
+    );
+    if (toClause) {
+      filters.push(toClause);
+    }
+  }
+
+  const whereClause = filters.length > 0 ? and(...filters) : undefined;
+  const query = db.select().from(rateLimitBlockEvents);
+  const rows = whereClause
+    ? query.where(whereClause).orderBy(desc(rateLimitBlockEvents.createdAt)).limit(safeLimit).all()
+    : query.orderBy(desc(rateLimitBlockEvents.createdAt)).limit(safeLimit).all();
+
+  return rows;
+}
+
+export function listActiveRateLimitPolicyOverrides(input: {
+  policyKey: string;
+  asOf?: string;
+}): RateLimitPolicyOverrideRecord[] {
+  const now = input.asOf ?? nowIso();
+  const activeStartsClause = or(
+    isNull(rateLimitPolicyOverrides.startsAt),
+    eq(rateLimitPolicyOverrides.startsAt, now),
+    lt(rateLimitPolicyOverrides.startsAt, now),
+  );
+  const activeEndsClause = or(
+    isNull(rateLimitPolicyOverrides.endsAt),
+    eq(rateLimitPolicyOverrides.endsAt, now),
+    gt(rateLimitPolicyOverrides.endsAt, now),
+  );
+  const activeEnabledClause = or(
+    isNull(rateLimitPolicyOverrides.enabled),
+    eq(rateLimitPolicyOverrides.enabled, true),
+  );
+
+  const rows = db
+    .select()
+    .from(rateLimitPolicyOverrides)
+    .where(
+      and(
+        eq(rateLimitPolicyOverrides.policyKey, input.policyKey),
+        activeStartsClause,
+        activeEndsClause,
+        activeEnabledClause,
+      ),
+    )
+    .orderBy(desc(rateLimitPolicyOverrides.updatedAt))
+    .all();
+
+  return rows.map((row) => ({
+    ...row,
+    scopeType: row.scopeType as RateLimitOverrideScopeType,
+  }));
 }
 
 export function createSystemJobRun(input: {

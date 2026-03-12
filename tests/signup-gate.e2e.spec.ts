@@ -39,7 +39,8 @@ test.describe("signup gate in private beta mode", () => {
       data: {
         email: `private-beta-${Date.now()}@example.com`,
         password: "StrongPass123",
-        acceptLegal: true,
+        acceptTerms: true,
+        acceptPrivacy: true,
       },
     });
 

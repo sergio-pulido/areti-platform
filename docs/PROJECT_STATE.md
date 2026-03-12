@@ -2,6 +2,9 @@
 
 ## Current Status
 - Monorepo architecture is active with frontend (`apps/web`), backend (`apps/api`), and shared DB/ORM (`packages/db`).
+- API now has a dedicated production-ready rate-limit foundation (`apps/api/src/modules/rate-limit`) with centralized policies, pluggable memory/Redis counters, safe `request.ip` extraction via configurable trust-proxy, structured 429 responses, structured block logs, and DB-persisted block events.
+- Targeted route-level rate limiting is now enforced for high-risk/high-cost auth, security, preview, chat, reflections, admin invite, admin content mutations, and admin system unlock endpoints; legacy ad-hoc in-memory per-route limit checks were removed.
+- Admin operations visibility now includes `GET /api/v1/admin/rate-limits` plus a CMS "Rate Limit Blocks" panel, backed by persisted `rate_limit_block_events` and optional DB override input (`rate_limit_policy_overrides`) for future runtime tuning.
 - Runtime i18n is now active in web with a global locale provider, English/Spanish switching in the user dropdown, and immediate in-page language updates without full page reload.
 - Web app now ships as an installable Progressive Web App (manifest, install metadata, icons, service worker, and offline fallback page).
 - PWA release hygiene now includes a dedicated checklist (`docs/PWA_RELEASE_CHECKLIST.md`) and an e2e smoke test for manifest/service-worker/offline route availability.
@@ -69,10 +72,12 @@
 - Added scheduled GitHub workflow monitor (`.github/workflows/notification-digest-monitor.yml`) for periodic digest + healthcheck execution.
 - Signup now uses a pending-intent lifecycle: self-signup captures legal acceptance at start, invite flow captures legal acceptance at completion, and auditable legal consent is stored only when account creation succeeds.
 - Auth pages are now conversion-optimized with simplified auth-only topbar nav, clearer value-focused hero copy, stronger field/CTA hierarchy, and premium high-contrast form states.
-- Signup now removes `name` and `confirmPassword` from first step, uses a single required legal consent checkbox, and keeps passkey as a first-class secondary path.
+- Progressive profiling is now enforced across four layers: `auth/access` -> `complete account` -> `product onboarding` -> `optional profile enrichment`.
+- Signup start now captures only `email + Terms + Privacy` (public flow), invite start captures only invite/email context, and complete-account keeps strict activation fields (`name`, `username`, `password`, optional locale) with legal required only for invite completion.
 - Auth now supports verification-link + 6-digit-code flows via Resend (`/api/v1/auth/verify-email`, `/api/v1/auth/resend-verification`) with first-verified-user admin promotion.
 - Required onboarding is now enforced before app access (`/onboarding`) and persisted for personalization and prompt shaping.
-- Onboarding is now activation-first: a 3-step card-based wizard (intention, realistic daily time, best way to begin) with progressive-step UI and immediate personalized routing into the first meaningful experience.
+- Onboarding v2 is now activation-first and taxonomy-based: `primaryGoal`, `preferredTopics (1-3)`, and `experienceLevel`, with immediate persistence and first-step routing.
+- Account profile enrichment is now explicitly optional and non-blocking, with avatar fallback precedence (`upload` -> `preset` -> `initials`) and short bio management in `/account/profile`.
 - Cookie consent is now enforced for app routes via route middleware/proxy redirect to `/legal/cookies?next=...`.
 - A unified thin topbar component now spans secured, auth, legal, and landing surfaces with mobile action consolidation.
 - Guest topbar actions are now extracted into a dedicated shared component and topbar styling/brand shell is centralized in a single implementation.
@@ -97,7 +102,7 @@
 - Admin-only creation pages are now available directly in member-facing library/practices sections.
 
 ## Delivered Scope
-- DB/ORM:
+  - DB/ORM:
   - Added tables for challenges/resources/experts/events/videos.
   - Added tables for notifications, chat threads/messages, TOTP secrets, and device tracking.
   - Added session-refresh linkage to device identity and passkey lifecycle fields.
@@ -108,12 +113,15 @@
   - Added `email_verified_at` and `onboarding_completed_at` user lifecycle columns.
   - Added `deleted_at` and `anonymized_at` user lifecycle columns.
   - Added `user_legal_consents`, `email_verification_challenges`, and `user_onboarding_profiles` tables.
+  - Added progressive-profile v2 columns:
+    - `user_onboarding_profiles.primary_goal`, `preferred_topics_json`, `experience_level`
+    - `user_profiles.avatar_type`, `avatar_preset`, `avatar_image_key`
   - Added `signup_intents` table for two-phase onboarding (`self_signup`/`invite` flow type, verification/completion token state, legal capture state, invite linkage, expiration/completion timestamps).
   - Added `user_profiles`, `user_preferences`, `user_notification_preferences`, and `user_deletion_audit` for account-domain persistence.
   - Added full Academy persistence tables (`academy_domains`, `academy_traditions`, `academy_persons`, `academy_works`, `academy_concepts`, `academy_person_relationships`) plus explicit concept-link tables (`academy_concept_traditions`, `academy_concept_persons`, `academy_concept_works`) and guided-path tables (`academy_paths`, `academy_path_items`) with progression/recommendation metadata.
   - Added startup Academy seed ingestion from canonical knowledge JSON plus editorial concept-link/path seeds so Academy data is queryable as first-party DB state (not UI-only seed files).
   - Switched library/practice seed loading to explicit command-run seeding (`db:seed:library-practices`).
-- API:
+  - API:
   - Added content endpoints:
     - `/api/v1/content/challenges`
     - `/api/v1/content/resources`
@@ -126,14 +134,15 @@
   - Added auth verification/compliance endpoints:
     - `POST /api/v1/auth/verify-email`
     - `POST /api/v1/auth/resend-verification`
-    - `GET /api/v1/auth/signup/invite-context`
-    - `GET /api/v1/auth/signup/completion-context`
-    - `POST /api/v1/auth/signup/complete`
-    - `GET /api/v1/onboarding`
-    - `PUT /api/v1/onboarding`
+      - `GET /api/v1/auth/signup/invite-context`
+      - `GET /api/v1/auth/signup/completion-context`
+      - `POST /api/v1/auth/signup/complete`
+      - `GET /api/v1/auth/me/avatar`
+      - `GET /api/v1/onboarding`
+      - `PUT /api/v1/onboarding`
   - Added runtime signup gate enforcement on `POST /api/v1/auth/signup` via `SIGNUP_ENABLED` with controlled private-beta `403` payloads.
   - Standardized `/api/v1/auth/*` error responses to include explicit `code`/`message` fields while retaining `error` alias compatibility.
-  - Updated onboarding write contract to activation-focused inputs (`primaryObjective`, `dailyTimeCommitment`, `preferredPracticeFormat`) while preserving existing profile storage compatibility.
+  - Updated onboarding read/write contract to v2 progressive personalization inputs (`primaryGoal`, `preferredTopics`, `experienceLevel`) while preserving legacy onboarding columns for compatibility.
   - Added account-domain endpoints:
     - `PATCH /api/v1/auth/me`
     - `POST /api/v1/auth/change-password`
@@ -185,7 +194,7 @@
     - `GET /api/v1/academy/paths` and `GET /api/v1/academy/paths/:slug`
     - `GET /api/v1/academy/search`
   - Added authenticated internal Academy query endpoint (`POST /api/v1/academy/query`) for future agent/recommendation consumers.
-- Web:
+  - Web:
   - Added runtime i18n layer in `apps/web`:
     - global locale cookie + provider (`areti_locale`) at root layout
     - in-dropdown language switch (`English` / `Español`) under user menu
@@ -210,7 +219,7 @@
   - Community and creator pages now consume backend content APIs (no hardcoded arrays).
   - Creator root (`/creator`) now renders actionable overview page (no redirect).
   - Topbar bell now consumes notifications API; quick actions remains separate icon/control.
-  - Added mandatory signup legal consent with auditable Terms/Privacy acceptance recording.
+  - Added split legal acceptance checkboxes (`Terms of Service` + `Privacy Policy`) for public signup start and invite completion.
   - Added content completion tracking flow from lesson/practice detail pages (`Mark ... complete`) into a persisted backend table, with dashboard progress revalidation.
   - Updated library/practices listings to show completion-backed progression cues and "recommended next" guidance.
   - Added path-template filters on library/practices for clearer guided tracks.
@@ -222,7 +231,9 @@
   - Added web runtime signup gating (`SIGNUP_ENABLED`) so signup CTAs are hidden in private beta mode and `/auth/signup` is replaced by invite-only messaging with sign-in CTA.
   - Added dedicated private-beta e2e spec (`tests/signup-gate.e2e.spec.ts`) and CI workflow job coverage for `SIGNUP_ENABLED=false`.
   - Added `/auth/verify-email` flow and enforced onboarding completion routing before secured shell access.
-  - Rebuilt `/onboarding` into a 3-step activation wizard with reusable option-card, step-shell, and progress-indicator components plus route personalization into first session.
+  - Rebuilt `/onboarding` into a v2 3-step activation wizard for `primaryGoal`, `preferredTopics`, and `experienceLevel`, with route personalization into first session.
+  - Refined `/account/profile` as optional enrichment surface for avatar preset/upload/camera capture and short bio (non-blocking).
+  - Refined `/account/preferences` to keep language/settings and add persistent personalization management (`primaryGoal`, `preferredTopics`, `experienceLevel`).
   - Added global cookie consent banner with acceptance persistence and app-route gate redirect behavior.
 - Replaced page-specific headers with a shared AppTopbar (guest + authenticated variants with mobile action handling).
 - Removed unreferenced duplicate header/starter components (`dashboard-topnav`, `chat-starters-panel`) to reduce dead UI surface.

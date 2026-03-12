@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ReflectionEntryRecord } from "@ataraxia/db";
+import type { ReflectionEntryRecord } from "@areti/db";
 import { ReflectionProcessingService } from "./reflection-processing-service.js";
 import type { ReflectionAiService } from "./reflection-ai-service.js";
 import type { ReflectionRepository } from "./reflection-repository.js";

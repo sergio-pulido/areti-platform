@@ -81,7 +81,7 @@ export default async function CompleteSignupPage({ searchParams }: CompleteSignu
   return (
     <AuthShell
       title="Complete your account"
-      subtitle="Set your profile details and secure password to activate access."
+      subtitle="Set your name, username, and password to activate access."
       guestAuthSwitch={{
         href: "/auth/signin",
         label: "Sign in",

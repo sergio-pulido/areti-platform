@@ -9,7 +9,7 @@ import {
   getUserNotificationPreferencesByUserId,
   listActiveUserIds,
   listJournalEntriesByUser,
-} from "@ataraxia/db";
+} from "@areti/db";
 
 function utcDayStart(input: Date): number {
   return Date.UTC(input.getUTCFullYear(), input.getUTCMonth(), input.getUTCDate());

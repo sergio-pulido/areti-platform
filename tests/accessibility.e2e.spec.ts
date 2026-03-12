@@ -13,18 +13,22 @@ async function signup(page: import("@playwright/test").Page): Promise<void> {
   const emailInput = page.getByRole("textbox", { name: "Email", exact: true });
   await emailInput.fill(email);
   await expect(emailInput).toHaveValue(email);
-  await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
+  await page.getByRole("checkbox", { name: /Terms of Service/i }).check();
+  await page.getByRole("checkbox", { name: /Privacy Policy/i }).check();
   await page.getByRole("button", { name: "Continue" }).click();
   try {
     await expect(page).toHaveURL(/\/auth\/verify-email/, { timeout: 5000 });
   } catch {
     await emailInput.fill(email);
     await expect(emailInput).toHaveValue(email);
-    await page.getByRole("checkbox", { name: /I agree to the Terms and Privacy Policy/i }).check();
+    await page.getByRole("checkbox", { name: /Terms of Service/i }).check();
+    await page.getByRole("checkbox", { name: /Privacy Policy/i }).check();
     await page.getByRole("button", { name: "Continue" }).click();
   }
-  await expect(page).toHaveURL(/\/auth\/verify-email/, { timeout: 15000 });
-  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page).toHaveURL(/\/auth\/(verify-email|signup\/complete)/, { timeout: 15000 });
+  if (/\/auth\/verify-email/.test(page.url())) {
+    await expect(page).toHaveURL(/\/auth\/signup\/complete/, { timeout: 15000 });
+  }
   await expect(page).toHaveURL(/\/auth\/signup\/complete/, { timeout: 15000 });
 
   await page.getByLabel("Name", { exact: true }).fill("A11y User");
@@ -33,13 +37,13 @@ async function signup(page: import("@playwright/test").Page): Promise<void> {
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page).toHaveURL(/\/onboarding/, { timeout: 15000 });
 
-  await page.getByText("Calm anxiety", { exact: true }).click();
+  await page.getByText("Reduce stress", { exact: true }).click();
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByText("5 min", { exact: true }).click();
+  await page.getByText("Mindfulness", { exact: true }).click();
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByText("A short practice", { exact: true }).click();
-  await page.getByRole("button", { name: "Create my path" }).click();
-  await expect(page).toHaveURL(/\/(practices|journal|library|chat)(\?|$)/, { timeout: 15000 });
+  await page.getByText("New to philosophy", { exact: true }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page).toHaveURL(/\/(practices|journal|library)(\?|$)/, { timeout: 15000 });
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15000 });
 }

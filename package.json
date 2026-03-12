@@ -1,5 +1,5 @@
 {
-  "name": "ataraxia-monorepo",
+  "name": "areti-monorepo",
   "version": "0.1.0",
   "private": true,
   "workspaces": [
@@ -7,26 +7,26 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev --workspace @ataraxia/api\" \"npm run dev --workspace @ataraxia/web\"",
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev --workspace @areti/api\" \"npm run dev --workspace @areti/web\"",
     "dev:stop": "bash -lc 'for p in 3000 3001 3002 4000; do pids=$(lsof -tiTCP:$p -sTCP:LISTEN || true); if [ -n \"$pids\" ]; then kill -15 $pids; fi; done; sleep 1; for p in 3000 3001 3002 4000; do pids=$(lsof -tiTCP:$p -sTCP:LISTEN || true); if [ -n \"$pids\" ]; then kill -9 $pids; fi; done; docker compose down >/dev/null 2>&1 || true'",
     "dev:ports": "bash -lc 'lsof -nP -iTCP:3000 -iTCP:3001 -iTCP:3002 -iTCP:4000 -sTCP:LISTEN || true'",
     "dev:restart": "npm run dev:stop && npm run dev",
-    "dev:api": "npm run dev --workspace @ataraxia/api",
-    "dev:web": "npm run dev --workspace @ataraxia/web",
-    "job:notification-digest": "npm run job:notification-digest --workspace @ataraxia/api",
-    "job:notification-digest:healthcheck": "npm run job:notification-digest:healthcheck --workspace @ataraxia/api",
-    "build": "npm run build --workspace @ataraxia/web && npm run typecheck --workspace @ataraxia/api && npm run typecheck --workspace @ataraxia/db",
-    "lint": "npm run lint --workspace @ataraxia/web && npm run typecheck --workspace @ataraxia/api && npm run typecheck --workspace @ataraxia/db",
-    "db:generate": "npm run db:generate --workspace @ataraxia/db",
-    "db:migrate": "npm run db:migrate --workspace @ataraxia/db",
-    "db:seed:library-practices": "npm run db:seed:library-practices --workspace @ataraxia/db",
-    "admin:promote": "npm run admin:promote --workspace @ataraxia/api --",
-    "test:integration": "npm run test:integration --workspace @ataraxia/api",
+    "dev:api": "npm run dev --workspace @areti/api",
+    "dev:web": "npm run dev --workspace @areti/web",
+    "job:notification-digest": "npm run job:notification-digest --workspace @areti/api",
+    "job:notification-digest:healthcheck": "npm run job:notification-digest:healthcheck --workspace @areti/api",
+    "build": "npm run build --workspace @areti/web && npm run typecheck --workspace @areti/api && npm run typecheck --workspace @areti/db",
+    "lint": "npm run lint --workspace @areti/web && npm run typecheck --workspace @areti/api && npm run typecheck --workspace @areti/db",
+    "db:generate": "npm run db:generate --workspace @areti/db",
+    "db:migrate": "npm run db:migrate --workspace @areti/db",
+    "db:seed:library-practices": "npm run db:seed:library-practices --workspace @areti/db",
+    "admin:promote": "npm run admin:promote --workspace @areti/api --",
+    "test:integration": "npm run test:integration --workspace @areti/api",
     "test:e2e": "playwright test",
     "test": "npm run test:integration && npm run test:e2e",
     "ci": "npm run lint && npm run test:integration && npm run test:e2e && npm run build",
-    "start:api": "npm run start --workspace @ataraxia/api",
-    "start:web": "npm run start --workspace @ataraxia/web"
+    "start:api": "npm run start --workspace @areti/api",
+    "start:web": "npm run start --workspace @areti/web"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

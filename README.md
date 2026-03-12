@@ -60,6 +60,7 @@ Monorepo for a Stoic + Epicurean philosophy platform with a separated frontend, 
 ### Admin CMS
 - `GET /api/v1/admin/content`
 - `GET /api/v1/admin/audit`
+- `GET /api/v1/admin/rate-limits` (recent blocked rate-limit events)
 - `GET /api/v1/admin/chat/events` (supports `limit`, `threadId`, `userId`, `eventType`, `memoryOnly`)
 - CRUD + publish endpoints for:
   - lessons
@@ -141,8 +142,8 @@ E2E test startup forces `EMAIL_TRANSPORT=disabled`, so signup/resend flows do no
 - PWA behavior is enabled in production builds; run:
 
 ```bash
-npm run build --workspace @ataraxia/web
-npm run start --workspace @ataraxia/web
+npm run build --workspace @areti/web
+npm run start --workspace @areti/web
 ```
 
 - Then open the app in a browser with PWA support (Chrome/Edge/Safari) to install it and validate offline fallback at `/offline`.
@@ -187,6 +188,16 @@ Services:
 - `RESEND_API_KEY` (Resend API key for verification email delivery)
 - `RESEND_FROM_EMAIL` (verified sender identity for Resend email delivery)
 - `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM_EMAIL` (SMTP delivery, e.g. MailHog)
+- `RATE_LIMIT_ENABLED` (master switch for API rate limiting)
+- `RATE_LIMIT_STORE` (`memory` or `redis`; production should use `redis` for multi-instance safety)
+- `REDIS_URL` (required when `RATE_LIMIT_STORE=redis`)
+- `RATE_LIMIT_REDIS_PREFIX` (Redis key prefix for limiter buckets)
+- `RATE_LIMIT_TRUST_PROXY` (Express trust-proxy setting used for IP extraction)
+- `RATE_LIMIT_LOG_BLOCKS` (structured block logging toggle)
+- `RATE_LIMIT_ADMIN_MAX_ROWS` (cap for admin block-events endpoint)
+- `RATE_LIMIT_USE_DB_OVERRIDES` (enables DB policy override layer)
+- `RATE_LIMIT_IP_HASH_SALT` (IP hashing salt for persisted block events)
+- `RATE_LIMIT_POLICY_OVERRIDES_JSON` (optional JSON env overrides per policy)
 
 Chat provider keys are read by `apps/api` from process environment on startup.
 

@@ -18,6 +18,9 @@ export type ApiUserProfile = {
   id: string;
   userId: string;
   username: string | null;
+  avatarType: "initials" | "preset" | "upload";
+  avatarPreset: string | null;
+  avatarImageKey: string | null;
   summary: string;
   phone: string;
   city: string;
@@ -333,6 +336,16 @@ export type ApiChatPreferences = {
 export type ApiOnboardingProfile = {
   id: string;
   userId: string;
+  primaryGoal:
+    | "reflect_more_clearly"
+    | "reduce_stress"
+    | "build_discipline"
+    | "explore_philosophy"
+    | "improve_emotional_awareness";
+  preferredTopics: Array<
+    "stoicism" | "epicureanism" | "mindfulness" | "psychology" | "habits" | "journaling"
+  >;
+  experienceLevel: "new_to_philosophy" | "somewhat_familiar" | "advanced";
   primaryObjective: string;
   dailyTimeCommitment: string;
   preferredPracticeFormat: string;
@@ -734,6 +747,28 @@ export type ApiAdminSystemJobSummary = {
   };
 };
 
+export type ApiAdminRateLimitEvent = {
+  id: string;
+  policyKey: string;
+  route: string;
+  method: string;
+  ipHash: string;
+  ipMasked: string | null;
+  userId: string | null;
+  country: string | null;
+  plan: string | null;
+  trustLevel: string | null;
+  blocked: boolean;
+  retryAfterSeconds: number;
+  requestCount: number;
+  limitValue: number;
+  windowSeconds: number;
+  scopeType: string;
+  userAgent: string | null;
+  requestId: string | null;
+  createdAt: string;
+};
+
 export type ContentStatus = "DRAFT" | "PUBLISHED";
 
 export type AdminContentBundle = {
@@ -1077,6 +1112,20 @@ export async function apiPatchMe(
     name?: string;
     profile?: {
       username?: string | null;
+      avatar?:
+        | {
+            mode: "initials";
+          }
+        | {
+            mode: "preset";
+            preset: string;
+          }
+        | {
+            mode: "upload";
+            fileName: string;
+            mimeType: string;
+            base64Data: string;
+          };
       summary?: string;
       phone?: string;
       city?: string;
@@ -1852,6 +1901,55 @@ export async function apiAdminAudit(token: string, limit = 40): Promise<ApiAdmin
   return requestJson<ApiAdminAuditLog[]>(`/api/v1/admin/audit?limit=${limit}`, withAuth(token));
 }
 
+export async function apiAdminRateLimits(
+  token: string,
+  input?: {
+    limit?: number;
+    policyKey?: string;
+    route?: string;
+    userId?: string;
+    ipHash?: string;
+    ip?: string;
+    method?: string;
+    from?: string;
+    to?: string;
+  },
+): Promise<ApiAdminRateLimitEvent[]> {
+  const params = new URLSearchParams();
+  if (typeof input?.limit === "number") {
+    params.set("limit", String(input.limit));
+  }
+  if (input?.policyKey) {
+    params.set("policyKey", input.policyKey);
+  }
+  if (input?.route) {
+    params.set("route", input.route);
+  }
+  if (input?.userId) {
+    params.set("userId", input.userId);
+  }
+  if (input?.ipHash) {
+    params.set("ipHash", input.ipHash);
+  }
+  if (input?.ip) {
+    params.set("ip", input.ip);
+  }
+  if (input?.method) {
+    params.set("method", input.method);
+  }
+  if (input?.from) {
+    params.set("from", input.from);
+  }
+  if (input?.to) {
+    params.set("to", input.to);
+  }
+  const qs = params.toString();
+  return requestJson<ApiAdminRateLimitEvent[]>(
+    `/api/v1/admin/rate-limits${qs ? `?${qs}` : ""}`,
+    withAuth(token),
+  );
+}
+
 export async function apiAdminChatEvents(
   token: string,
   input?: {
@@ -2483,10 +2581,16 @@ export async function apiOnboarding(token: string): Promise<ApiOnboardingRespons
 export async function apiUpsertOnboarding(
   token: string,
   input: {
-    primaryObjective: string;
-    dailyTimeCommitment: string;
-    preferredPracticeFormat: string;
-    notes?: string;
+    primaryGoal:
+      | "reflect_more_clearly"
+      | "reduce_stress"
+      | "build_discipline"
+      | "explore_philosophy"
+      | "improve_emotional_awareness";
+    preferredTopics: Array<
+      "stoicism" | "epicureanism" | "mindfulness" | "psychology" | "habits" | "journaling"
+    >;
+    experienceLevel: "new_to_philosophy" | "somewhat_familiar" | "advanced";
   },
 ): Promise<ApiOnboardingResponse> {
   return requestJson<ApiOnboardingResponse>(

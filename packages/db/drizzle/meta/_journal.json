@@ -120,6 +120,20 @@
       "when": 1773259200000,
       "tag": "0016_modern_signup_intents",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1773267999480,
+      "tag": "0017_watery_shatterstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1773277200000,
+      "tag": "0018_sincere_progressive_profile",
+      "breakpoints": true
     }
   ]
 }

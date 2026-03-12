@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ReflectionEntryRecord, ReflectionProcessingStep } from "@ataraxia/db";
+import type { ReflectionEntryRecord, ReflectionProcessingStep } from "@areti/db";
 import type { ReflectionAiService } from "./reflection-ai-service.js";
 import type { ReflectionRepository } from "./reflection-repository.js";
 import type { ReflectionStorageService } from "./reflection-storage-service.js";

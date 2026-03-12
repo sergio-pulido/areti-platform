@@ -31,7 +31,7 @@ export default defineConfig({
     },
     {
       command:
-        `PATH="${nodeBinDir}:$PATH" && rm -rf ./apps/web/.next && SIGNUP_ENABLED=\${SIGNUP_ENABLED:-true} API_BASE_URL=http://localhost:43101 NEXT_PUBLIC_API_BASE_URL=http://localhost:43101 npm run dev --workspace @ataraxia/web -- --port 43100`,
+        `PATH="${nodeBinDir}:$PATH" && rm -rf ./apps/web/.next && SIGNUP_ENABLED=\${SIGNUP_ENABLED:-true} API_BASE_URL=http://localhost:43101 NEXT_PUBLIC_API_BASE_URL=http://localhost:43101 npm run dev --workspace @areti/web -- --port 43100`,
       port: 43100,
       reuseExistingServer: false,
       timeout: 120000,

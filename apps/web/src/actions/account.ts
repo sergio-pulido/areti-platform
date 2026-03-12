@@ -9,10 +9,13 @@ import {
   apiChangePassword,
   apiDeleteAccount,
   apiPatchMe,
+  apiUpsertOnboarding,
   apiSetNotificationPreferences,
 } from "@/lib/backend-api";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/constants";
+import { avatarPresets } from "@/lib/avatar";
 import { LOCALE_COOKIE_NAME, normalizeLocale } from "@/lib/i18n/config";
+import { onboardingSchema } from "@/lib/onboarding";
 
 function str(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -42,6 +45,8 @@ function redirectWith(path: string, params: Record<string, string>): never {
 }
 
 const usernameSchema = z.string().trim().regex(/^[a-zA-Z0-9_-]{3,40}$/);
+const avatarPresetSchema = z.enum(avatarPresets.map((preset) => preset.id) as [string, ...string[]]);
+const MAX_AVATAR_UPLOAD_BYTES = 3 * 1024 * 1024;
 
 export async function saveProfileAction(formData: FormData): Promise<void> {
   const session = await requireSession();
@@ -66,23 +71,6 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
       profile: {
         username: usernameRaw.length > 0 ? usernameRaw : null,
         summary: str(formData, "summary"),
-        phone: str(formData, "phone"),
-        city: str(formData, "city"),
-        country: str(formData, "country"),
-        socialLinks: [
-          {
-            label: "Website",
-            url: str(formData, "website"),
-          },
-          {
-            label: "LinkedIn",
-            url: str(formData, "linkedin"),
-          },
-          {
-            label: "X",
-            url: str(formData, "x"),
-          },
-        ].filter((entry) => entry.url.length > 0),
       },
     });
 
@@ -92,7 +80,122 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
     redirectWith("/account/profile", { error: toMessage(error) });
   }
 
-  redirectWith("/account/profile", { saved: "1" });
+  redirectWith("/account/profile", { saved: "profile" });
+}
+
+export async function saveProfileAvatarAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
+  const avatarMode = str(formData, "avatarMode");
+  const avatarPreset = str(formData, "avatarPreset");
+  const avatarFileValue = formData.get("avatarFile");
+  const avatarFile = avatarFileValue instanceof File && avatarFileValue.size > 0 ? avatarFileValue : null;
+
+  try {
+    if (avatarFile && avatarFile.size > MAX_AVATAR_UPLOAD_BYTES) {
+      throw new Error("Avatar image is too large. Use an image smaller than 3 MB.");
+    }
+
+    let avatar:
+      | {
+          mode: "keep";
+        }
+      | {
+          mode: "initials";
+        }
+      | {
+          mode: "preset";
+          preset: string;
+        }
+      | {
+          mode: "upload";
+          fileName: string;
+          mimeType: string;
+          base64Data: string;
+        };
+
+    if (avatarFile) {
+      if (!avatarFile.type.toLowerCase().startsWith("image/")) {
+        throw new Error("Avatar upload must be an image file.");
+      }
+
+      const buffer = Buffer.from(await avatarFile.arrayBuffer());
+      if (buffer.length === 0) {
+        throw new Error("Avatar upload is empty.");
+      }
+
+      avatar = {
+        mode: "upload",
+        fileName: avatarFile.name || "avatar-image",
+        mimeType: avatarFile.type || "image/jpeg",
+        base64Data: buffer.toString("base64"),
+      };
+    } else if (avatarMode === "preset") {
+      const parsedPreset = avatarPresetSchema.safeParse(avatarPreset);
+      if (!parsedPreset.success) {
+        throw new Error("Choose a valid avatar preset.");
+      }
+
+      avatar = {
+        mode: "preset",
+        preset: parsedPreset.data,
+      };
+    } else if (avatarMode === "initials") {
+      avatar = {
+        mode: "initials",
+      };
+    } else if (avatarMode === "keep") {
+      avatar = {
+        mode: "keep",
+      };
+    } else {
+      throw new Error("Choose how you want to set your avatar.");
+    }
+
+    if (avatar.mode !== "keep") {
+      await apiPatchMe(session.accessToken, {
+        profile: {
+          avatar,
+        },
+      });
+    }
+
+    revalidatePath("/account");
+    revalidatePath("/account/profile");
+  } catch (error) {
+    redirectWith("/account/profile", { error: toMessage(error) });
+  }
+
+  redirectWith("/account/profile", { saved: "avatar" });
+}
+
+export async function savePersonalizationAction(formData: FormData): Promise<void> {
+  const session = await requireSession();
+
+  const input = {
+    primaryGoal: str(formData, "primaryGoal"),
+    preferredTopics: formData
+      .getAll("preferredTopics")
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter((value) => value.length > 0),
+    experienceLevel: str(formData, "experienceLevel"),
+  };
+
+  const parsed = onboardingSchema.safeParse(input);
+  if (!parsed.success) {
+    redirectWith("/account/preferences", { error: "Choose a valid goal, 1-3 topics, and experience level." });
+  }
+
+  try {
+    await apiUpsertOnboarding(session.accessToken, parsed.data);
+
+    revalidatePath("/dashboard");
+    revalidatePath("/onboarding");
+    revalidatePath("/account/preferences");
+  } catch (error) {
+    redirectWith("/account/preferences", { error: toMessage(error) });
+  }
+
+  redirectWith("/account/preferences", { saved: "personalization" });
 }
 
 export async function saveSettingsAction(formData: FormData): Promise<void> {
@@ -125,7 +228,7 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
     redirectWith("/account/preferences", { error: toMessage(error) });
   }
 
-  redirectWith("/account/preferences", { saved: "1" });
+  redirectWith("/account/preferences", { saved: "preferences" });
 }
 
 export async function saveNotificationPreferencesAction(formData: FormData): Promise<void> {

@@ -1,5 +1,5 @@
 {
-  "name": "@ataraxia/api",
+  "name": "@areti/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,11 +13,12 @@
     "test:integration": "vitest run"
   },
   "dependencies": {
-    "@ataraxia/db": "0.1.0",
+    "@areti/db": "0.1.0",
     "@simplewebauthn/server": "^13.2.3",
     "argon2": "^0.44.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "ioredis": "^5.10.0",
     "nodemailer": "^6.10.1",
     "zod": "^4.3.6"
   },

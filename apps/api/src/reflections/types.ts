@@ -3,7 +3,7 @@ import type {
   ReflectionProcessingJobRecord,
   ReflectionSourceType,
   ReflectionStatus,
-} from "@ataraxia/db";
+} from "@areti/db";
 
 export type ReflectionProvider = "deepseek" | "openai";
 

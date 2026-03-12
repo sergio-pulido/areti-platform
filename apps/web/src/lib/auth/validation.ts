@@ -29,13 +29,22 @@ export const signupSchema = z
   })
   .superRefine((data, ctx) => {
     const hasInviteToken = Boolean(data.inviteToken);
-    const acceptedLegal = data.acceptLegal || (data.acceptTerms && data.acceptPrivacy);
+    const acceptedTerms = data.acceptTerms === true || data.acceptLegal === true;
+    const acceptedPrivacy = data.acceptPrivacy === true || data.acceptLegal === true;
 
-    if (!hasInviteToken && !acceptedLegal) {
+    if (!hasInviteToken && !acceptedTerms) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "You must accept the Terms and Privacy Policy",
-        path: ["acceptLegal"],
+        message: "You must accept the Terms of Service",
+        path: ["acceptTerms"],
+      });
+    }
+
+    if (!hasInviteToken && !acceptedPrivacy) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "You must accept the Privacy Policy",
+        path: ["acceptPrivacy"],
       });
     }
   });
@@ -56,12 +65,20 @@ export const completeSignupSchema = z.object({
   requiresLegalAtCompletion: z.boolean().optional(),
 }).superRefine((data, ctx) => {
   if (data.requiresLegalAtCompletion) {
-    const acceptedLegal = data.acceptLegal || (data.acceptTerms && data.acceptPrivacy);
-    if (!acceptedLegal) {
+    const acceptedTerms = data.acceptTerms === true || data.acceptLegal === true;
+    const acceptedPrivacy = data.acceptPrivacy === true || data.acceptLegal === true;
+    if (!acceptedTerms) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "You must accept the Terms and Privacy Policy",
-        path: ["acceptLegal"],
+        message: "You must accept the Terms of Service",
+        path: ["acceptTerms"],
+      });
+    }
+    if (!acceptedPrivacy) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "You must accept the Privacy Policy",
+        path: ["acceptPrivacy"],
       });
     }
   }
