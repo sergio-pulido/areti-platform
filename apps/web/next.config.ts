@@ -14,6 +14,15 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: "/reset-password",
+        destination: "/auth/reset-password",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

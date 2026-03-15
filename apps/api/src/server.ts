@@ -3146,7 +3146,7 @@ export function createApp() {
       return;
     }
 
-    const resetUrl = `${webAppUrl}/reset-password?token=${encodeURIComponent(input.token)}`;
+    const resetUrl = `${webAppUrl}/auth/reset-password?token=${encodeURIComponent(input.token)}`;
     const subject = "Reset your Areti account password";
     const html = `
       <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.5; color: #1f2937;">
