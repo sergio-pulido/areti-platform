@@ -1,0 +1,620 @@
+.
+├── apps
+│   ├── api
+│   │   ├── data
+│   │   │   ├── ataraxia.e2e.db
+│   │   │   ├── ataraxia.e2e.db-shm
+│   │   │   └── ataraxia.e2e.db-wal
+│   │   ├── src
+│   │   │   ├── avatar
+│   │   │   │   └── avatar-storage-service.ts
+│   │   │   ├── jobs
+│   │   │   │   ├── notification-digest-healthcheck.ts
+│   │   │   │   └── notification-digest.ts
+│   │   │   ├── modules
+│   │   │   │   └── rate-limit
+│   │   │   │       ├── store
+│   │   │   │       │   ├── factory.ts
+│   │   │   │       │   ├── memory-store.test.ts
+│   │   │   │       │   ├── memory-store.ts
+│   │   │   │       │   ├── rate-limit-store.ts
+│   │   │   │       │   ├── redis-store.test.ts
+│   │   │   │       │   └── redis-store.ts
+│   │   │   │       ├── config.ts
+│   │   │   │       ├── events.ts
+│   │   │   │       ├── index.ts
+│   │   │   │       ├── ip.ts
+│   │   │   │       ├── keys.test.ts
+│   │   │   │       ├── keys.ts
+│   │   │   │       ├── logger.ts
+│   │   │   │       ├── middleware.ts
+│   │   │   │       ├── policies.ts
+│   │   │   │       ├── resolver.test.ts
+│   │   │   │       ├── resolver.ts
+│   │   │   │       ├── response.ts
+│   │   │   │       └── types.ts
+│   │   │   ├── reflections
+│   │   │   │   ├── index.ts
+│   │   │   │   ├── prompt-templates.ts
+│   │   │   │   ├── reflection-ai-service.ts
+│   │   │   │   ├── reflection-processing-service.ts
+│   │   │   │   ├── reflection-processing.integration.test.ts
+│   │   │   │   ├── reflection-repository.ts
+│   │   │   │   ├── reflection-service.ts
+│   │   │   │   ├── reflection-storage-service.ts
+│   │   │   │   └── types.ts
+│   │   │   ├── scripts
+│   │   │   │   └── admin-promote.ts
+│   │   │   ├── server.integration.test.ts
+│   │   │   └── server.ts
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── vitest.config.ts
+│   └── web
+│       ├── data
+│       │   ├── ataraxia.db
+│       │   ├── ataraxia.db-shm
+│       │   └── ataraxia.db-wal
+│       ├── public
+│       │   ├── file.svg
+│       │   ├── globe.svg
+│       │   ├── icon.svg
+│       │   ├── next.svg
+│       │   ├── pwa-screenshot-narrow.png
+│       │   ├── pwa-screenshot-wide.png
+│       │   ├── sw.js
+│       │   ├── vercel.svg
+│       │   └── window.svg
+│       ├── scripts
+│       │   └── generate-es-dictionary.mjs
+│       ├── src
+│       │   ├── actions
+│       │   │   ├── account.ts
+│       │   │   ├── admin-content.ts
+│       │   │   ├── admin-invitations.ts
+│       │   │   ├── auth-state.ts
+│       │   │   ├── auth.ts
+│       │   │   ├── content-progress.ts
+│       │   │   ├── journal-state.ts
+│       │   │   ├── journal.ts
+│       │   │   ├── notifications.ts
+│       │   │   └── security.ts
+│       │   ├── app
+│       │   │   ├── (content)
+│       │   │   │   ├── chat
+│       │   │   │   │   ├── new
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   ├── preview
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   ├── loading.tsx
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── dashboard
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── journal
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── library
+│       │   │   │   │   ├── [slug]
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   ├── new
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   ├── loading.tsx
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── practices
+│       │   │   │   │   ├── [slug]
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   ├── new
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   ├── loading.tsx
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── reflections
+│       │   │   │   │   ├── [id]
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   ├── new
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   ├── loading.tsx
+│       │   │   │   │   └── page.tsx
+│       │   │   │   └── layout.tsx
+│       │   │   ├── academy
+│       │   │   │   ├── concepts
+│       │   │   │   │   ├── [slug]
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── paths
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── saved
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── search
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── thinkers
+│       │   │   │   │   ├── [slug]
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── traditions
+│       │   │   │   │   ├── [slug]
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── works
+│       │   │   │   │   ├── [slug]
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── error.tsx
+│       │   │   │   ├── layout.tsx
+│       │   │   │   ├── loading.tsx
+│       │   │   │   └── page.tsx
+│       │   │   ├── account
+│       │   │   │   ├── billing
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── calendar
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── comments
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── contact
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── cookies
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── danger
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── documents
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── extra-data
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── favourites
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── feedback
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── likes
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── notifications
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── password
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── preferences
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── privacy
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── professional
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── profile
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── rewards
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── security
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── sessions
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── settings
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── spaces
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── subscription
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── terms
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── layout.tsx
+│       │   │   │   └── page.tsx
+│       │   │   ├── admin
+│       │   │   │   ├── audit
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── billing
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── invitations
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── plans
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── roles
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── settings
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── users
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── layout.tsx
+│       │   │   │   └── page.tsx
+│       │   │   ├── api
+│       │   │   │   ├── academy
+│       │   │   │   │   └── adapters
+│       │   │   │   │       └── route.ts
+│       │   │   │   ├── account
+│       │   │   │   │   └── avatar
+│       │   │   │   │       └── route.ts
+│       │   │   │   ├── chat
+│       │   │   │   │   ├── threads
+│       │   │   │   │   │   ├── [threadId]
+│       │   │   │   │   │   │   ├── branch
+│       │   │   │   │   │   │   │   └── route.ts
+│       │   │   │   │   │   │   ├── context
+│       │   │   │   │   │   │   │   └── summarize
+│       │   │   │   │   │   │   │       └── route.ts
+│       │   │   │   │   │   │   ├── events
+│       │   │   │   │   │   │   │   └── route.ts
+│       │   │   │   │   │   │   ├── messages
+│       │   │   │   │   │   │   │   └── route.ts
+│       │   │   │   │   │   │   └── route.ts
+│       │   │   │   │   │   └── route.ts
+│       │   │   │   │   └── route.ts
+│       │   │   │   ├── journal
+│       │   │   │   │   └── route.ts
+│       │   │   │   ├── passkeys
+│       │   │   │   │   ├── auth
+│       │   │   │   │   │   ├── options
+│       │   │   │   │   │   │   └── route.ts
+│       │   │   │   │   │   └── verify
+│       │   │   │   │   │       └── route.ts
+│       │   │   │   │   └── register
+│       │   │   │   │       ├── options
+│       │   │   │   │       │   └── route.ts
+│       │   │   │   │       └── verify
+│       │   │   │   │           └── route.ts
+│       │   │   │   ├── preview
+│       │   │   │   │   ├── chat
+│       │   │   │   │   │   └── route.ts
+│       │   │   │   │   └── events
+│       │   │   │   │       └── route.ts
+│       │   │   │   ├── reflections
+│       │   │   │   │   ├── [id]
+│       │   │   │   │   │   ├── audio
+│       │   │   │   │   │   │   └── route.ts
+│       │   │   │   │   │   ├── commentary
+│       │   │   │   │   │   │   └── route.ts
+│       │   │   │   │   │   ├── retry
+│       │   │   │   │   │   │   └── route.ts
+│       │   │   │   │   │   ├── send-to-companion
+│       │   │   │   │   │   │   └── route.ts
+│       │   │   │   │   │   └── route.ts
+│       │   │   │   │   └── route.ts
+│       │   │   │   └── security
+│       │   │   │       └── mfa
+│       │   │   │           └── totp
+│       │   │   │               ├── setup
+│       │   │   │               │   └── route.ts
+│       │   │   │               ├── verify
+│       │   │   │               │   └── route.ts
+│       │   │   │               └── route.ts
+│       │   │   ├── auth
+│       │   │   │   ├── forgot-password
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── reset-password
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── signin
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── signup
+│       │   │   │   │   ├── complete
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   └── page.tsx
+│       │   │   │   └── verify-email
+│       │   │   │       └── page.tsx
+│       │   │   ├── community
+│       │   │   │   ├── challenges
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── events
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── experts
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── resources
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── layout.tsx
+│       │   │   │   └── page.tsx
+│       │   │   ├── creator
+│       │   │   │   ├── cms
+│       │   │   │   │   ├── academy
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── exercises
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── readings
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── videos
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── layout.tsx
+│       │   │   │   └── page.tsx
+│       │   │   ├── legal
+│       │   │   │   ├── cookies
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── privacy
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── terms
+│       │   │   │   │   └── page.tsx
+│       │   │   │   └── layout.tsx
+│       │   │   ├── offline
+│       │   │   │   └── page.tsx
+│       │   │   ├── onboarding
+│       │   │   │   └── page.tsx
+│       │   │   ├── preview
+│       │   │   │   ├── chat
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── dashboard
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── journal
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── library
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── practices
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── layout.tsx
+│       │   │   │   └── page.tsx
+│       │   │   ├── apple-icon.tsx
+│       │   │   ├── favicon.ico
+│       │   │   ├── globals.css
+│       │   │   ├── icon.tsx
+│       │   │   ├── layout.tsx
+│       │   │   ├── manifest.ts
+│       │   │   └── page.tsx
+│       │   ├── components
+│       │   │   ├── academy
+│       │   │   │   ├── academy-metadata-badges.tsx
+│       │   │   │   └── academy-search-form.tsx
+│       │   │   ├── account
+│       │   │   │   └── account-placeholder-page.tsx
+│       │   │   ├── admin
+│       │   │   │   ├── admin-coming-soon.tsx
+│       │   │   │   └── invitations-admin-panel.tsx
+│       │   │   ├── auth
+│       │   │   │   ├── auth-card.tsx
+│       │   │   │   ├── auth-divider.tsx
+│       │   │   │   ├── auth-field.tsx
+│       │   │   │   ├── auth-footer-link.tsx
+│       │   │   │   ├── auth-header.tsx
+│       │   │   │   ├── auth-hero-panel.tsx
+│       │   │   │   ├── auth-shell.tsx
+│       │   │   │   ├── auth-trust-microcopy.tsx
+│       │   │   │   ├── complete-signup-form.tsx
+│       │   │   │   ├── forgot-password-form.tsx
+│       │   │   │   ├── legal-consent.tsx
+│       │   │   │   ├── onboarding-form.tsx
+│       │   │   │   ├── onboarding-option-card.tsx
+│       │   │   │   ├── onboarding-progress.tsx
+│       │   │   │   ├── onboarding-step-shell.tsx
+│       │   │   │   ├── passkey-button.tsx
+│       │   │   │   ├── password-field.tsx
+│       │   │   │   ├── password-strength-checklist.tsx
+│       │   │   │   ├── reset-password-form.tsx
+│       │   │   │   ├── signin-form.tsx
+│       │   │   │   ├── signup-form.tsx
+│       │   │   │   └── verify-email-form.tsx
+│       │   │   ├── chat
+│       │   │   │   ├── chat-composer.tsx
+│       │   │   │   ├── chat-conversation.tsx
+│       │   │   │   ├── chat-empty-state.tsx
+│       │   │   │   ├── events.ts
+│       │   │   │   ├── request.ts
+│       │   │   │   ├── thread-list-panel.tsx
+│       │   │   │   ├── token-limited-preview.tsx
+│       │   │   │   ├── topic.ts
+│       │   │   │   └── types.ts
+│       │   │   ├── dashboard
+│       │   │   │   ├── home
+│       │   │   │   │   └── types.ts
+│       │   │   │   ├── chat-simulator.tsx
+│       │   │   │   ├── content-form-fields.tsx
+│       │   │   │   ├── dashboard-account-nudges.tsx
+│       │   │   │   ├── dashboard-companion-panel.tsx
+│       │   │   │   ├── dashboard-continue-section.tsx
+│       │   │   │   ├── dashboard-hero-next-step.tsx
+│       │   │   │   ├── dashboard-progress-summary.tsx
+│       │   │   │   ├── dashboard-recent-reflections.tsx
+│       │   │   │   ├── dashboard-today-actions.tsx
+│       │   │   │   ├── journal-form.tsx
+│       │   │   │   ├── library-article-card.tsx
+│       │   │   │   ├── page-header.tsx
+│       │   │   │   ├── passkey-manager.tsx
+│       │   │   │   ├── plain-text-content.tsx
+│       │   │   │   ├── practice-protocol-card.tsx
+│       │   │   │   ├── surface-card.tsx
+│       │   │   │   └── totp-manager.tsx
+│       │   │   ├── i18n
+│       │   │   │   ├── i18n-provider.tsx
+│       │   │   │   └── language-switcher.tsx
+│       │   │   ├── layout
+│       │   │   │   ├── app-topbar.tsx
+│       │   │   │   ├── companion-sidenav.tsx
+│       │   │   │   ├── dashboard-sidenav.tsx
+│       │   │   │   ├── mobile-contextual-navigation.tsx
+│       │   │   │   ├── mobile-nav-sheet.tsx
+│       │   │   │   ├── section-nav-items.tsx
+│       │   │   │   ├── secured-shell.tsx
+│       │   │   │   └── topbar-guest-actions.tsx
+│       │   │   ├── legal
+│       │   │   │   └── cookie-consent-banner.tsx
+│       │   │   ├── preview
+│       │   │   │   ├── preview-page-tracker.tsx
+│       │   │   │   ├── preview-signup-link.tsx
+│       │   │   │   └── signup-source-tracker.tsx
+│       │   │   ├── pwa
+│       │   │   │   └── sw-register.tsx
+│       │   │   ├── reflections
+│       │   │   │   ├── commentary-card.tsx
+│       │   │   │   ├── reflection-actions-menu.tsx
+│       │   │   │   ├── reflection-audio-player.tsx
+│       │   │   │   ├── reflection-card.tsx
+│       │   │   │   ├── reflection-detail-client.tsx
+│       │   │   │   ├── reflection-empty-state.tsx
+│       │   │   │   ├── reflection-input-selector.tsx
+│       │   │   │   ├── reflection-new-flow.tsx
+│       │   │   │   ├── reflection-processing-state.tsx
+│       │   │   │   ├── reflection-status-badge.tsx
+│       │   │   │   ├── reflection-tabs.tsx
+│       │   │   │   └── voice-recorder.tsx
+│       │   │   └── ui
+│       │   │       ├── badge.tsx
+│       │   │       ├── button.tsx
+│       │   │       ├── card.tsx
+│       │   │       ├── input.tsx
+│       │   │       ├── skeleton.tsx
+│       │   │       ├── textarea.tsx
+│       │   │       └── toast-stack.tsx
+│       │   ├── lib
+│       │   │   ├── academy
+│       │   │   │   ├── academy-query-adapters.ts
+│       │   │   │   ├── index.ts
+│       │   │   │   ├── knowledge-loader.ts
+│       │   │   │   ├── knowledge-paths.ts
+│       │   │   │   ├── knowledge-presentation.ts
+│       │   │   │   ├── knowledge-repository.ts
+│       │   │   │   ├── knowledge-search.ts
+│       │   │   │   ├── knowledge-seed.json
+│       │   │   │   ├── knowledge-selectors.ts
+│       │   │   │   ├── knowledge-service.ts
+│       │   │   │   └── knowledge-types.ts
+│       │   │   ├── auth
+│       │   │   │   ├── client-validation.ts
+│       │   │   │   ├── constants.ts
+│       │   │   │   ├── session.ts
+│       │   │   │   └── validation.ts
+│       │   │   ├── i18n
+│       │   │   │   ├── config.ts
+│       │   │   │   └── es-dictionary.json
+│       │   │   ├── security
+│       │   │   ├── account-focus.ts
+│       │   │   ├── avatar.ts
+│       │   │   ├── backend-api.ts
+│       │   │   ├── client-api.ts
+│       │   │   ├── cn.ts
+│       │   │   ├── content-api.ts
+│       │   │   ├── legal.ts
+│       │   │   ├── navigation.test.ts
+│       │   │   ├── navigation.ts
+│       │   │   ├── onboarding.ts
+│       │   │   ├── preview-analytics.ts
+│       │   │   └── runtime-config.ts
+│       │   └── proxy.ts
+│       ├── eslint.config.mjs
+│       ├── next-env.d.ts
+│       ├── next.config.ts
+│       ├── package.json
+│       ├── postcss.config.mjs
+│       ├── tsconfig.json
+│       └── tsconfig.tsbuildinfo
+├── data
+│   ├── avatar-images
+│   │   └── 2026-03-12
+│   │       ├── 4e1395ca-e8c8-4635-91a1-87d4f923a35e.png
+│   │       ├── a7de7e14-c6ea-4178-a0be-dbf9151dbe2d.png
+│   │       ├── d9c313b4-3743-4334-8b7c-d8fadb92d214.png
+│   │       └── ea6ec891-9e88-478a-9249-6d2f4ae3d378.png
+│   ├── reflection-audio
+│   ├── ataraxia.dev.db
+│   ├── ataraxia.e2e.db
+│   ├── ataraxia.e2e.db-shm
+│   ├── ataraxia.e2e.db-wal
+│   ├── ataraxia.integration.db-shm
+│   ├── ataraxia.integration.db-wal
+│   ├── ataraxia.test.db
+│   ├── ataraxia.test.db-shm
+│   ├── ataraxia.test.db-wal
+│   ├── content.db
+│   ├── content.db-shm
+│   └── content.db-wal
+├── docs
+│   ├── academy
+│   │   ├── ARETI_MONOREPO_CONTEXT_20260310_153556.md
+│   │   ├── ARETI_PRODUCT_GUIDELINES_CONTEXT_20260310_153556.md
+│   │   ├── EDITORIAL_RULES_fresh.md
+│   │   ├── IMPLEMENTATION_GUIDE_fresh.md
+│   │   ├── START_HERE_README_fresh.md
+│   │   ├── TAXONOMY_MAP_fresh.md
+│   │   ├── concepts_catalog_fresh.csv
+│   │   ├── domains_catalog_fresh.csv
+│   │   ├── drizzle_schema_fresh.ts
+│   │   ├── knowledge_seed_fresh.json
+│   │   ├── knowledge_types_fresh.ts
+│   │   ├── persons_catalog_fresh.csv
+│   │   ├── relationships_catalog_fresh.csv
+│   │   ├── schema_pg_fresh.sql
+│   │   ├── seed_inserts_pg_fresh.sql
+│   │   ├── traditions_catalog_fresh.csv
+│   │   └── works_catalog_fresh.csv
+│   ├── infra
+│   │   ├── areti-beta-server-runbook-v2.md
+│   │   ├── areti-beta-server-runbook-v3.md
+│   │   ├── areti-beta-server-runbook.md
+│   │   └── tag-release-cicd.md
+│   ├── specs
+│   │   └── forgot-password.md
+│   ├── ARETI_UX_UI_PRODUCT_GUIDELINES.md
+│   ├── DECISIONS.md
+│   ├── ENV_GUIDE.md
+│   ├── OPS_MONITORING.md
+│   ├── PROJECT_STATE.md
+│   ├── PWA_RELEASE_CHECKLIST.md
+│   ├── README.md
+│   ├── REFLECTIONS_IMPLEMENTATION_SUMMARY.md
+│   └── TASKS.md
+├── ops
+│   ├── server
+│   │   ├── config
+│   │   │   └── caddy
+│   │   │       └── Caddyfile
+│   │   ├── scripts
+│   │   │   ├── checkout-release.sh
+│   │   │   ├── deploy-release.sh
+│   │   │   └── sync-layout.sh
+│   │   ├── compose.production.yaml
+│   │   └── compose.yaml
+│   └── README.md
+├── packages
+│   └── db
+│       ├── drizzle
+│       │   ├── meta
+│       │   │   ├── 0000_snapshot.json
+│       │   │   ├── 0001_snapshot.json
+│       │   │   ├── 0002_snapshot.json
+│       │   │   ├── 0003_snapshot.json
+│       │   │   ├── 0004_snapshot.json
+│       │   │   ├── 0008_snapshot.json
+│       │   │   ├── 0013_snapshot.json
+│       │   │   ├── 0014_snapshot.json
+│       │   │   ├── 0015_snapshot.json
+│       │   │   ├── 0017_snapshot.json
+│       │   │   ├── 0019_snapshot.json
+│       │   │   └── _journal.json
+│       │   ├── 0000_little_makkari.sql
+│       │   ├── 0001_glossy_nekra.sql
+│       │   ├── 0002_legal_colossus.sql
+│       │   ├── 0003_unknown_lord_tyger.sql
+│       │   ├── 0004_careful_guardsmen.sql
+│       │   ├── 0005_brisk_lionheart.sql
+│       │   ├── 0006_still_account_core.sql
+│       │   ├── 0007_steady_account_profile_cleanup.sql
+│       │   ├── 0008_slow_talisman.sql
+│       │   ├── 0009_plain_preview_analytics.sql
+│       │   ├── 0010_spotty_job_runbook.sql
+│       │   ├── 0011_neat_chat_context.sql
+│       │   ├── 0012_calm_reflections.sql
+│       │   ├── 0013_brave_princess_powerful.sql
+│       │   ├── 0014_aromatic_rockslide.sql
+│       │   ├── 0015_sudden_warlock.sql
+│       │   ├── 0016_modern_signup_intents.sql
+│       │   ├── 0017_watery_shatterstar.sql
+│       │   ├── 0018_sincere_progressive_profile.sql
+│       │   └── 0019_tense_lizard.sql
+│       ├── src
+│       │   ├── academy-editorial-seed.ts
+│       │   ├── academy-knowledge-seed.json
+│       │   ├── client.ts
+│       │   ├── index.ts
+│       │   ├── migrate.ts
+│       │   ├── schema.ts
+│       │   ├── seed-data.ts
+│       │   └── seed-library-practices.ts
+│       ├── drizzle.config.ts
+│       ├── package.json
+│       └── tsconfig.json
+├── scripts
+│   └── redeploy-compose.sh
+├── test-results
+├── tests
+│   ├── accessibility.e2e.spec.ts
+│   ├── pwa.e2e.spec.ts
+│   ├── signup-gate.e2e.spec.ts
+│   └── web.e2e.spec.ts
+├── BEST_STEPS_BACKLOG.md
+├── Dockerfile.api
+├── Dockerfile.web
+├── Makefile
+├── README.md
+├── docker-compose.yml
+├── package-lock.json
+├── package.json
+├── playwright.config.ts
+└── structure.txt
+
+185 directories, 433 files
