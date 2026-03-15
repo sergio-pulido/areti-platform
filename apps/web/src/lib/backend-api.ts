@@ -1056,6 +1056,23 @@ export async function apiCompleteSignup(input: {
   });
 }
 
+export async function apiForgotPassword(email: string): Promise<{ sent: true }> {
+  return requestJson<{ sent: true }>("/api/v1/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function apiResetPassword(input: {
+  token: string;
+  newPassword: string;
+}): Promise<{ success: true }> {
+  return requestJson<{ success: true }>("/api/v1/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function apiSignin(input: {
   email: string;
   password: string;

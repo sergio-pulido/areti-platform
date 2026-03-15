@@ -90,7 +90,9 @@ import {
   deletePasskeyCredentialById,
   deletePillar,
   deletePractice,
+  deleteRefreshSessionsByUserId,
   deleteRefreshSessionByTokenHash,
+  deleteSessionsByUserId,
   deleteSessionByTokenHash,
   deleteUserTotpSecret,
   getChatThreadByIdForUser,
@@ -197,6 +199,9 @@ import {
   upsertUserPreferences,
   upsertUserProfile,
   upsertUserTotpSecret,
+  createPasswordResetToken,
+  getPasswordResetTokenByHash,
+  consumePasswordResetToken,
   type ChatEventType,
   type ChatThreadScope,
   type ChatContextState,
@@ -1864,6 +1869,15 @@ const resendVerificationSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(120),
 });
 
+const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(120),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().trim().min(32).max(512),
+  newPassword: z.string().min(PASSWORD_MIN_LENGTH).max(100),
+});
+
 const signupCompletionContextSchema = z.object({
   token: z.string().trim().min(16).max(512),
 });
@@ -3123,6 +3137,81 @@ export function createApp() {
     }
   }
 
+  async function sendPasswordResetEmail(input: {
+    email: string;
+    name: string;
+    token: string;
+  }): Promise<void> {
+    if (nodeEnv === "test") {
+      return;
+    }
+
+    const resetUrl = `${webAppUrl}/reset-password?token=${encodeURIComponent(input.token)}`;
+    const subject = "Reset your Areti account password";
+    const html = `
+      <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.5; color: #1f2937;">
+        <h2 style="margin: 0 0 12px;">Reset your password</h2>
+        <p>Hello ${input.name || "there"},</p>
+        <p>Someone requested a password reset for your account. If this was you, please click the link below to set a new password:</p>
+        <p><a href="${resetUrl}" style="color: #0f766e;">Reset password</a></p>
+        <p style="font-size: 12px; color: #6b7280;">This link expires in 30 minutes. If you did not request this, you can safely ignore this email.</p>
+      </div>
+    `.trim();
+    const text = [
+      `Hello ${input.name || "there"},`,
+      "",
+      `Someone requested a password reset for your account. Reset it here: ${resetUrl}`,
+      "",
+      `This link expires in 30 minutes. If you did not request this, you can safely ignore this email.`,
+    ].join("\\n");
+
+    if (emailTransport === "disabled") {
+      if (!hasLoggedDisabledEmailDelivery) {
+        console.warn("[auth] EMAIL_TRANSPORT=disabled; skipping reset password email delivery.");
+        hasLoggedDisabledEmailDelivery = true;
+      }
+      return;
+    }
+
+    if (emailTransport === "smtp") {
+      if (!smtpTransport || !smtpFromEmail) {
+        throw new Error("SMTP transport is not configured.");
+      }
+
+      await smtpTransport.sendMail({
+        from: smtpFromEmail,
+        to: input.email,
+        subject,
+        text,
+        html,
+      });
+      return;
+    }
+
+    if (!isResendConfigured) {
+      throw new Error("RESEND_API_KEY or RESEND_FROM_EMAIL is missing while EMAIL_TRANSPORT=resend.");
+    }
+
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: resendFromEmail,
+        to: input.email,
+        subject,
+        html,
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+      throw new Error(payload?.message ?? "Failed to send reset password email.");
+    }
+  }
+
   app.use(
     cors({
       origin: allowedOrigins,
@@ -3462,17 +3551,131 @@ export function createApp() {
       throw error;
     }
 
-    res.json({
-      data: {
-        sent: true,
-        ...(process.env.NODE_ENV !== "production"
-          ? {
-              debugVerificationCode: verificationCode,
-              debugVerificationToken: verificationToken,
-            }
-          : {}),
-      },
-    });
+      res.json({
+        data: {
+          sent: true,
+          ...(process.env.NODE_ENV !== "production"
+            ? {
+                debugVerificationCode: verificationCode,
+                debugVerificationToken: verificationToken,
+              }
+            : {}),
+        },
+      });
+    },
+  );
+
+  app.post(
+    "/api/v1/auth/forgot-password",
+    rateLimitRoute("auth.forgotPassword", "POST /api/v1/auth/forgot-password"),
+    async (req, res) => {
+      const parsed = forgotPasswordSchema.safeParse(req.body);
+
+      if (!parsed.success) {
+        sendAuthError(res, {
+          status: 400,
+          code: "INVALID_FORGOT_PASSWORD_PAYLOAD",
+          message: "Invalid forgot password payload",
+        });
+        return;
+      }
+
+      const email = parsed.data.email;
+      const user = getUserByEmail(email);
+
+      if (!user) {
+        // Prevent email enumeration
+        res.json({ data: { sent: true } });
+        return;
+      }
+
+      const resetToken = createOpaqueToken();
+      createPasswordResetToken({
+        id: randomUUID(),
+        userId: user.id,
+        tokenHash: hashToken(resetToken),
+        expiresAt: nowPlusMinutesIso(30),
+      });
+
+      try {
+        await sendPasswordResetEmail({
+          email: user.email,
+          name: deriveSignupDisplayName(user.email),
+          token: resetToken,
+        });
+      } catch (error) {
+        if (error instanceof Error) {
+          sendAuthError(res, {
+            status: 502,
+            code: "RESET_DELIVERY_FAILED",
+            message: error.message,
+          });
+          return;
+        }
+        throw error;
+      }
+
+      res.json({
+        data: {
+          sent: true,
+          ...(process.env.NODE_ENV !== "production"
+            ? { debugResetToken: resetToken }
+            : {}),
+        },
+      });
+    },
+  );
+
+  app.post(
+    "/api/v1/auth/reset-password",
+    rateLimitRoute("auth.resetPassword", "POST /api/v1/auth/reset-password"),
+    async (req, res) => {
+      const parsed = resetPasswordSchema.safeParse(req.body);
+
+      if (!parsed.success) {
+        sendAuthError(res, {
+          status: 400,
+          code: "INVALID_RESET_PASSWORD_PAYLOAD",
+          message: "Invalid reset password payload",
+        });
+        return;
+      }
+
+      const tokenRecord = getPasswordResetTokenByHash(hashToken(parsed.data.token));
+
+      if (!tokenRecord || tokenRecord.consumedAt || tokenRecord.expiresAt < new Date().toISOString()) {
+        sendAuthError(res, {
+          status: 400,
+          code: "INVALID_OR_EXPIRED_TOKEN",
+          message: "The password reset link is invalid or has expired.",
+        });
+        return;
+      }
+
+      const user = getUserAuthById(tokenRecord.userId);
+      if (!user) {
+        sendAuthError(res, {
+          status: 400,
+          code: "USER_NOT_FOUND",
+          message: "User no longer exists.",
+        });
+        return;
+      }
+
+      const passwordHash = await argon2.hash(parsed.data.newPassword, {
+        type: argon2.argon2id,
+        memoryCost: 19456,
+        timeCost: 3,
+        parallelism: 1,
+      });
+
+      updateUserPasswordHash(user.id, passwordHash);
+      consumePasswordResetToken(tokenRecord.id);
+
+      deleteSessionsByUserId(user.id);
+      deleteRefreshSessionsByUserId(user.id);
+
+      res.json({ data: { success: true } });
     },
   );
 

@@ -5,6 +5,8 @@ export type RateLimitPolicyKey =
   | "auth.signin"
   | "auth.signup"
   | "auth.resendVerification"
+  | "auth.forgotPassword"
+  | "auth.resetPassword"
   | "auth.refresh"
   | "auth.passkeyOptions"
   | "auth.passkeyVerify"

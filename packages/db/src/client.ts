@@ -58,6 +58,7 @@ import {
   userContentCompletions,
   libraryLessons,
   mfaChallenges,
+  passwordResetTokens,
   passkeyCredentials,
   previewEvents,
   rateLimitBlockEvents,
@@ -8312,6 +8313,45 @@ export function listAdminAuditLogs(limit: number) {
     .orderBy(desc(adminAuditLogs.createdAt))
     .limit(limit)
     .all();
+}
+
+export function createPasswordResetToken(input: {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+}) {
+  const timestamp = nowIso();
+  db.insert(passwordResetTokens)
+    .values({
+      id: input.id,
+      userId: input.userId,
+      tokenHash: input.tokenHash,
+      expiresAt: input.expiresAt,
+      createdAt: timestamp,
+      consumedAt: null,
+    })
+    .run();
+}
+
+export function getPasswordResetTokenByHash(tokenHash: string) {
+  return (
+    db
+      .select()
+      .from(passwordResetTokens)
+      .where(eq(passwordResetTokens.tokenHash, tokenHash))
+      .limit(1)
+      .get() ?? null
+  );
+}
+
+export function consumePasswordResetToken(tokenId: string) {
+  db.update(passwordResetTokens)
+    .set({
+      consumedAt: nowIso(),
+    })
+    .where(eq(passwordResetTokens.id, tokenId))
+    .run();
 }
 
 export const contentDb = db;

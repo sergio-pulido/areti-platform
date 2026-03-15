@@ -88,3 +88,12 @@ export const signinSchema = z.object({
   email: baseEmail,
   password: z.string().min(1, "Password is required"),
 });
+
+export const forgotPasswordSchema = z.object({
+  email: baseEmail,
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().trim().min(32).max(512),
+  newPassword: basePassword,
+});

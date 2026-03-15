@@ -223,12 +223,12 @@ export function SigninForm({
         error={passwordError}
         placeholder="Enter your password"
         labelRight={
-          <a
-            href="mailto:support@areti.app?subject=Password%20reset%20help"
+          <Link
+            href="/auth/forgot-password"
             className="text-xs text-sage-200 hover:text-sage-100"
           >
             Forgot password?
-          </a>
+          </Link>
         }
       />
 

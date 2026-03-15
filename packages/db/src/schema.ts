@@ -215,6 +215,17 @@ export const refreshSessions = sqliteTable("refresh_sessions", {
   rotatedAt: text("rotated_at"),
 });
 
+export const passwordResetTokens = sqliteTable("password_reset_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at").notNull(),
+  consumedAt: text("consumed_at"),
+});
+
 export const mfaChallenges = sqliteTable("mfa_challenges", {
   id: text("id").primaryKey(),
   userId: text("user_id")

@@ -13,8 +13,24 @@ import {
   apiSignup,
   apiUpsertOnboarding,
   apiVerifyEmail,
+  apiForgotPassword,
+  apiResetPassword,
   isApiHttpError,
 } from "@/lib/backend-api";
+import { forgotPasswordSchema, resetPasswordSchema } from "@/lib/auth/validation";
+
+export type ForgotPasswordActionState = {
+  error?: string;
+  info?: string;
+  email?: string;
+  fieldErrors?: Record<string, string[]>;
+};
+
+export type ResetPasswordActionState = {
+  error?: string;
+  info?: string;
+  fieldErrors?: Record<string, string[]>;
+};
 
 export type EmailVerificationActionState = {
   error?: string;
@@ -435,4 +451,65 @@ export async function logoutAction(): Promise<void> {
 
   revalidatePath("/");
   redirect("/");
+}
+
+export async function forgotPasswordAction(
+  _prevState: ForgotPasswordActionState,
+  formData: FormData,
+): Promise<ForgotPasswordActionState> {
+  const email = getString(formData, "email").trim().toLowerCase();
+
+  const parsed = forgotPasswordSchema.safeParse({ email });
+
+  if (!parsed.success) {
+    return {
+      error: "Please enter a valid email address.",
+      email,
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    };
+  }
+
+  try {
+    await apiForgotPassword(parsed.data.email);
+    return {
+      info: "If that email is registered, we have sent a password reset link.",
+      email,
+    };
+  } catch (error) {
+    if (error instanceof Error) {
+      return { error: error.message, email };
+    }
+    throw error;
+  }
+}
+
+export async function resetPasswordAction(
+  _prevState: ResetPasswordActionState,
+  formData: FormData,
+): Promise<ResetPasswordActionState> {
+  const token = getString(formData, "token").trim();
+  const newPassword = getString(formData, "newPassword");
+
+  const parsed = resetPasswordSchema.safeParse({ token, newPassword });
+
+  if (!parsed.success) {
+    return {
+      error: "Please check your new password according to the requirements.",
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    };
+  }
+
+  try {
+    await apiResetPassword({
+      token: parsed.data.token,
+      newPassword: parsed.data.newPassword,
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+
+  redirect("/auth/signin?reset=success");
 }
